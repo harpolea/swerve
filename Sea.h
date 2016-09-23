@@ -1,10 +1,14 @@
 #ifndef SEA_H
 #define SEA_H
 
+// define some special vector/matrix classes to make things easier
+
 class Vec {
 public:
     static const int dim = 3;
     float vec[dim];
+
+    Vec();
 
     Vec operator* (float a);
 
@@ -33,7 +37,7 @@ public:
 
     Sea(const Sea &); // copy constructor
 
-    Vec U(int l, int x, int y, int t, Vec u);
+    Vec U(int l, int x, int y, int t);
 
     void initial_data(float * D0, float * Sx0, float * Sy0);
 
@@ -43,7 +47,13 @@ public:
 
     void run();
 
+    void output(char * filename);
+
     ~Sea();
+
+    // these need to be public
+    float *xs;
+    float *ys;
 
 private:
     int nlayers;
@@ -52,8 +62,6 @@ private:
     int nt;
 
     float **U_grid;
-    float *x;
-    float *y;
 
     float dx;
     float dy;
