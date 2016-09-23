@@ -31,6 +31,8 @@ public:
             float _alpha, float * _beta, float ** _gamma,
             bool _periodic);
 
+    Sea(const Sea &); // copy constructor
+
     Vec U(int l, int x, int y, int t, Vec u);
 
     void initial_data(float * D0, float * Sx0, float * Sy0);
@@ -38,6 +40,8 @@ public:
     void bcs(int t);
 
     void evolve(int t);
+
+    void run();
 
     ~Sea();
 
