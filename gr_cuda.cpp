@@ -225,6 +225,8 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     }
 
     bcs(0);
+
+    cout << "Set initial data.\n";
 }
 
 void Sea::bcs(int t) {
@@ -337,7 +339,9 @@ SquareMatrix Sea::Jy(Vec u) {
 
 void Sea::evolve(int t) {
 
-    cout << "t = " << t << "\n";
+    if (t % 50 == 0) {
+        cout << "t = " << t << "\n";
+    }
 
     Vec u, u_ip, u_im, u_jp, u_jm, u_pp, u_mm, u_imjp, u_ipjm, up;
 
@@ -398,6 +402,8 @@ void Sea::evolve(int t) {
 }
 
 void Sea::run() {
+    cout << "Beginning evolution.\n";
+
     for (int t = 0; t < nt; t++) {
         evolve(t);
     }
@@ -407,7 +413,8 @@ void Sea::output(char * filename) {
     // open file
     ofstream outFile(filename);
 
-    for (int t = 0; t < (nt+1); t++) {
+    // only going to output every 10 because file size is ridiculous
+    for (int t = 0; t < (nt+1); t+=10) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
@@ -428,7 +435,7 @@ int main() {
     static const int nlayers = 2;
     int nx = 200;
     int ny = 200;
-    int nt = 100;
+    int nt = 600;
     float xmin = 0.0;
     float xmax = 10.0;
     float ymin = 0.0;
@@ -477,6 +484,8 @@ int main() {
 
     char filename[] = "out.dat";
     sea.output(filename);
+
+    cout << "Output data to file.\n";
 
     // clean up
     for (int i =0; i < 2; i++) {
