@@ -19,7 +19,7 @@ public:
     void bcs(int t);
     void bcs(float * grid);
 
-    void evolve(int t, int numBlocks, int numThreads, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d);
+    //void evolve(int t, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d);
 
     void run();
 
@@ -53,8 +53,8 @@ private:
 
     bool periodic;
 
-    void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx);
-    void Jy(float * u, float * beta_d, float * gamma_up_d, float * jx);
+    //void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx);
+    //void Jy(float * u, float * beta_d, float * gamma_up_d, float * jx);
 };
 
 #endif

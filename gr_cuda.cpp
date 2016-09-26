@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cmath>
-#include <cuda_runtime.h>
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 #include <fstream>
 #include <helper_cuda.h>
 #include <helper_functions.h>
@@ -9,6 +10,10 @@
 #include "reduction.h"
 
 using namespace std;
+
+
+// TODO: GET RID OF THIS
+void __syncthreads() {}
 
 unsigned int nextPow2(unsigned int x)
 {
@@ -253,7 +258,7 @@ void SeaCuda::bcs(float * grid) {
     }
 }
 
-void SeaCuda::Jx(float * u, float * beta_d, float * gamma_up_d, float * jx) {
+__device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, float alpha) {
 
     float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
                 2.0 * u[1]* u[2] * gamma_up_d[1] +
@@ -286,7 +291,7 @@ void SeaCuda::Jx(float * u, float * beta_d, float * gamma_up_d, float * jx) {
     }
 }
 
-void SeaCuda::Jy(float * u, float * beta_d, float * gamma_up_d, float * jy) {
+__device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, float alpha) {
 
     float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
                 2.0 * u[1]* u[2] * gamma_up_d[1] +
@@ -318,7 +323,14 @@ void SeaCuda::Jy(float * u, float * beta_d, float * gamma_up_d, float * jy) {
 
 }
 
-void SeaCuda::evolve(int t, int numBlocks, int numThreads, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d) {
+__global__ void evolve(int t, float * beta_d, float * gamma_up_d,
+                     float * U_grid_d, float * rho_d, float * Q_d,
+                     int nx, int ny, int nlayers, float alpha,
+                     float dx, float dy, float dt) {
+
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
 
     if (t % 50 == 0) {
         cout << "t = " << t << "\n";
@@ -354,62 +366,61 @@ void SeaCuda::evolve(int t, int numBlocks, int numThreads, float * beta_d, float
         U_half[i] = 0.0;
     }
 
-    for (int l = 0; l < nlayers; l++) {
-        for (int x = 1; x < (nx-1); x++) {
-            for (int y = 1; y < (ny-1); y++) {
-                U(U_grid_d, l, x, y, t, u);
-                U(U_grid_d, l, x+1, y, t, u_ip);
-                U(U_grid_d, l, x-1, y, t, u_im);
-                U(U_grid_d, l, x, y+1, t, u_jp);
-                U(U_grid_d, l, x, y-1, t, u_jm);
-                U(U_grid_d, l, x+1, y+1, t, u_pp);
-                U(U_grid_d, l, x-1, y-1, t, u_mm);
-                U(U_grid_d, l, x+1, y-1, t, u_ipjm);
-                U(U_grid_d, l, x-1, y+1, t, u_imjp);
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-                Jx(u, beta_d, gamma_up_d, A);
-                Jy(u, beta_d, gamma_up_d, B);
+        for (int i = 0; i < 3; i++) {
+            u[i] = U_grid_d[(((t * ny + y) * nx + x) * nlayers + l)*3+i];
+            u_ip[i] = U_grid_d[(((t * ny + y) * nx + x+1) * nlayers + l)*3+i];
+            u_im[i] = U_grid_d[(((t * ny + y) * nx + x-1) * nlayers + l)*3+i];
+            u_jp[i] = U_grid_d[(((t * ny + y+1) * nx + x) * nlayers + l)*3+i];
+            u_jm[i] = U_grid_d[(((t * ny + y-1) * nx + x) * nlayers + l)*3+i];
+            u_pp[i] = U_grid_d[(((t * ny + y+1) * nx + x+1) * nlayers + l)*3+i];
+            u_mm[i] = U_grid_d[(((t * ny + y-1) * nx + x-1) * nlayers + l)*3+i];
+            u_ipjm[i] = U_grid_d[(((t * ny + y-1) * nx + x+1) * nlayers + l)*3+i];
+            u_imjp[i] = U_grid_d[(((t * ny + y+1) * nx + x-1) * nlayers + l)*3+i];
+        }
 
-                // matrix multiplication
-                for (int i = 0; i < 3; i++) {
-                    for (int j = 0; j < 3; j++) {
-                        A2[i*3+j] = 0;
-                        B2[i*3+j] = 0;
-                        AB[i*3+j] = 0;
-                        for (int k = 0; k < 3; k++) {
-                            A2[i*3+j] += A[i*3+k] * A[k*3+j];
-                            B2[i*3+j] += B[i*3+k] * B[k*3+j];
-                            AB[i*3+j] += A[i*3+k] * B[k*3+j];
-                        }
-                    }
+        Jx(u, beta_d, gamma_up_d, A, alpha);
+        Jy(u, beta_d, gamma_up_d, B, alpha);
+
+        // matrix multiplication
+        for (int i = 0; i < 3; i++) {
+            for (int j = 0; j < 3; j++) {
+                A2[i*3+j] = 0;
+                B2[i*3+j] = 0;
+                AB[i*3+j] = 0;
+                for (int k = 0; k < 3; k++) {
+                    A2[i*3+j] += A[i*3+k] * A[k*3+j];
+                    B2[i*3+j] += B[i*3+k] * B[k*3+j];
+                    AB[i*3+j] += A[i*3+k] * B[k*3+j];
                 }
-
-                // going to do matrix calculations to calculate different terms
-                for (int i = 0; i < 3; i ++) {
-                    d = 0;
-                    e = 0;
-                    f = 0;
-                    g = 0;
-                    h = 0;
-                    for (int j = 0; j < 3; j++) {
-                        d += A[i*3+j] * (u_ip[j] - u_im[j]);
-                        e += B[i*3+j] * (u_jp[j] - u_jm[j]);
-                        f += A2[i*3+j] * (u_ip[j] - 2.0 * u[j] + u_im[j]);
-                        g += B2[i*3+j] * (u_jp[j] - 2.0 * u[j] + u_jm[j]);
-                        h += AB[i*3+j] * (u_pp[j] - u_ipjm[j] - u_imjp[j] + u_mm[j]);
-                    }
-
-                    Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] -
-                            0.5 * dt/dx * d -
-                            0.5 * dt/dy * e +
-                            0.5 * dt*dt/(dx*dx) * f +
-                            0.5 * dt*dt/(dy*dy) * g -
-                            0.25 * dt*dt/(dx*dy) * h;
-
-                }
-
             }
         }
+
+        // going to do matrix calculations to calculate different terms
+        for (int i = 0; i < 3; i ++) {
+            d = 0;
+            e = 0;
+            f = 0;
+            g = 0;
+            h = 0;
+            for (int j = 0; j < 3; j++) {
+                d += A[i*3+j] * (u_ip[j] - u_im[j]);
+                e += B[i*3+j] * (u_jp[j] - u_jm[j]);
+                f += A2[i*3+j] * (u_ip[j] - 2.0 * u[j] + u_im[j]);
+                g += B2[i*3+j] * (u_jp[j] - 2.0 * u[j] + u_jm[j]);
+                h += AB[i*3+j] * (u_pp[j] - u_ipjm[j] - u_imjp[j] + u_mm[j]);
+            }
+
+            Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] -
+                    0.5 * dt/dx * d -
+                    0.5 * dt/dy * e +
+                    0.5 * dt*dt/(dx*dx) * f +
+                    0.5 * dt*dt/(dy*dy) * g -
+                    0.25 * dt*dt/(dx*dy) * h;
+
+        }
+
     }
 
     free(u);
@@ -426,13 +437,20 @@ void SeaCuda::evolve(int t, int numBlocks, int numThreads, float * beta_d, float
     free(B2);
     free(AB);
 
+    __syncthreads();
+
     // enforce boundary conditions
     bcs(Up);
 
     // copy to U_half
-    for (int n = 0; n < nlayers*nx*ny*3; n++) {
-        U_half[n] = Up[n];
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        for (int i = 0; i < 3; i++) {
+            U_half[((y * nx + x) * nlayers + l)*3+i] = Up[((y * nx + x) * nlayers + l)*3+i];
+        }
     }
+
+    __syncthreads();
+
 
     float *ph, *Sx, *Sy, *W, *sum_phs;
     ph = (float *) malloc(nlayers*sizeof(float));
@@ -443,77 +461,77 @@ void SeaCuda::evolve(int t, int numBlocks, int numThreads, float * beta_d, float
     sum_phs = (float *) malloc(nlayers*nx*ny*sizeof(float));
 
     // do source terms
-    for (int x = 0; x < nx; x++) {
-        for (int y = 0; y < ny; y++) {
-
-            for (int l = 0; l < nlayers; l++) {
-                ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
-                Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
-                Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
-                W[l] = sqrt((Sx[l] * Sx[l] * gamma_up_d[0] +
-                               2.0 * Sx[l] * Sy[l] * gamma_up_d[1] +
-                               Sy[l] * Sy[l] * gamma_up_d[3]) /
-                               (ph[l] * ph[l]) + 1.0);
-                ph[l] /= W[l];
-            }
-
-            for (int l = 0; l < nlayers; l++) {
-                float sum_qs = 0.0;
-                float deltaQx = 0.0;
-                float deltaQy = 0.0;
-                sum_phs[(y * nx + x) * nlayers + l] = 0.0;
-
-                if (l < (nlayers - 1)) {
-                    sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[l+1] - Q_d[l]);
-                    deltaQx = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
-                    deltaQy = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
-                }
-                if (l > 0) {
-                    sum_qs += abs(Q_d[l] - Q_d[l-1]);
-                    deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
-                    deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
-                }
-
-                for (int j = 0; j < l; j++) {
-                    sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] * ph[j];
-                }
-                for (int j = l+1; j < nlayers; j++) {
-                    sum_phs[(y * nx + x) * nlayers + l] += ph[j];
-                }
-
-                // D
-                Up[((y * nx + x) * nlayers + l)*3] += dt * sum_qs;
-
-                // Sx
-                Up[((y * nx + x) * nlayers + l)*3+1] += dt * ph[l] * (-deltaQx);
-
-                // Sy
-                Up[((y * nx + x) * nlayers + l)*3+2] += dt * ph[l] * (-deltaQy);
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
+        Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
+        Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
+        W[l] = sqrt((Sx[l] * Sx[l] * gamma_up_d[0] +
+                       2.0 * Sx[l] * Sy[l] * gamma_up_d[1] +
+                       Sy[l] * Sy[l] * gamma_up_d[3]) /
+                       (ph[l] * ph[l]) + 1.0);
+        ph[l] /= W[l];
 
 
-            }
+        __syncthreads();
+
+        float sum_qs = 0.0;
+        float deltaQx = 0.0;
+        float deltaQy = 0.0;
+        sum_phs[(y * nx + x) * nlayers + l] = 0.0;
+
+        if (l < (nlayers - 1)) {
+            sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[l+1] - Q_d[l]);
+            deltaQx = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
+            deltaQy = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
         }
+        if (l > 0) {
+            sum_qs += abs(Q_d[l] - Q_d[l-1]);
+            deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
+            deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+        }
+
+        for (int j = 0; j < l; j++) {
+            sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] * ph[j];
+        }
+        for (int j = l+1; j < nlayers; j++) {
+            sum_phs[(y * nx + x) * nlayers + l] += ph[j];
+        }
+
+        // D
+        Up[((y * nx + x) * nlayers + l)*3] += dt * sum_qs;
+
+        // Sx
+        Up[((y * nx + x) * nlayers + l)*3+1] += dt * ph[l] * (-deltaQx);
+
+        // Sy
+        Up[((y * nx + x) * nlayers + l)*3+2] += dt * ph[l] * (-deltaQy);
+
     }
 
-    for (int x = 1; x < (nx-1); x++) {
-        for (int y = 1; y < (ny-1); y++) {
-            for (int l = 0; l < nlayers; l++) {
-                // Sx
-                Up[((y * nx + x) * nlayers + l)*3+1] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+    __syncthreads();
 
-                // Sy
-                Up[((y * nx + x) * nlayers + l)*3+2] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+
+    // Sx
+    Up[((y * nx + x) * nlayers + l)*3+1] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+
+    // Sy
+    Up[((y * nx + x) * nlayers + l)*3+2] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
 
 
-            }
-        }
     }
+
+    __syncthreads();
 
 
     // copy back to grid
-    for (int n = 0; n < nlayers*nx*ny*3; n++) {
-        U_grid_d[n] = Up[n];
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        for (int i = 0; i < 3; i++) {
+            U_grid_d[((y * nx + x) * nlayers + l)*3+i] = Up[((y * nx + x) * nlayers + l)*3+i];
+        }
     }
+
+    __syncthreads();
 
     bcs(t+1);
 
@@ -545,6 +563,9 @@ void SeaCuda::run() {
     int numThreads = 0;
     getNumBlocksAndThreads(size, maxBlocks, maxThreads, numBlocks, numThreads);
 
+    dim3 threadsPerBlock(int(ceil(sqrt(numThreads/nlayers))), int(ceil(sqrt(numThreads/nlayers))), nlayers);
+    dim3 grid(numBlocks, 1, 1);
+
     float * beta_d;
     float * gamma_up_d;
     float * U_grid_d;
@@ -566,7 +587,9 @@ void SeaCuda::run() {
     cudaMemcpy(Q_d, Q, nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
     for (int t = 0; t < nt; t++) {
-        evolve(t, numBlocks, numThreads, beta_d, gamma_up_d, U_grid_d, rho_d, Q_d);
+        evolve(t, beta_d, gamma_up_d, U_grid_d, rho_d, Q_d,
+               nx, ny, nlayers, alpha,
+               dx, dy, dt);
     }
 
     // copy stuff back
