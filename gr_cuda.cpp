@@ -1,109 +1,55 @@
 #include <iostream>
 #include <cmath>
-//#include <cuda.h>
-#include "Sea.h"
+#include <cuda_runtime.h>
 #include <fstream>
+#include <helper_cuda.h>
+#include <helper_functions.h>
+#include <algorithm>
+#include "SeaCuda.h"
+#include "reduction.h"
+
 using namespace std;
 
-Vec::Vec() {
-    for (int i = 0; i < dim; i++) {
-        vec[i] = 0;
+unsigned int nextPow2(unsigned int x)
+{
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+    return ++x;
+}
+
+void getNumBlocksAndThreads(int n, int maxBlocks, int maxThreads, int &blocks, int &threads)
+{
+
+    //get device capability, to avoid block/grid size exceed the upper bound
+    cudaDeviceProp prop;
+    int device;
+    checkCudaErrors(cudaGetDevice(&device));
+    checkCudaErrors(cudaGetDeviceProperties(&prop, device));
+
+    threads = (n < maxThreads*2) ? nextPow2((n + 1)/ 2) : maxThreads;
+    blocks = (n + (threads * 2 - 1)) / (threads * 2);
+
+    if ((float)threads*blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock)
+    {
+        printf("n is too large, please choose a smaller number!\n");
+    }
+
+    if (blocks > prop.maxGridSize[0])
+    {
+        printf("Grid size <%d> exceeds the device capability <%d>, set block size as %d (original %d)\n",
+               blocks, prop.maxGridSize[0], threads*2, threads);
+
+        blocks /= 2;
+        threads *= 2;
     }
 }
 
-// overload some operators to make vector/matrix calculations easier
 
-SquareMatrix operator*(SquareMatrix a, SquareMatrix b) {
-    SquareMatrix c;
-    for (int i = 0; i < a.dim; i++) {
-        for (int j = 0; j < a.dim; j++) {
-            c.mat[i][j] = 0;
-            for (int k = 0; k < a.dim; k++) {
-                c.mat[i][j] += a.mat[i][k] * b.mat[k][j];
-            }
-        }
-    }
-    return c;
-}
-
-Vec SquareMatrix::operator*(Vec v) {
-    Vec av;
-    for (int i = 0; i < dim; i++) {
-        av.vec[i] = 0;
-        for (int j = 0; j < dim; j++) {
-            av.vec[i] += mat[i][j] * v.vec[j];
-        }
-    }
-
-    return av;
-}
-
-SquareMatrix SquareMatrix::operator*(float a) {
-    SquareMatrix c;
-    for (int i = 0; i < dim; i++) {
-        for (int j = 0; j < dim; j++) {
-            c.mat[i][j] = mat[i][j] * a;
-        }
-    }
-
-    return c;
-}
-
-SquareMatrix operator*(float a, SquareMatrix b) {
-    SquareMatrix c;
-    for (int i = 0; i < b.dim; i++) {
-        for (int j = 0; j < b.dim; j++) {
-            c.mat[i][j] = b.mat[i][j] * a;
-        }
-    }
-
-    return c;
-}
-
-Vec Vec::operator*(float a) {
-    Vec av;
-    for (int i = 0; i < dim; i++) {
-        av.vec[i] = vec[i] * a;
-    }
-
-    return av;
-}
-
-Vec operator*(float a, Vec b) {
-    Vec av;
-    for (int i = 0; i < b.dim; i++) {
-        av.vec[i] = b.vec[i] * a;
-    }
-
-    return av;
-}
-
-Vec operator-(Vec a, Vec b) {
-    Vec c;
-    for (int i=0; i<a.dim; i++) {
-        c.vec[i] = a.vec[i] - b.vec[i];
-    }
-    return c;
-}
-
-Vec operator+(Vec a, Vec b) {
-    Vec c;
-    for (int i=0; i<a.dim; i++) {
-        c.vec[i] = a.vec[i] + b.vec[i];
-    }
-    return c;
-}
-
-float dot(Vec a, Vec b) {
-    float c = 0;
-    for (int i = 0; i<a.dim; i++) {
-        c += a.vec[i] * b.vec[i];
-    }
-
-    return c;
-}
-
-Sea::Sea(int n_layers, int _nx, int _ny, int _nt,
+SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
         float xmin, float xmax,
         float ymin, float ymax, float * _rho,
         float * _Q,
@@ -158,7 +104,7 @@ Sea::Sea(int n_layers, int _nx, int _ny, int _nt,
 
 }
 
-Sea::Sea(const Sea &seaToCopy)
+SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
     : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic)
 {
 
@@ -196,7 +142,7 @@ Sea::Sea(const Sea &seaToCopy)
 }
 
 // deconstructor
-Sea::~Sea() {
+SeaCuda::~SeaCuda() {
     delete[] xs;
     delete[] ys;
     delete[] rho;
@@ -208,16 +154,14 @@ Sea::~Sea() {
 }
 
 // return U state vector
-Vec Sea::U(int l, int x, int y, int t) {
-    Vec u;
+void SeaCuda::U(float * grid, int l, int x, int y, int t, float * u) {
     for (int i=0; i < 3; i++) {
-        u.vec[i] = U_grid[((t * ny + y) * nx + x) * nlayers + l][i];
+        u[i] = grid[(((t * ny + y) * nx + x) * nlayers + l)*3+i];
     }
-    return u;
 }
 
 // set the initial data
-void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
+void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0) {
     for (int i = 0; i < nlayers*nx*ny; i++) {
         U_grid[i][0] = D0[i];
         U_grid[i][1] = Sx0[i];
@@ -229,7 +173,7 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     cout << "Set initial data.\n";
 }
 
-void Sea::bcs(int t) {
+void SeaCuda::bcs(int t) {
     if (periodic) {
 
         for (int l = 0; l < nlayers; l++) {
@@ -269,22 +213,22 @@ void Sea::bcs(int t) {
     }
 }
 
-void Sea::bcs(float ** grid) {
+void SeaCuda::bcs(float * grid) {
     if (periodic) {
 
         for (int l = 0; l < nlayers; l++) {
             for (int y = 0; y < ny; y++){
                 for (int i = 0; i < 3; i++) {
-                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + (nx-2)) * nlayers + l][i];
+                    grid[((y * nx) * nlayers + l)*3+i] = grid[((y * nx + (nx-2)) * nlayers + l)*3+i];
 
-                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + 1) * nlayers + l][i];
+                    grid[((y * nx + (nx-1)) * nlayers + l)*3+i] = grid[((y * nx + 1) * nlayers + l)*3+i];
                 }
             }
             for (int x = 0; x < nx; x++){
                 for (int i = 0; i < 3; i++) {
-                    grid[x * nlayers + l][i] = grid[((ny-2) * nx + x) * nlayers + l][i];
+                    grid[(x * nlayers + l)*3+i] = grid[(((ny-2) * nx + x) * nlayers + l)*3+i];
 
-                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[(nx + x) * nlayers + l][i];
+                    grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = grid[((nx + x) * nlayers + l)*3+i];
                 }
             }
         }
@@ -292,16 +236,16 @@ void Sea::bcs(float ** grid) {
         for (int l = 0; l < nlayers; l++) {
             for (int y = 0; y < ny; y++){
                 for (int i = 0; i < 3; i++) {
-                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + 1) * nlayers + l][i];
+                    grid[((y * nx) * nlayers + l)*3+i] = grid[((y * nx + 1) * nlayers + l)*3+i];
 
-                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + (nx-2)) * nlayers + l][i];
+                    grid[((y * nx + (nx-1)) * nlayers + l)*3+i] = grid[((y * nx + (nx-2)) * nlayers + l)*3+i];
                 }
             }
             for (int x = 0; x < nx; x++){
                 for (int i = 0; i < 3; i++) {
-                    grid[x * nlayers + l][i] = grid[(nx + x) * nlayers + l][i];
+                    grid[(x * nlayers + l)*3+i] = grid[((nx + x) * nlayers + l)*3+i];
 
-                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[((ny-2) * nx + x) * nlayers + l][i];
+                    grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = grid[(((ny-2) * nx + x) * nlayers + l)*3+i];
                 }
 
             }
@@ -309,154 +253,206 @@ void Sea::bcs(float ** grid) {
     }
 }
 
-SquareMatrix Sea::Jx(Vec u) {
+void SeaCuda::Jx(float * u, float * beta_d, float * gamma_up_d, float * jx) {
 
-    float W = sqrt((u.vec[1]*u.vec[1] * gamma_up[0][0] +
-                2.0 * u.vec[1]* u.vec[2] * gamma_up[0][1] +
-                u.vec[2]*u.vec[2] * gamma_up[1][1]) / (u.vec[0]*u.vec[0]) + 1.0);
+    float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
+                2.0 * u[1]* u[2] * gamma_up_d[1] +
+                u[2]*u[2] * gamma_up_d[3]) / (u[0]*u[0]) + 1.0);
     //cout << "W = " << W << '\n';
-    //cout << "u = " << u.vec[0] << ' ' << u.vec[1] << ' ' << u.vec[2] << '\n';
+    //cout << "u = " << u[0] << ' ' << u[1] << ' ' << u[2] << '\n';
 
-    float ph = u.vec[0] / W;
-    float vx = u.vec[1] / (u.vec[0] * W); // u_down
-    float vy = u.vec[2] / (u.vec[0] * W); // v_down
+    float ph = u[0] / W;
+    float vx = u[1] / (u[0] * W); // u_down
+    float vy = u[2] / (u[0] * W); // v_down
 
-    float qx = vx * gamma_up[0][0] + vy * gamma_up[0][1] - beta[0]/alpha;
-
-    float chi = 1.0 / (1.0 - vx*vx * W*W - vy*vy * W*W);
-
-    SquareMatrix jx;
-
-    jx.mat[0][0] = qx/chi - vx;
-    jx.mat[0][1] = (1.0 + vy*vy*W*W)/W;
-    jx.mat[0][2] = -W * vx * vy;
-
-    jx.mat[1][0] = -2.0*pow(W,3)*vx*qx*(vx*vx + vy*vy) + ph*(1.0/W - W*vx*vx);
-    jx.mat[1][1] = qx * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vx*(vy*vy*W*W-1.0);
-    jx.mat[1][2] = -vy*ph*(1.0 + 0.5*W*W*vx*vx);
-
-    jx.mat[2][0] = -W*vy*(2.0*W*W*qx*(vx*vx+vy*vy) + 0.5*ph*vx);
-    jx.mat[2][1] = 0.5*ph*vy*(1.0+vy*vy*W*W);
-    jx.mat[2][2] = qx*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vy*vy;
-
-    jx = jx * chi;
-
-    return jx;
-}
-
-SquareMatrix Sea::Jy(Vec u) {
-
-    float W = sqrt((u.vec[1]*u.vec[1] * gamma_up[0][0] +
-                2.0 * u.vec[1]* u.vec[2] * gamma_up[0][1] +
-                u.vec[2]*u.vec[2] * gamma_up[1][1]) / (u.vec[0]*u.vec[0]) + 1.0);
-
-    float ph = u.vec[0] / W;
-    float vx = u.vec[1] / (u.vec[0] * W); // u_down
-    float vy = u.vec[2] / (u.vec[0] * W); // v_down
-
-    float qy = vy * gamma_up[1][1] + vx * gamma_up[0][1] - beta[1]/alpha;
+    float qx = vx * gamma_up_d[0] + vy * gamma_up_d[1] - beta_d[0]/alpha;
 
     float chi = 1.0 / (1.0 - vx*vx * W*W - vy*vy * W*W);
 
-    SquareMatrix jy;
+    jx[0*3+0] = qx/chi - vx;
+    jx[0*3+1] = (1.0 + vy*vy*W*W)/W;
+    jx[0*3+2] = -W * vx * vy;
 
-    jy.mat[0][0] = qy/chi - vx;
-    jy.mat[0][1] = -W * vx * vy;
-    jy.mat[0][2] = (1.0 + vx*vx*W*W)/W;
+    jx[1*3+0] = -2.0*pow(W,3)*vx*qx*(vx*vx + vy*vy) + ph*(1.0/W - W*vx*vx);
+    jx[1*3+1] = qx * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vx*(vy*vy*W*W-1.0);
+    jx[1*3+2] = -vy*ph*(1.0 + 0.5*W*W*vx*vx);
 
-    jy.mat[1][0] = -W*vx*(2.0*W*W*qy*(vx*vx+vy*vy) + 0.5*ph*vy);
-    jy.mat[1][1] = qy*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vx*vy;
-    jy.mat[1][2] = 0.5*ph*vx*(1.0+vx*vx*W*W);
+    jx[2*3+0] = -W*vy*(2.0*W*W*qx*(vx*vx+vy*vy) + 0.5*ph*vx);
+    jx[2*3+1] = 0.5*ph*vy*(1.0+vy*vy*W*W);
+    jx[2*3+2] = qx*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vy*vy;
 
-    jy.mat[2][0] = -2.0*pow(W,3)*vy*qy*(vx*vx + vy*vy) + ph*(1.0/W - W*vy*vy);
-    jy.mat[2][1] = -vx*ph*(1.0 + 0.5*W*W*vy*vy);
-    jy.mat[2][2] = qy * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vy*(vx*vx*W*W-1.0);
-
-    jy  = jy * chi;
-
-    return jy;
+    for (int i = 0; i < 9; i++) {
+        jx[i] *= chi;
+    }
 }
 
-void Sea::evolve(int t) {
+void SeaCuda::Jy(float * u, float * beta_d, float * gamma_up_d, float * jy) {
+
+    float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
+                2.0 * u[1]* u[2] * gamma_up_d[1] +
+                u[2]*u[2] * gamma_up_d[3]) / (u[0]*u[0]) + 1.0);
+
+    float ph = u[0] / W;
+    float vx = u[1] / (u[0] * W); // u_down
+    float vy = u[2] / (u[0] * W); // v_down
+
+    float qy = vy * gamma_up_d[3] + vx * gamma_up_d[1] - beta_d[1]/alpha;
+
+    float chi = 1.0 / (1.0 - vx*vx * W*W - vy*vy * W*W);
+
+    jy[0] = qy/chi - vx;
+    jy[1] = -W * vx * vy;
+    jy[2] = (1.0 + vx*vx*W*W)/W;
+
+    jy[1*3] = -W*vx*(2.0*W*W*qy*(vx*vx+vy*vy) + 0.5*ph*vy);
+    jy[1*3+1] = qy*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vx*vy;
+    jy[1*3+2] = 0.5*ph*vx*(1.0+vx*vx*W*W);
+
+    jy[2*3+0] = -2.0*pow(W,3)*vy*qy*(vx*vx + vy*vy) + ph*(1.0/W - W*vy*vy);
+    jy[2*3+1] = -vx*ph*(1.0 + 0.5*W*W*vy*vy);
+    jy[2*3+2] = qy * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vy*(vx*vx*W*W-1.0);
+
+    for (int i = 0; i < 9; i++) {
+        jy[i] *= chi;
+    }
+
+}
+
+void SeaCuda::evolve(int t, int numBlocks, int numThreads, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d) {
 
     if (t % 50 == 0) {
         cout << "t = " << t << "\n";
     }
 
-    Vec u, u_ip, u_im, u_jp, u_jm, u_pp, u_mm, u_imjp, u_ipjm, up;
+    float *u, *u_ip, *u_im, *u_jp, *u_jm, *u_pp, *u_mm, *u_imjp, *u_ipjm;
+    float *A, *B, *A2, *B2, *AB;
 
-    float ** Up = new float*[nlayers*nx*ny];
-    float ** U_half = new float*[nlayers*nx*ny];
-    for (int i=0; i < nlayers*nx*ny; i++){
-        Up[i] = new float[3];
-        U_half[i] = new float[3];
-        for (int j = 0; j < 3; j++) {
-            // initialise
-            Up[i][j] = 0.0;
-            U_half[i][j] = 0.0;
-        }
+    u = (float *) malloc(3*sizeof(float));
+    u_ip = (float *) malloc(3*sizeof(float));
+    u_im = (float *) malloc(3*sizeof(float));
+    u_jp = (float *) malloc(3*sizeof(float));
+    u_jm = (float *) malloc(3*sizeof(float));
+    u_pp = (float *) malloc(3*sizeof(float));
+    u_mm = (float *) malloc(3*sizeof(float));
+    u_imjp = (float *) malloc(3*sizeof(float));
+    u_ipjm = (float *) malloc(3*sizeof(float));
+
+    A = (float *) malloc(9*sizeof(float));
+    B = (float *) malloc(9*sizeof(float));
+    A2 = (float *) malloc(9*sizeof(float));
+    B2 = (float *) malloc(9*sizeof(float));
+    AB = (float *) malloc(9*sizeof(float));
+
+    float d, e, f, g, h;
+
+    float *Up, *U_half;
+    Up = (float *) malloc(nlayers*nx*ny*3*sizeof(float));
+    U_half = (float *) malloc(nlayers*nx*ny*3*sizeof(float));
+    for (int i=0; i < nlayers*nx*ny*3; i++){
+        // initialise
+        Up[i] = 0.0;
+        U_half[i] = 0.0;
     }
 
     for (int l = 0; l < nlayers; l++) {
         for (int x = 1; x < (nx-1); x++) {
             for (int y = 1; y < (ny-1); y++) {
-                u = U(l, x, y, t);
-                u_ip = U(l, x+1, y, t);
-                u_im = U(l, x-1, y, t);
-                u_jp = U(l, x, y+1, t);
-                u_jm = U(l, x, y-1, t);
-                u_pp = U(l, x+1, y+1, t);
-                u_mm = U(l, x-1, y-1, t);
-                u_ipjm = U(l, x+1, y-1, t);
-                u_imjp = U(l, x-1, y+1, t);
+                U(U_grid_d, l, x, y, t, u);
+                U(U_grid_d, l, x+1, y, t, u_ip);
+                U(U_grid_d, l, x-1, y, t, u_im);
+                U(U_grid_d, l, x, y+1, t, u_jp);
+                U(U_grid_d, l, x, y-1, t, u_jm);
+                U(U_grid_d, l, x+1, y+1, t, u_pp);
+                U(U_grid_d, l, x-1, y-1, t, u_mm);
+                U(U_grid_d, l, x+1, y-1, t, u_ipjm);
+                U(U_grid_d, l, x-1, y+1, t, u_imjp);
 
-                SquareMatrix A = Jx(u);
-                SquareMatrix B = Jy(u);
+                Jx(u, beta_d, gamma_up_d, A);
+                Jy(u, beta_d, gamma_up_d, B);
 
-                up = u -
-                    0.5 * (dt/dx) * A * (u_ip - u_im) -
-                    0.5 * (dt/dy) * B * (u_jp - u_jm) +
-                    0.5 * dt*dt/(dx*dx) * A * A * (u_ip - 2.0 * u + u_im) +
-                    0.5 * dt*dt/(dy*dy) * B * B * (u_jp - 2.0 * u + u_jm) -
-                    0.25 * dt*dt/(dx*dy) * A * B * (u_pp - u_ipjm - u_imjp + u_mm);
-
-                // copy to array
+                // matrix multiplication
                 for (int i = 0; i < 3; i++) {
-                    Up[(y * nx + x) * nlayers + l][i] = up.vec[i];
+                    for (int j = 0; j < 3; j++) {
+                        A2[i*3+j] = 0;
+                        B2[i*3+j] = 0;
+                        AB[i*3+j] = 0;
+                        for (int k = 0; k < 3; k++) {
+                            A2[i*3+j] += A[i*3+k] * A[k*3+j];
+                            B2[i*3+j] += B[i*3+k] * B[k*3+j];
+                            AB[i*3+j] += A[i*3+k] * B[k*3+j];
+                        }
+                    }
+                }
+
+                // going to do matrix calculations to calculate different terms
+                for (int i = 0; i < 3; i ++) {
+                    d = 0;
+                    e = 0;
+                    f = 0;
+                    g = 0;
+                    h = 0;
+                    for (int j = 0; j < 3; j++) {
+                        d += A[i*3+j] * (u_ip[j] - u_im[j]);
+                        e += B[i*3+j] * (u_jp[j] - u_jm[j]);
+                        f += A2[i*3+j] * (u_ip[j] - 2.0 * u[j] + u_im[j]);
+                        g += B2[i*3+j] * (u_jp[j] - 2.0 * u[j] + u_jm[j]);
+                        h += AB[i*3+j] * (u_pp[j] - u_ipjm[j] - u_imjp[j] + u_mm[j]);
+                    }
+
+                    Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] -
+                            0.5 * dt/dx * d -
+                            0.5 * dt/dy * e +
+                            0.5 * dt*dt/(dx*dx) * f +
+                            0.5 * dt*dt/(dy*dy) * g -
+                            0.25 * dt*dt/(dx*dy) * h;
+
                 }
 
             }
         }
     }
 
+    free(u);
+    free(u_ip);
+    free(u_im);
+    free(u_jp);
+    free(u_pp);
+    free(u_mm);
+    free(u_imjp);
+    free(u_ipjm);
+    free(A);
+    free(B);
+    free(A2);
+    free(B2);
+    free(AB);
+
     // enforce boundary conditions
     bcs(Up);
 
     // copy to U_half
-    for (int n = 0; n < nlayers*nx*ny; n++) {
-        for (int i = 0; i < 3; i++) {
-            U_half[n][i] = Up[n][i];
-        }
+    for (int n = 0; n < nlayers*nx*ny*3; n++) {
+        U_half[n] = Up[n];
     }
 
-    float * ph = new float[nlayers];
-    float * Sx = new float[nlayers];
-    float * Sy = new float[nlayers];
-    float * W = new float[nlayers];
+    float *ph, *Sx, *Sy, *W, *sum_phs;
+    ph = (float *) malloc(nlayers*sizeof(float));
+    Sx = (float *) malloc(nlayers*sizeof(float));
+    Sy = (float *) malloc(nlayers*sizeof(float));
+    W = (float *) malloc(nlayers*sizeof(float));
 
-    float * sum_phs = new float[nlayers*nx*ny];
+    sum_phs = (float *) malloc(nlayers*nx*ny*sizeof(float));
 
     // do source terms
     for (int x = 0; x < nx; x++) {
         for (int y = 0; y < ny; y++) {
 
             for (int l = 0; l < nlayers; l++) {
-                ph[l] = U_half[(y * nx + x) * nlayers + l][0];
-                Sx[l] = U_half[(y * nx + x) * nlayers + l][1];
-                Sy[l] = U_half[(y * nx + x) * nlayers + l][2];
-                W[l] = sqrt((Sx[l] * Sx[l] * gamma_up[0][0] +
-                               2.0 * Sx[l] * Sy[l] * gamma_up[0][1] +
-                               Sy[l] * Sy[l] * gamma_up[1][1]) /
+                ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
+                Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
+                Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
+                W[l] = sqrt((Sx[l] * Sx[l] * gamma_up_d[0] +
+                               2.0 * Sx[l] * Sy[l] * gamma_up_d[1] +
+                               Sy[l] * Sy[l] * gamma_up_d[3]) /
                                (ph[l] * ph[l]) + 1.0);
                 ph[l] /= W[l];
             }
@@ -468,31 +464,31 @@ void Sea::evolve(int t) {
                 sum_phs[(y * nx + x) * nlayers + l] = 0.0;
 
                 if (l < (nlayers - 1)) {
-                    sum_qs += -rho[l+1] / rho[l] * abs(Q[l+1] - Q[l]);
-                    deltaQx = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
-                    deltaQy = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
+                    sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[l+1] - Q_d[l]);
+                    deltaQx = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
+                    deltaQy = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
                 }
                 if (l > 0) {
-                    sum_qs += abs(Q[l] - Q[l-1]);
-                    deltaQx = max(float(0.0), Q[l] - Q[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
-                    deltaQy = max(float(0.0), Q[l] - Q[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+                    sum_qs += abs(Q_d[l] - Q_d[l-1]);
+                    deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
+                    deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
                 }
 
                 for (int j = 0; j < l; j++) {
-                    sum_phs[(y * nx + x) * nlayers + l] += rho[j] / rho[l] * ph[j];
+                    sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] * ph[j];
                 }
                 for (int j = l+1; j < nlayers; j++) {
                     sum_phs[(y * nx + x) * nlayers + l] += ph[j];
                 }
 
                 // D
-                Up[(y * nx + x) * nlayers + l][0] += dt * sum_qs;
+                Up[((y * nx + x) * nlayers + l)*3] += dt * sum_qs;
 
                 // Sx
-                Up[(y * nx + x) * nlayers + l][1] += dt * ph[l] * (-deltaQx);
+                Up[((y * nx + x) * nlayers + l)*3+1] += dt * ph[l] * (-deltaQx);
 
                 // Sy
-                Up[(y * nx + x) * nlayers + l][2] += dt * ph[l] * (-deltaQy);
+                Up[((y * nx + x) * nlayers + l)*3+2] += dt * ph[l] * (-deltaQy);
 
 
             }
@@ -503,10 +499,10 @@ void Sea::evolve(int t) {
         for (int y = 1; y < (ny-1); y++) {
             for (int l = 0; l < nlayers; l++) {
                 // Sx
-                Up[(y * nx + x) * nlayers + l][1] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+                Up[((y * nx + x) * nlayers + l)*3+1] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
 
                 // Sy
-                Up[(y * nx + x) * nlayers + l][2] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+                Up[((y * nx + x) * nlayers + l)*3+2] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
 
 
             }
@@ -515,36 +511,76 @@ void Sea::evolve(int t) {
 
 
     // copy back to grid
-    for (int n = 0; n < nlayers*nx*ny; n++) {
-        for (int i = 0; i < 3; i++) {
-            U_grid[(t+1) * nlayers*nx*ny + n][i] = Up[n][i];
-        }
+    for (int n = 0; n < nlayers*nx*ny*3; n++) {
+        U_grid_d[n] = Up[n];
     }
 
     bcs(t+1);
 
-    delete[] ph;
-    delete[] Sx;
-    delete[] Sy;
-    delete[] W;
-    delete[] sum_phs;
+    free(ph);
+    free(Sx);
+    free(Sy);
+    free(W);
+    free(sum_phs);
 
-    for (int i=0; i < nlayers*nx*ny; i++){
-        delete[] Up[i];
-        delete[] U_half[i];
-    }
+    free(Up);
+    free(U_half);
 
 }
 
-void Sea::run() {
+void SeaCuda::run() {
     cout << "Beginning evolution.\n";
 
+    // set up GPU stuff
+    int count;
+    cudaGetDeviceCount(&count);
+    //dim3 threadsPerBlock(20,20,nlayers);
+    //dim3 numBlocks(nx/threadsPerBlock.x,ny/threadsPerBlock.y,1);
+
+    int size = 3 * nx * ny * nlayers * (nt+1);
+    int maxThreads = 1024;
+    int maxBlocks = 64;
+
+    int numBlocks = 0;
+    int numThreads = 0;
+    getNumBlocksAndThreads(size, maxBlocks, maxThreads, numBlocks, numThreads);
+
+    float * beta_d;
+    float * gamma_up_d;
+    float * U_grid_d;
+    float * rho_d;
+    float * Q_d;
+
+    // allocate memory on device
+    cudaMalloc((void**)&beta_d, 2*sizeof(float));
+    cudaMalloc((void**)&gamma_up_d, 4*sizeof(float));
+    cudaMalloc((void**)&U_grid_d, numBlocks*sizeof(float));
+    cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
+    cudaMalloc((void**)&Q_d, nlayers*sizeof(float));
+
+    // copy stuff to GPU
+    cudaMemcpy(beta_d, beta, 2*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(gamma_up_d, gamma_up, 4*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(U_grid_d, U_grid, numBlocks*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Q_d, Q, nlayers*sizeof(float), cudaMemcpyHostToDevice);
+
     for (int t = 0; t < nt; t++) {
-        evolve(t);
+        evolve(t, numBlocks, numThreads, beta_d, gamma_up_d, U_grid_d, rho_d, Q_d);
     }
+
+    // copy stuff back
+    cudaMemcpy(U_grid, U_grid_d, numBlocks*sizeof(float), cudaMemcpyDeviceToHost);
+
+    // delete some stuff
+    cudaFree(beta_d);
+    cudaFree(gamma_up_d);
+    cudaFree(U_grid_d);
+    cudaFree(rho_d);
+    cudaFree(Q_d);
 }
 
-void Sea::output(char * filename) {
+void SeaCuda::output(char * filename) {
     // open file
     ofstream outFile(filename);
 
@@ -598,7 +634,7 @@ int main() {
     }
 
     // make a sea
-    Sea sea(nlayers, nx, ny, nt, xmin, xmax, ymin, ymax, rho, Q, alpha, beta, gamma, periodic);
+    SeaCuda sea(nlayers, nx, ny, nt, xmin, xmax, ymin, ymax, rho, Q, alpha, beta, gamma, periodic);
 
     // set initial data
     for (int x = 1; x < (nx - 1); x++) {
