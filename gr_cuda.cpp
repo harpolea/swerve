@@ -269,6 +269,46 @@ void Sea::bcs(int t) {
     }
 }
 
+void Sea::bcs(float ** grid) {
+    if (periodic) {
+
+        for (int l = 0; l < nlayers; l++) {
+            for (int y = 0; y < ny; y++){
+                for (int i = 0; i < 3; i++) {
+                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + (nx-2)) * nlayers + l][i];
+
+                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + 1) * nlayers + l][i];
+                }
+            }
+            for (int x = 0; x < nx; x++){
+                for (int i = 0; i < 3; i++) {
+                    grid[x * nlayers + l][i] = grid[((ny-2) * nx + x) * nlayers + l][i];
+
+                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[(nx + x) * nlayers + l][i];
+                }
+            }
+        }
+    } else { // outflow
+        for (int l = 0; l < nlayers; l++) {
+            for (int y = 0; y < ny; y++){
+                for (int i = 0; i < 3; i++) {
+                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + 1) * nlayers + l][i];
+
+                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + (nx-2)) * nlayers + l][i];
+                }
+            }
+            for (int x = 0; x < nx; x++){
+                for (int i = 0; i < 3; i++) {
+                    grid[x * nlayers + l][i] = grid[(nx + x) * nlayers + l][i];
+
+                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[((ny-2) * nx + x) * nlayers + l][i];
+                }
+
+            }
+        }
+    }
+}
+
 SquareMatrix Sea::Jx(Vec u) {
 
     float W = sqrt((u.vec[1]*u.vec[1] * gamma_up[0][0] +
@@ -346,11 +386,14 @@ void Sea::evolve(int t) {
     Vec u, u_ip, u_im, u_jp, u_jm, u_pp, u_mm, u_imjp, u_ipjm, up;
 
     float ** Up = new float*[nlayers*nx*ny];
+    float ** U_half = new float*[nlayers*nx*ny];
     for (int i=0; i < nlayers*nx*ny; i++){
         Up[i] = new float[3];
+        U_half[i] = new float[3];
         for (int j = 0; j < 3; j++) {
             // initialise
             Up[i][j] = 0.0;
+            U_half[i][j] = 0.0;
         }
     }
 
@@ -366,10 +409,6 @@ void Sea::evolve(int t) {
                 u_mm = U(l, x-1, y-1, t);
                 u_ipjm = U(l, x+1, y-1, t);
                 u_imjp = U(l, x-1, y+1, t);
-
-                //cout << "D = " << U_grid[((t * ny + y) * nx + x) * nlayers + l][0] << '\n';
-
-                //cout << "u[D] = " << u.vec[0] << '\n';
 
                 SquareMatrix A = Jx(u);
                 SquareMatrix B = Jy(u);
@@ -390,6 +429,91 @@ void Sea::evolve(int t) {
         }
     }
 
+    // enforce boundary conditions
+    bcs(Up);
+
+    // copy to U_half
+    for (int n = 0; n < nlayers*nx*ny; n++) {
+        for (int i = 0; i < 3; i++) {
+            U_half[n][i] = Up[n][i];
+        }
+    }
+
+    float * ph = new float[nlayers];
+    float * Sx = new float[nlayers];
+    float * Sy = new float[nlayers];
+    float * W = new float[nlayers];
+
+    float * sum_phs = new float[nlayers*nx*ny];
+
+    // do source terms
+    for (int x = 0; x < nx; x++) {
+        for (int y = 0; y < ny; y++) {
+
+            for (int l = 0; l < nlayers; l++) {
+                ph[l] = U_half[(y * nx + x) * nlayers + l][0];
+                Sx[l] = U_half[(y * nx + x) * nlayers + l][1];
+                Sy[l] = U_half[(y * nx + x) * nlayers + l][2];
+                W[l] = sqrt((Sx[l] * Sx[l] * gamma_up[0][0] +
+                               2.0 * Sx[l] * Sy[l] * gamma_up[0][1] +
+                               Sy[l] * Sy[l] * gamma_up[1][1]) /
+                               (ph[l] * ph[l]) + 1.0);
+                ph[l] /= W[l];
+            }
+
+            for (int l = 0; l < nlayers; l++) {
+                float sum_qs = 0.0;
+                float deltaQx = 0.0;
+                float deltaQy = 0.0;
+                sum_phs[(y * nx + x) * nlayers + l] = 0.0;
+
+                if (l < (nlayers - 1)) {
+                    sum_qs += -rho[l+1] / rho[l] * abs(Q[l+1] - Q[l]);
+                    deltaQx = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
+                    deltaQy = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
+                }
+                if (l > 0) {
+                    sum_qs += abs(Q[l] - Q[l-1]);
+                    deltaQx = max(float(0.0), Q[l] - Q[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
+                    deltaQy = max(float(0.0), Q[l] - Q[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+                }
+
+                for (int j = 0; j < l; j++) {
+                    sum_phs[(y * nx + x) * nlayers + l] += rho[j] / rho[l] * ph[j];
+                }
+                for (int j = l+1; j < nlayers; j++) {
+                    sum_phs[(y * nx + x) * nlayers + l] += ph[j];
+                }
+
+                // D
+                Up[(y * nx + x) * nlayers + l][0] += dt * sum_qs;
+
+                // Sx
+                Up[(y * nx + x) * nlayers + l][1] += dt * ph[l] * (-deltaQx);
+
+                // Sy
+                Up[(y * nx + x) * nlayers + l][2] += dt * ph[l] * (-deltaQy);
+
+
+            }
+        }
+    }
+
+    for (int x = 1; x < (nx-1); x++) {
+        for (int y = 1; y < (ny-1); y++) {
+            for (int l = 0; l < nlayers; l++) {
+                // Sx
+                Up[(y * nx + x) * nlayers + l][1] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+
+                // Sy
+                Up[(y * nx + x) * nlayers + l][2] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+
+
+            }
+        }
+    }
+
+
     // copy back to grid
     for (int n = 0; n < nlayers*nx*ny; n++) {
         for (int i = 0; i < 3; i++) {
@@ -398,6 +522,17 @@ void Sea::evolve(int t) {
     }
 
     bcs(t+1);
+
+    delete[] ph;
+    delete[] Sx;
+    delete[] Sy;
+    delete[] W;
+    delete[] sum_phs;
+
+    for (int i=0; i < nlayers*nx*ny; i++){
+        delete[] Up[i];
+        delete[] U_half[i];
+    }
 
 }
 

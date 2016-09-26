@@ -42,6 +42,7 @@ public:
     void initial_data(float * D0, float * Sx0, float * Sy0);
 
     void bcs(int t);
+    void bcs(float ** grid);
 
     void evolve(int t);
 
