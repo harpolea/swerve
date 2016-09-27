@@ -1,9 +1,10 @@
 #include <iostream>
 #include <cmath>
-//#include <cuda.h>
 #include "Sea.h"
 #include <fstream>
 using namespace std;
+
+// compile with g++ gr_serial.cpp -o gr_serial
 
 Vec::Vec() {
     for (int i = 0; i < dim; i++) {

@@ -10,11 +10,6 @@
 
 using namespace std;
 
-
-// TODO: GET RID OF THIS
-//void __syncthreads() {}
-
-
 SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
         float xmin, float xmax,
         float ymin, float ymax, float * _rho,
@@ -209,8 +204,8 @@ int main() {
 
     // initialise parameters
     static const int nlayers = 2;
-    int nx = 200;
-    int ny = 200;
+    int nx = 50;
+    int ny = 50;
     int nt = 600;
     float xmin = 0.0;
     float xmax = 10.0;
