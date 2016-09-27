@@ -204,8 +204,8 @@ int main() {
 
     // initialise parameters
     static const int nlayers = 2;
-    int nx = 50;
-    int ny = 50;
+    int nx = 150;
+    int ny = 150;
     int nt = 600;
     float xmin = 0.0;
     float xmax = 10.0;
@@ -222,7 +222,7 @@ int main() {
     float Sx0[nlayers*nx*ny];
     float Sy0[nlayers*nx*ny];
 
-    for (int i =0; i < nlayers; i++) {
+    for (int i = 0; i < nlayers; i++) {
         rho[i] = 1.0;
         Q[i] = 0.0;
     }

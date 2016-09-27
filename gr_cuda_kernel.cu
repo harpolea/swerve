@@ -157,7 +157,8 @@ __device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, fl
 }
 
 __global__ void evolve(float * beta_d, float * gamma_up_d,
-                     float * Un_d, float * Up, float * U_half, float * rho_d, float * Q_d,
+                     float * Un_d, float * Up, float * U_half,
+                     float * sum_phs, float * rho_d, float * Q_d,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt) {
 
@@ -249,6 +250,11 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
         }
 
+        if (isnan(Up[((y * nx + x) * nlayers + l)*3])) {
+            printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*3]);
+        }
+
+
     }
 
     free(u);
@@ -262,82 +268,121 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
     // enforce boundary conditions
     bcs(Up, nx, ny, nlayers);
-    /*
+
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
         for (int i = 0; i < 3; i++) {
-            U_half[((y * nx + x) * nlayers + l)*3+i] = Up[((y * nx + x) * nlayers + l)*3+i];
+            U_half[((y * nx + x) * nlayers + l)*3+i] =
+                Up[((y * nx + x) * nlayers + l)*3+i];
         }
+    }
+
+    float W = 1.0;
+
+    // do source terms
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+
+        //ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
+        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
+        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
+        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*3+1] *
+            U_half[((y * nx + x) * nlayers + l)*3+1] * gamma_up_d[0] +
+            2.0 * U_half[((y * nx + x) * nlayers + l)*3+1] *
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            gamma_up_d[1] +
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            gamma_up_d[3]) /
+            (U_half[((y * nx + x) * nlayers + l)*3] *
+            U_half[((y * nx + x) * nlayers + l)*3]) + 1.0));
+
+        if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
+            printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
+        }
+        U_half[((y * nx + x) * nlayers + l)*3] /= W;
+
     }
 
     __syncthreads();
 
+    sum_phs[(y * nx + x) * nlayers + l] = 0.0;
 
-    float *ph, *Sx, *Sy, *W, *sum_phs;
-    ph = (float *) malloc(nlayers*sizeof(float));
-    Sx = (float *) malloc(nlayers*sizeof(float));
-    Sy = (float *) malloc(nlayers*sizeof(float));
-    W = (float *) malloc(nlayers*sizeof(float));
-
-    sum_phs = (float *) malloc(nlayers*nx*ny*sizeof(float));
-
-    // do source terms
     if ((x < nx) && (y < ny) && (l < nlayers)) {
-        ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
-        Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
-        Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
-        W[l] = sqrt((Sx[l] * Sx[l] * gamma_up_d[0] +
-                       2.0 * Sx[l] * Sy[l] * gamma_up_d[1] +
-                       Sy[l] * Sy[l] * gamma_up_d[3]) /
-                       (ph[l] * ph[l]) + 1.0);
-        ph[l] /= W[l];
-
-
-        __syncthreads();
 
         float sum_qs = 0.0;
         float deltaQx = 0.0;
         float deltaQy = 0.0;
-        sum_phs[(y * nx + x) * nlayers + l] = 0.0;
 
         if (l < (nlayers - 1)) {
             sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[l+1] - Q_d[l]);
-            deltaQx = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
-            deltaQy = rho_d[l+1] / rho_d[l] * max(float(0.0), Q_d[l] - Q_d[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
+            deltaQx = rho_d[l+1] / rho_d[l] *
+                max(float(0.0), Q_d[l] - Q_d[l+1]) *
+                (U_half[((y * nx + x) * nlayers + l)*3+1] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
+                 U_half[((y * nx + x) * nlayers + l)*3];
+            deltaQy = rho_d[l+1] / rho_d[l] *
+                max(float(0.0), Q_d[l] - Q_d[l+1]) *
+                (U_half[((y * nx + x) * nlayers + l)*3+2] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
+                 U_half[((y * nx + x) * nlayers + l)*3];
         }
         if (l > 0) {
             sum_qs += abs(Q_d[l] - Q_d[l-1]);
-            deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
-            deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+            deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) *
+                (U_half[((y * nx + x) * nlayers + l)*3+1] -
+                 U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
+                 U_half[((y * nx + x) * nlayers + l)*3];
+            deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) *
+                (U_half[((y * nx + x) * nlayers + l)*3+2] -
+                 U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
+                 U_half[((y * nx + x) * nlayers + l)*3];
         }
 
         for (int j = 0; j < l; j++) {
-            sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] * ph[j];
+            sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
+                U_half[((y * nx + x) * nlayers + j)*3];
         }
         for (int j = l+1; j < nlayers; j++) {
-            sum_phs[(y * nx + x) * nlayers + l] += ph[j];
+            sum_phs[(y * nx + x) * nlayers + l] +=
+                U_half[((y * nx + x) * nlayers + j)*3];
         }
 
         // D
         Up[((y * nx + x) * nlayers + l)*3] += dt * sum_qs;
 
         // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] += dt * ph[l] * (-deltaQx);
+        Up[((y * nx + x) * nlayers + l)*3+1] += dt *
+            U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQx);
 
         // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] += dt * ph[l] * (-deltaQy);
+        Up[((y * nx + x) * nlayers + l)*3+2] += dt *
+            U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQy);
 
     }
 
     __syncthreads();
 
+    // code works with this bit commented out.
+
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-    // Sx
-    Up[((y * nx + x) * nlayers + l)*3+1] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+        //float a = sum_phs[(y * nx + x+1) * nlayers + l] -
+            //sum_phs[(y * nx + x-1) * nlayers + l];
+        //if (isnan(a)) {
+            //printf("a is %f! ", a);
+        //}
 
-    // Sy
-    Up[((y * nx + x) * nlayers + l)*3+2] -= dt * U_half[((y * nx + x) * nlayers + l)*3] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+        // Sx
+        Up[((y * nx + x) * nlayers + l)*3+1] += -dt *
+            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) *
+            (sum_phs[(y * nx + x+1) * nlayers + l] -
+             sum_phs[(y * nx + x-1) * nlayers + l]);
+
+        // Sy
+        Up[((y * nx + x) * nlayers + l)*3+2] += -dt *
+            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
+            (sum_phs[((y+1) * nx + x) * nlayers + l] -
+             sum_phs[((y-1) * nx + x) * nlayers + l]);
 
 
     }
@@ -346,19 +391,11 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
     bcs(Up, nx, ny, nlayers);
 
-    free(ph);
-    free(Sx);
-    free(Sy);
-    free(W);
-    free(sum_phs);
-    */
-    __syncthreads();
-
-
     // copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
         for (int i = 0; i < 3; i++) {
-            Un_d[((y * nx + x) * nlayers + l)*3+i] = Up[((y * nx + x) * nlayers + l)*3+i];
+            Un_d[((y * nx + x) * nlayers + l)*3+i] =
+                Up[((y * nx + x) * nlayers + l)*3+i];
         }
     }
 
@@ -382,7 +419,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
 
     //int size = 3 * nx * ny * nlayers;
     int maxThreads = 256;
-    int maxBlocks = 64;
+    int maxBlocks = 256; //64;
 
     //int numBlocks = 0;
     //int numThreads = 0;
@@ -427,9 +464,10 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Q_d, Q, nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
-    float *Up_d, *U_half_d;
+    float *Up_d, *U_half_d, *sum_phs_d;
     cudaMalloc((void**)&Up_d, nlayers*nx*ny*3*sizeof(float));
     cudaMalloc((void**)&U_half_d, nlayers*nx*ny*3*sizeof(float));
+    cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
 
     for (int t = 0; t < nt; t++) {
 
@@ -438,7 +476,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         }
 
         evolve<<<blocks, threads>>>(beta_d, gamma_up_d, Un_d,
-               Up_d, U_half_d, rho_d, Q_d,
+               Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                nx, ny, nlayers, alpha,
                dx, dy, dt);
 
@@ -467,6 +505,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaFree(Q_d);
     cudaFree(Up_d);
     cudaFree(U_half_d);
+    cudaFree(sum_phs_d);
 
     free(Un_h);
 }
