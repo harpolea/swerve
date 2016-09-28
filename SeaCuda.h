@@ -3,7 +3,7 @@
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
          float * rho, float * Q, int nx, int ny, int nlayers,
-         int nt, float alpha, float dx, float dy, float dt);
+         int nt, float alpha, float dx, float dy, float dt, int dprint);
 
 class SeaCuda {
 public:
@@ -12,11 +12,9 @@ public:
             float ymin, float ymax, float * _rho,
             float * _Q,
             float _alpha, float * _beta, float * _gamma,
-            bool _periodic);
+            bool _periodic, int _dprint);
 
     SeaCuda(const SeaCuda &); // copy constructor
-
-    void U(float * grid, int l, int x, int y, int t, float * u);
 
     void initial_data(float * D0, float * Sx0, float * Sy0);
 
@@ -55,6 +53,8 @@ private:
     float gamma_up[2*2];
 
     bool periodic;
+
+    int dprint; // number of timesteps between printouts
 
     //void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx);
     //void Jy(float * u, float * beta_d, float * gamma_up_d, float * jx);

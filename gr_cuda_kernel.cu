@@ -22,7 +22,7 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 &blocks, dim3 &threads)
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 &kernels, dim3 &blocks, dim3 &threads)
 {
 
     //get device capability, to avoid block/grid size exceed the upper bound
@@ -33,36 +33,108 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
     int total = nx*ny*nlayers;
 
-    int total_threads = (total < maxThreads*2) ? nextPow2((total + 1)/ 2) : maxThreads;
-    threads.x = int(floor(sqrt(float(total_threads)/float(nlayers))));
-    threads.y = int(floor(sqrt(float(total_threads)/float(nlayers))));
-    threads.z = nlayers;
-    total_threads = threads.x * threads.y * threads.z;
-    int total_blocks = int(ceil(float(total) / float(total_threads)));
+    if (total > maxBlocks * maxThreads) {
+        kernels.x = int(ceil(float(nx-2) / (sqrt(float(maxThreads * maxBlocks)) - 2.0)))
+        kernels.y = int(ceil(float(ny-2) / (sqrt(float(maxThreads * maxBlocks)) - 2.0)))
 
-    //printf("total blocks: %i\n", total_blocks);
 
-    blocks.x = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*nx));
-    blocks.y = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*ny));
+        blocks = (dim3 *) malloc(kernels.x*kernels.y*sizeof(dim3));
+        threads = (dim3 *) malloc(kernels.x*kernels.y*sizeof(dim3));
 
-    total_blocks = blocks.x * blocks.y;
+        for (int j = 0; j < (kernels.y-1); j++) {
+            for (int i = 0; i < (kernels.x-1); i++) {
+                threads[j*kernels.x + i].x = int(sqrt(float(maxThreads/nlayers)));
+                threads[j*kernels.x + i].y = int(sqrt(float(maxThreads/nlayers)));
+                threads[j*kernels.x + i].z = nlayers;
 
-    //printf("total blocks: %i\n", total_blocks);
+                blocks[j*kernels.x + i].x = int(sqrt(float(maxBlocks)));
+                blocks[j*kernels.x + i].y = int(sqrt(float(maxBlocks)));
+            }
 
-    if ((float)total_threads*total_blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock)
-    {
-        printf("n is too large, please choose a smaller number!\n");
-    }
 
-    if (total_blocks > prop.maxGridSize[0])
-    {
-        printf("Grid size <%d> exceeds the device capability <%d>, set block size as %d (original %d)\n",
-               total_blocks, prop.maxGridSize[0], total_threads*2, total_threads);
+        }
+        // kernels.x-1
+        int nx_remaining = nx - threads[0].x * blocks[0].x;
+        for (int j = 0; j < (kernels.y-1); j++) {
 
-        blocks.x /= 2;
-        blocks.y /= 2;
-        threads.x *= 2;
-        threads.y *= 2;
+
+            threads[j*kernels.x + kernels.x-1].y =
+                int(sqrt(float(maxThreads/nlayers)));
+            threads[j*kernels.x + kernels.x-1].z = nlayers;
+
+            threads[j*kernels.x + kernels.x-1].x =
+                (nx_remaining < threads[j*kernels.x + kernels.x-1].y * nlayers) ? nx_remaining : threads[j*kernels.x + kernels.x-1].y * nlayers);
+
+            blocks[j*kernels.x + kernels.x-1].x = int(ceil(float(nx_remaining) /
+                float(threads[j*kernels.x + kernels.x-1].x)));
+            blocks[j*kernels.x + kernels.x-1].y = int(sqrt(float(maxBlocks)));
+
+        // kernels.y-1
+        int ny_remaining = ny - threads[0].y * blocks[0].y;
+        for (int i = 0; i < (kernels.x-1)) {
+
+            threads[(kernels.y-1)*kernels.x + i].x =
+                int(sqrt(float(maxThreads/nlayers)));
+            threads[(kernels.y-1)*kernels.x + i].y =
+                (ny_remaining < threads[(kernels.y-1)*kernels.x + i].x * nlayers) ? ny_remaining : threads[(kernels.y-1)*kernels.x + i].x * nlayers);
+            threads[(kernels.y-1)*kernels.x + i].z = nlayers;
+
+            blocks[(kernels.y-1)*kernels.x + i].x = int(sqrt(float(maxBlocks)));
+            blocks[(kernels.y-1)*kernels.x + i].y = int(ceil(float(ny_remaining) /
+                float(threads[(kernels.y-1)*kernels.x + i].y)));
+        }
+
+        // (kernels.x-1, kernels.y-1)
+        threads[(kernels.y-1)*kernels.x + kernels.x-1].x =
+            (nx_remaining < int(sqrt(float(maxThreads/nlayers))) * nlayers) ? nx_remaining : int(sqrt(float(maxThreads/nlayers))) * nlayers);
+        threads[(kernels.y-1)*kernels.x + kernels.x-1].y =
+            (ny_remaining < int(sqrt(float(maxThreads/nlayers))) * nlayers) ? ny_remaining : int(sqrt(float(maxThreads/nlayers))) * nlayers);
+        threads[(kernels.y-1)*kernels.x + kernels.x-1].z = nlayers;
+
+        blocks[(kernels.y-1)*kernels.x + kernels.x-1].x =
+            int(ceil(float(nx_remaining) /
+            float(threads[(kernels.y-1)*kernels.x + kernels.x-1].x)));
+        blocks[(kernels.y-1)*kernels.x + kernels.x-1].y =
+            int(ceil(float(ny_remaining) /
+            float(threads[(kernels.y-1)*kernels.x + kernels.x-1].y)));
+
+    } else {
+        kernels.x = 1;
+        kernels.y = 1;
+
+
+        int total_threads = (total < maxThreads*2) ? nextPow2((total + 1)/ 2) : maxThreads;
+        threads[0].x = int(floor(sqrt(float(total_threads)/float(nlayers))));
+        threads[0].y = int(floor(sqrt(float(total_threads)/float(nlayers))));
+        threads[0].z = nlayers;
+        total_threads = threads[0].x * threads[0].y * threads[0].z;
+        int total_blocks = int(ceil(float(total) / float(total_threads)));
+
+        //printf("total blocks: %i\n", total_blocks);
+
+        blocks[0].x = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*nx));
+        blocks[0].y = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*ny));
+
+        total_blocks = blocks[0].x * blocks[0].y;
+
+        //printf("total blocks: %i\n", total_blocks);
+
+        if ((float)total_threads*total_blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock)
+        {
+            printf("n is too large, please choose a smaller number!\n");
+        }
+
+        if (total_blocks > prop.maxGridSize[0])
+        {
+            printf("Grid size <%d> exceeds the device capability <%d>, set block size as %d (original %d)\n",
+                   total_blocks, prop.maxGridSize[0], total_threads*2, total_threads);
+
+            blocks[0].x /= 2;
+            blocks[0].y /= 2;
+            threads[0].x *= 2;
+            threads[0].y *= 2;
+        }
+
     }
 }
 
@@ -160,7 +232,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      int nx, int ny, int nlayers, float alpha,
-                     float dx, float dy, float dt) {
+                     float dx, float dy, float dt, int kx, int ky) {
 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -309,7 +381,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
         sum_phs[(y * nx + x) * nlayers + l] = 0.0;
 
-        /*
+
         float sum_qs = 0.0;
         float deltaQx = 0.0;
         float deltaQy = 0.0;
@@ -338,18 +410,16 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                  U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
         }
-        */
+
         for (int j = 0; j < l; j++) {
             sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
                 U_half[((y * nx + x) * nlayers + j)*3];
-            //sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
-            //    U_half[((y * nx + x) * nlayers + j)*3];
         }
         for (int j = l+1; j < nlayers; j++) {
             sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
                 U_half[((y * nx + x) * nlayers + j)*3];
         }
-        /*
+
         // D
         Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
 
@@ -360,17 +430,17 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         // Sy
         Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQy);
-        */
+
     }
 
 }
 
-    // code works with this bit commented out.
+
 __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      int nx, int ny, int nlayers, float alpha,
-                     float dx, float dy, float dt) {
+                     float dx, float dy, float dt, int kx, int ky) {
 
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -436,7 +506,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
          float * rho, float * Q, int nx, int ny, int nlayers,
-         int nt, float alpha, float dx, float dy, float dt) {
+         int nt, float alpha, float dx, float dy, float dt, int dprint) {
 
 
     // set up GPU stuff
@@ -452,14 +522,16 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     //int numBlocks = 0;
     //int numThreads = 0;
 
-    dim3 threads;//PerBlock;(int(floor(sqrt(numThreads/nlayers))), int(floor(sqrt(numThreads/nlayers))), nlayers);
-    dim3 blocks;//grid;(numBlocks, 1, 1);
+    dim3 kernels;
+    dim3 *threads;//PerBlock;(int(floor(sqrt(numThreads/nlayers))), int(floor(sqrt(numThreads/nlayers))), nlayers);
+    dim3 *blocks;//grid;(numBlocks, 1, 1);
 
-    getNumBlocksAndThreads(nx, ny, nlayers, maxBlocks, maxThreads, blocks, threads);
-
+    getNumBlocksAndThreads(nx, ny, nlayers, maxBlocks, maxThreads, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
-    printf("blocks: %i, %i, %i , threads: %i, %i, %i\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
+    printf("kernels: %i , blocks: %i, %i, %i , threads: %i, %i, %i\n",
+           nkernels, blocks[0].x, blocks[0].y, blocks[0].z,
+           threads[0].x, threads[0].y, threads[0].z);
 
 
     // allocate Un memory
@@ -503,15 +575,23 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
             printf("t =  %i\n", t);
         }
 
-        evolve<<<blocks, threads>>>(beta_d, gamma_up_d, Un_d,
-               Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
-               nx, ny, nlayers, alpha,
-               dx, dy, dt);
+        for (int j = 0; j < kernels.y; j++) {
+            for (int i = 0; i < kernels.x; i++) {
+                evolve<<<blocks[i], threads[i]>>>(beta_d, gamma_up_d, Un_d,
+                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
+                       nx, ny, nlayers, alpha,
+                       dx, dy, dt, i, j);
+            }
+        }
 
-        evolve2<<<blocks, threads>>>(beta_d, gamma_up_d, Un_d,
-                Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
-                nx, ny, nlayers, alpha,
-                dx, dy, dt);
+        for (int j = 0; j < kernels.y; j++) {
+            for (int i = 0; i < kernels.x; i++) {
+                evolve2<<<blocks[i], threads[i]>>>(beta_d, gamma_up_d, Un_d,
+                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
+                       nx, ny, nlayers, alpha,
+                       dx, dy, dt, i, j);
+            }
+        }
 
         cudaDeviceSynchronize();
 
@@ -524,8 +604,10 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
 
         // save to U_grid
-        for (int i = 0; i < nx*ny*nlayers*3; i++) {
-            U_grid[(t+1)*nx*ny*nlayers*3 + i] = Un_h[i];
+        if ((t+1) % dprint == 0) {
+            for (int i = 0; i < nx*ny*nlayers*3; i++) {
+                U_grid[(t+1)*nx*ny*nlayers*3/dprint + i] = Un_h[i];
+            }
         }
     }
 
@@ -541,6 +623,8 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaFree(sum_phs_d);
 
     free(Un_h);
+    free(threads);
+    free(blocks);
 }
 
 

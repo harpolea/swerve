@@ -15,8 +15,8 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
         float ymin, float ymax, float * _rho,
         float * _Q,
         float _alpha, float * _beta, float * _gamma,
-        bool _periodic)
-        : nlayers(n_layers), nx(_nx), ny(_ny), nt(_nt), alpha(_alpha), periodic(_periodic)
+        bool _periodic, int _dprint)
+        : nlayers(n_layers), nx(_nx), ny(_ny), nt(_nt), alpha(_alpha), periodic(_periodic), dprint(_dprint)
 {
     xs = new float[nx-2];
     for (int i = 0; i < (nx - 2); i++) {
@@ -55,7 +55,7 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
     gamma[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
-    U_grid = new float[nlayers*nx*ny*(nt+1)*3];
+    U_grid = new float[nlayers*nx*ny*(nt+1)*3/dprint];
 
     cout << "Made a Sea.\n";
     //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
@@ -63,7 +63,7 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
 }
 
 SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
-    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic)
+    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx-2];
@@ -84,9 +84,9 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         Q[i] = seaToCopy.Q[i];
     }
 
-    U_grid = new float[nlayers*nx*ny*(nt+1)*3];
+    U_grid = new float[nlayers*nx*ny*(nt+1)*3/dprint];
 
-    for (int i = 0; i < nlayers*nx*ny*(nt+1)*3; i++) {
+    for (int i = 0; i < nlayers*nx*ny*(nt+1)*3/dprint; i++) {
         U_grid[i] = seaToCopy.U_grid[i];
     }
 
@@ -110,12 +110,6 @@ SeaCuda::~SeaCuda() {
     delete[] U_grid;
 }
 
-// return U state vector
-void SeaCuda::U(float * grid, int l, int x, int y, int t, float * u) {
-    for (int i=0; i < 3; i++) {
-        u[i] = grid[(((t * ny + y) * nx + x) * nlayers + l)*3+i];
-    }
-}
 
 // set the initial data
 void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0) {
@@ -177,15 +171,14 @@ void SeaCuda::run() {
     cout << "Beginning evolution.\n";
 
     cuda_run(beta, gamma_up, U_grid, rho, Q, nx, ny, nlayers, nt,
-             alpha, dx, dy, dt);
+             alpha, dx, dy, dt, dprint);
 }
 
 void SeaCuda::output(char * filename) {
     // open file
     ofstream outFile(filename);
 
-    // only going to output every 10 because file size is ridiculous
-    for (int t = 0; t < (nt+1); t+=10) {
+    for (int t = 0; t*dprint < (nt+1); t++) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
@@ -217,6 +210,7 @@ int main() {
     float beta[2];
     float gamma[2*2];
     bool periodic = false;
+    int dprint = 10;
 
     float D0[nlayers*nx*ny];
     float Sx0[nlayers*nx*ny];
@@ -237,7 +231,7 @@ int main() {
     }
 
     // make a sea
-    SeaCuda sea(nlayers, nx, ny, nt, xmin, xmax, ymin, ymax, rho, Q, alpha, beta, gamma, periodic);
+    SeaCuda sea(nlayers, nx, ny, nt, xmin, xmax, ymin, ymax, rho, Q, alpha, beta, gamma, periodic, dprint);
 
     // set initial data
     for (int x = 1; x < (nx - 1); x++) {
