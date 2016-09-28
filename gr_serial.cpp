@@ -414,12 +414,12 @@ void Sea::evolve(int t) {
                 SquareMatrix A = Jx(u);
                 SquareMatrix B = Jy(u);
 
-                up = u -
-                    0.5 * (dt/dx) * A * (u_ip - u_im) -
+                up = u + alpha * (
+                    -0.5 * (dt/dx) * A * (u_ip - u_im) -
                     0.5 * (dt/dy) * B * (u_jp - u_jm) +
                     0.5 * dt*dt/(dx*dx) * A * A * (u_ip - 2.0 * u + u_im) +
                     0.5 * dt*dt/(dy*dy) * B * B * (u_jp - 2.0 * u + u_jm) -
-                    0.25 * dt*dt/(dx*dy) * A * B * (u_pp - u_ipjm - u_imjp + u_mm);
+                    0.25 * dt*dt/(dx*dy) * A * B * (u_pp - u_ipjm - u_imjp + u_mm));
 
                 // copy to array
                 for (int i = 0; i < 3; i++) {
@@ -487,13 +487,13 @@ void Sea::evolve(int t) {
                 }
 
                 // D
-                Up[(y * nx + x) * nlayers + l][0] += dt * sum_qs;
+                Up[(y * nx + x) * nlayers + l][0] += dt * alpha * sum_qs;
 
                 // Sx
-                Up[(y * nx + x) * nlayers + l][1] += dt * ph[l] * (-deltaQx);
+                Up[(y * nx + x) * nlayers + l][1] += dt * alpha * ph[l] * (-deltaQx);
 
                 // Sy
-                Up[(y * nx + x) * nlayers + l][2] += dt * ph[l] * (-deltaQy);
+                Up[(y * nx + x) * nlayers + l][2] += dt * alpha * ph[l] * (-deltaQy);
 
 
             }
@@ -504,10 +504,10 @@ void Sea::evolve(int t) {
         for (int y = 1; y < (ny-1); y++) {
             for (int l = 0; l < nlayers; l++) {
                 // Sx
-                Up[(y * nx + x) * nlayers + l][1] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+                Up[(y * nx + x) * nlayers + l][1] -= dt * alpha * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
 
                 // Sy
-                Up[(y * nx + x) * nlayers + l][2] -= dt * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+                Up[(y * nx + x) * nlayers + l][2] -= dt * alpha * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
 
 
             }

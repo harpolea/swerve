@@ -250,9 +250,9 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
         }
 
-        if (isnan(Up[((y * nx + x) * nlayers + l)*3])) {
-            printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*3]);
-        }
+        //if (isnan(Up[((y * nx + x) * nlayers + l)*3])) {
+            //printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*3]);
+        //}
 
 
     }
@@ -296,19 +296,20 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
             (U_half[((y * nx + x) * nlayers + l)*3] *
             U_half[((y * nx + x) * nlayers + l)*3]) + 1.0));
 
-        if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
-            printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
-        }
+        //if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
+            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
+        //}
         U_half[((y * nx + x) * nlayers + l)*3] /= W;
 
     }
 
     __syncthreads();
 
-    sum_phs[(y * nx + x) * nlayers + l] = 0.0;
-
     if ((x < nx) && (y < ny) && (l < nlayers)) {
 
+        sum_phs[(y * nx + x) * nlayers + l] = 0.0;
+
+        /*
         float sum_qs = 0.0;
         float deltaQx = 0.0;
         float deltaQy = 0.0;
@@ -337,16 +338,18 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                  U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
         }
-
+        */
         for (int j = 0; j < l; j++) {
             sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
                 U_half[((y * nx + x) * nlayers + j)*3];
+            //sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
+            //    U_half[((y * nx + x) * nlayers + j)*3];
         }
         for (int j = l+1; j < nlayers; j++) {
-            sum_phs[(y * nx + x) * nlayers + l] +=
+            sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
                 U_half[((y * nx + x) * nlayers + j)*3];
         }
-
+        /*
         // D
         Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
 
@@ -357,21 +360,46 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         // Sy
         Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQy);
-
+        */
     }
 
-    __syncthreads();
+}
 
     // code works with this bit commented out.
+__global__ void evolve2(float * beta_d, float * gamma_up_d,
+                     float * Un_d, float * Up, float * U_half,
+                     float * sum_phs, float * rho_d, float * Q_d,
+                     int nx, int ny, int nlayers, float alpha,
+                     float dx, float dy, float dt) {
+
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
+
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-        //float a = sum_phs[(y * nx + x+1) * nlayers + l] -
-            //sum_phs[(y * nx + x-1) * nlayers + l];
-        //if (isnan(a)) {
-            //printf("a is %f! ", a);
-        //}
+        float a = dt * alpha *
+            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
+            sum_phs[(y * nx + x-1) * nlayers + l]);
 
+        //printf("a: %f ", a);
+
+        if (abs(a) < 0.9 * dx / dt) {
+            //printf("a is %f! ", a);
+            Up[((y * nx + x) * nlayers + l)*3+1] = Up[((y * nx + x) * nlayers + l)*3+1] - a;
+        }
+
+        a = dt * alpha *
+            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
+            (sum_phs[((y+1) * nx + x) * nlayers + l] -
+             sum_phs[((y-1) * nx + x) * nlayers + l]);
+
+        if (abs(a) < 0.9 * dy / dt) {
+            //printf("a is %f! ", a);
+            Up[((y * nx + x) * nlayers + l)*3+2] = Up[((y * nx + x) * nlayers + l)*3+2] - a;
+        }
+        /*
         // Sx
         Up[((y * nx + x) * nlayers + l)*3+1] -= dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) *
@@ -383,7 +411,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
             (sum_phs[((y+1) * nx + x) * nlayers + l] -
              sum_phs[((y-1) * nx + x) * nlayers + l]);
-
+        */
 
     }
 
@@ -479,6 +507,11 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
                Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                nx, ny, nlayers, alpha,
                dx, dy, dt);
+
+        evolve2<<<blocks, threads>>>(beta_d, gamma_up_d, Un_d,
+                Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
+                nx, ny, nlayers, alpha,
+                dx, dy, dt);
 
         cudaDeviceSynchronize();
 
