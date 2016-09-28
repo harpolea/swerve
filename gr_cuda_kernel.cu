@@ -241,12 +241,12 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                     Un_d[(((y-1) * nx + x-1) * nlayers + l)*3+j]);
             }
 
-            Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] -
-                    0.5 * dt/dx * d -
+            Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] + alpha * (
+                    -0.5 * dt/dx * d -
                     0.5 * dt/dy * e +
                     0.5 * dt*dt/(dx*dx) * f +
                     0.5 * dt*dt/(dy*dy) * g -
-                    0.25 * dt*dt/(dx*dy) * h;
+                    0.25 * dt*dt/(dx*dy) * h);
 
         }
 
@@ -348,14 +348,14 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         }
 
         // D
-        Up[((y * nx + x) * nlayers + l)*3] += dt * sum_qs;
+        Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
 
         // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] += dt *
+        Up[((y * nx + x) * nlayers + l)*3+1] += dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQx);
 
         // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] += dt *
+        Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (-deltaQy);
 
     }
@@ -373,13 +373,13 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         //}
 
         // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] += -dt *
+        Up[((y * nx + x) * nlayers + l)*3+1] -= dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) *
             (sum_phs[(y * nx + x+1) * nlayers + l] -
              sum_phs[(y * nx + x-1) * nlayers + l]);
 
         // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] += -dt *
+        Up[((y * nx + x) * nlayers + l)*3+2] -= dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
             (sum_phs[((y+1) * nx + x) * nlayers + l] -
              sum_phs[((y-1) * nx + x) * nlayers + l]);
