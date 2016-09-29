@@ -170,10 +170,10 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 
 
-__device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx, int ky) {
+__device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
     // outflow
-    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
@@ -261,10 +261,10 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      int nx, int ny, int nlayers, float alpha,
-                     float dx, float dy, float dt, int kx, int ky) {
-
-    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
+                     float dx, float dy, float dt,
+                     int kx_offset, int ky_offset) {
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
     //if (x*y*l == 0) {
@@ -368,7 +368,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
     __syncthreads();
 
     // enforce boundary conditions
-    bcs(Up, nx, ny, nlayers, kx, ky);
+    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
 
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -469,10 +469,10 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      int nx, int ny, int nlayers, float alpha,
-                     float dx, float dy, float dt, int kx, int ky) {
-
-    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
-    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
+                     float dx, float dy, float dt,
+                     int kx_offset, int ky_offset) {
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
 
@@ -502,7 +502,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
 
     __syncthreads();
 
-    bcs(Up, nx, ny, nlayers, kx, ky);
+    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
 
     // copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -540,9 +540,11 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     getNumBlocksAndThreads(nx, ny, nlayers, maxBlocks, maxThreads, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
+    printf("kernels: (%i, %i)\n", kernels.x, kernels.y);
+
     for (int i = 0; i < kernels.x*kernels.y; i++) {
-        printf("kernels: %i, %i , blocks: %i, %i, %i , threads: %i, %i, %i\n",
-               kernels.x, kernels.y, blocks[i].x, blocks[i].y, blocks[i].z,
+        printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
+               blocks[i].x, blocks[i].y, blocks[i].z,
                threads[i].x, threads[i].y, threads[i].z);
     }
 
@@ -586,23 +588,35 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         if (t % 50 == 0) {
             printf("t =  %i\n", t);
         }
+        int kx_offset = 0;
+        int ky_offset = 0;
 
         for (int j = 0; j < kernels.y; j++) {
+            kx_offset = 0;
             for (int i = 0; i < kernels.x; i++) {
                 evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
                        Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                        nx, ny, nlayers, alpha,
-                       dx, dy, dt, i, j);
+                       dx, dy, dt, kx_offset, ky_offset);
+                kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+
             }
+            ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
         }
 
+        kx_offset = 0;
+        ky_offset = 0;
+
         for (int j = 0; j < kernels.y; j++) {
+            kx_offset = 0;
             for (int i = 0; i < kernels.x; i++) {
                 evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
                        Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                        nx, ny, nlayers, alpha,
-                       dx, dy, dt, i, j);
+                       dx, dy, dt, kx_offset, ky_offset);
+                kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
             }
+            ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
         }
 
         cudaDeviceSynchronize();
