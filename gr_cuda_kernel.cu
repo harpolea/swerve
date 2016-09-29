@@ -3,7 +3,9 @@
 
 #include <stdio.h>
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 &blocks, dim3 &threads);
+dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads);
+
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads);
 
 unsigned int nextPow2(unsigned int x);
 
@@ -22,7 +24,32 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 &kernels, dim3 &blocks, dim3 &threads)
+dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads) {
+    // won't actually use maxThreads - fix to account for the fact we want something square
+    *maxThreads = nlayers * int(sqrt(float(*maxThreads)/nlayers)) * int(sqrt(*maxThreads/nlayers));
+    *maxBlocks = int(sqrt(float(*maxBlocks))) * int(sqrt(float(*maxBlocks)));
+
+    //int numBlocks = 0;
+    //int numThreads = 0;
+
+    dim3 kernels;
+
+    // calculate number of kernels needed
+
+    if (nx*ny*nlayers > *maxBlocks * *maxThreads) {
+        kernels.x = int(ceil(float(nx-2) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0)));
+        kernels.y = int(ceil(float(ny-2) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0)));
+
+    } else {
+
+        kernels.x = 1;
+        kernels.y = 1;
+    }
+
+    return kernels;
+}
+
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads)
 {
 
     //get device capability, to avoid block/grid size exceed the upper bound
@@ -33,22 +60,23 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
     int total = nx*ny*nlayers;
 
-    if (total > maxBlocks * maxThreads) {
-        kernels.x = int(ceil(float(nx-2) / (sqrt(float(maxThreads * maxBlocks)) - 2.0)))
-        kernels.y = int(ceil(float(ny-2) / (sqrt(float(maxThreads * maxBlocks)) - 2.0)))
+    if ((kernels.x > 1) || (kernels.y > 1)) {
+        // initialise
+        threads[0].x = 0;
+        threads[0].y = 0;
+        blocks[0].x = 0;
+        blocks[0].y = 0;
 
-
-        blocks = (dim3 *) malloc(kernels.x*kernels.y*sizeof(dim3));
-        threads = (dim3 *) malloc(kernels.x*kernels.y*sizeof(dim3));
 
         for (int j = 0; j < (kernels.y-1); j++) {
             for (int i = 0; i < (kernels.x-1); i++) {
-                threads[j*kernels.x + i].x = int(sqrt(float(maxThreads/nlayers)));
-                threads[j*kernels.x + i].y = int(sqrt(float(maxThreads/nlayers)));
+                threads[j*kernels.x + i].x = int(sqrt(float(maxThreads)/nlayers));
+                threads[j*kernels.x + i].y = int(sqrt(float(maxThreads)/nlayers));
                 threads[j*kernels.x + i].z = nlayers;
 
                 blocks[j*kernels.x + i].x = int(sqrt(float(maxBlocks)));
                 blocks[j*kernels.x + i].y = int(sqrt(float(maxBlocks)));
+                blocks[j*kernels.x + i].z = 1;
             }
 
 
@@ -59,36 +87,39 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 
             threads[j*kernels.x + kernels.x-1].y =
-                int(sqrt(float(maxThreads/nlayers)));
+                int(sqrt(float(maxThreads)/nlayers));
             threads[j*kernels.x + kernels.x-1].z = nlayers;
 
             threads[j*kernels.x + kernels.x-1].x =
-                (nx_remaining < threads[j*kernels.x + kernels.x-1].y * nlayers) ? nx_remaining : threads[j*kernels.x + kernels.x-1].y * nlayers);
+                (nx_remaining < threads[j*kernels.x + kernels.x-1].y) ? nx_remaining : threads[j*kernels.x + kernels.x-1].y;
 
             blocks[j*kernels.x + kernels.x-1].x = int(ceil(float(nx_remaining) /
                 float(threads[j*kernels.x + kernels.x-1].x)));
             blocks[j*kernels.x + kernels.x-1].y = int(sqrt(float(maxBlocks)));
+            blocks[j*kernels.x + kernels.x-1].z = 1;
+        }
 
         // kernels.y-1
         int ny_remaining = ny - threads[0].y * blocks[0].y;
-        for (int i = 0; i < (kernels.x-1)) {
+        for (int i = 0; i < (kernels.x-1); i++) {
 
             threads[(kernels.y-1)*kernels.x + i].x =
-                int(sqrt(float(maxThreads/nlayers)));
+                int(sqrt(float(maxThreads)/nlayers));
             threads[(kernels.y-1)*kernels.x + i].y =
-                (ny_remaining < threads[(kernels.y-1)*kernels.x + i].x * nlayers) ? ny_remaining : threads[(kernels.y-1)*kernels.x + i].x * nlayers);
+                (ny_remaining < threads[(kernels.y-1)*kernels.x + i].x) ? ny_remaining : threads[(kernels.y-1)*kernels.x + i].x;
             threads[(kernels.y-1)*kernels.x + i].z = nlayers;
 
             blocks[(kernels.y-1)*kernels.x + i].x = int(sqrt(float(maxBlocks)));
             blocks[(kernels.y-1)*kernels.x + i].y = int(ceil(float(ny_remaining) /
                 float(threads[(kernels.y-1)*kernels.x + i].y)));
+            blocks[(kernels.y-1)*kernels.x + i].z = 1;
         }
 
         // (kernels.x-1, kernels.y-1)
         threads[(kernels.y-1)*kernels.x + kernels.x-1].x =
-            (nx_remaining < int(sqrt(float(maxThreads/nlayers))) * nlayers) ? nx_remaining : int(sqrt(float(maxThreads/nlayers))) * nlayers);
+            (nx_remaining < int(sqrt(float(maxThreads)/nlayers))) ? nx_remaining : int(sqrt(float(maxThreads/nlayers)));
         threads[(kernels.y-1)*kernels.x + kernels.x-1].y =
-            (ny_remaining < int(sqrt(float(maxThreads/nlayers))) * nlayers) ? ny_remaining : int(sqrt(float(maxThreads/nlayers))) * nlayers);
+            (ny_remaining < int(sqrt(float(maxThreads)/nlayers))) ? ny_remaining : int(sqrt(float(maxThreads)/nlayers));
         threads[(kernels.y-1)*kernels.x + kernels.x-1].z = nlayers;
 
         blocks[(kernels.y-1)*kernels.x + kernels.x-1].x =
@@ -97,11 +128,9 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
         blocks[(kernels.y-1)*kernels.x + kernels.x-1].y =
             int(ceil(float(ny_remaining) /
             float(threads[(kernels.y-1)*kernels.x + kernels.x-1].y)));
+        blocks[(kernels.y-1)*kernels.x + kernels.x-1].z = 1;
 
     } else {
-        kernels.x = 1;
-        kernels.y = 1;
-
 
         int total_threads = (total < maxThreads*2) ? nextPow2((total + 1)/ 2) : maxThreads;
         threads[0].x = int(floor(sqrt(float(total_threads)/float(nlayers))));
@@ -114,6 +143,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
         blocks[0].x = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*nx));
         blocks[0].y = int(ceil(sqrt(float(total_blocks)/float(nx*ny))*ny));
+        blocks[0].z = 1;
 
         total_blocks = blocks[0].x * blocks[0].y;
 
@@ -140,11 +170,10 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 
 
-__device__ void bcs(float * grid, int nx, int ny, int nlayers) {
+__device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx, int ky) {
     // outflow
-
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
@@ -234,8 +263,8 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt, int kx, int ky) {
 
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
     //if (x*y*l == 0) {
@@ -339,7 +368,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
     __syncthreads();
 
     // enforce boundary conditions
-    bcs(Up, nx, ny, nlayers);
+    bcs(Up, nx, ny, nlayers, kx, ky);
 
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -442,8 +471,8 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt, int kx, int ky) {
 
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    int x = (kx * gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x;
+    int y = (ky * gridDim.y + blockIdx.y) * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
 
@@ -452,8 +481,6 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
         float a = dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
             sum_phs[(y * nx + x-1) * nlayers + l]);
-
-        //printf("a: %f ", a);
 
         if (abs(a) < 0.9 * dx / dt) {
             //printf("a is %f! ", a);
@@ -469,25 +496,13 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
             //printf("a is %f! ", a);
             Up[((y * nx + x) * nlayers + l)*3+2] = Up[((y * nx + x) * nlayers + l)*3+2] - a;
         }
-        /*
-        // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] -= dt * alpha *
-            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) *
-            (sum_phs[(y * nx + x+1) * nlayers + l] -
-             sum_phs[(y * nx + x-1) * nlayers + l]);
 
-        // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] -= dt * alpha *
-            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
-            (sum_phs[((y+1) * nx + x) * nlayers + l] -
-             sum_phs[((y-1) * nx + x) * nlayers + l]);
-        */
 
     }
 
     __syncthreads();
 
-    bcs(Up, nx, ny, nlayers);
+    bcs(Up, nx, ny, nlayers, kx, ky);
 
     // copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -512,30 +527,27 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     // set up GPU stuff
     int count;
     cudaGetDeviceCount(&count);
-    //dim3 threadsPerBlock(20,20,nlayers);
-    //dim3 numBlocks(nx/threadsPerBlock.x,ny/threadsPerBlock.y,1);
 
     //int size = 3 * nx * ny * nlayers;
     int maxThreads = 256;
     int maxBlocks = 256; //64;
 
-    //int numBlocks = 0;
-    //int numThreads = 0;
+    dim3 kernels = getNumKernels(nx, ny, nlayers, &maxBlocks, &maxThreads);
 
-    dim3 kernels;
-    dim3 *threads;//PerBlock;(int(floor(sqrt(numThreads/nlayers))), int(floor(sqrt(numThreads/nlayers))), nlayers);
-    dim3 *blocks;//grid;(numBlocks, 1, 1);
+    dim3 *blocks = new dim3[kernels.x*kernels.y];
+    dim3 *threads = new dim3[kernels.x*kernels.y];
 
     getNumBlocksAndThreads(nx, ny, nlayers, maxBlocks, maxThreads, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
-    printf("kernels: %i , blocks: %i, %i, %i , threads: %i, %i, %i\n",
-           nkernels, blocks[0].x, blocks[0].y, blocks[0].z,
-           threads[0].x, threads[0].y, threads[0].z);
-
+    for (int i = 0; i < kernels.x*kernels.y; i++) {
+        printf("kernels: %i, %i , blocks: %i, %i, %i , threads: %i, %i, %i\n",
+               kernels.x, kernels.y, blocks[i].x, blocks[i].y, blocks[i].z,
+               threads[i].x, threads[i].y, threads[i].z);
+    }
 
     // allocate Un memory
-    float * Un_h = (float *) malloc(nx*ny*nlayers*3*sizeof(float));
+    float * Un_h = new float[nx*ny*nlayers*3];
 
     // copy U_grid stuff
     for (int i = 0; i < nx*ny*nlayers*3; i++) {
@@ -577,7 +589,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
 
         for (int j = 0; j < kernels.y; j++) {
             for (int i = 0; i < kernels.x; i++) {
-                evolve<<<blocks[i], threads[i]>>>(beta_d, gamma_up_d, Un_d,
+                evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
                        Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                        nx, ny, nlayers, alpha,
                        dx, dy, dt, i, j);
@@ -586,7 +598,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
 
         for (int j = 0; j < kernels.y; j++) {
             for (int i = 0; i < kernels.x; i++) {
-                evolve2<<<blocks[i], threads[i]>>>(beta_d, gamma_up_d, Un_d,
+                evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
                        Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                        nx, ny, nlayers, alpha,
                        dx, dy, dt, i, j);
@@ -606,7 +618,8 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         // save to U_grid
         if ((t+1) % dprint == 0) {
             for (int i = 0; i < nx*ny*nlayers*3; i++) {
-                U_grid[(t+1)*nx*ny*nlayers*3/dprint + i] = Un_h[i];
+                //U_grid[(t+1)*nx*ny*nlayers*3/dprint + i] = Un_h[i];
+                U_grid[(t+1)*nx*ny*nlayers*3 + i] = Un_h[i];
             }
         }
     }
@@ -622,9 +635,9 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaFree(U_half_d);
     cudaFree(sum_phs_d);
 
-    free(Un_h);
-    free(threads);
-    free(blocks);
+    delete[] Un_h;
+    delete[] threads;
+    delete[] blocks;
 }
 
 

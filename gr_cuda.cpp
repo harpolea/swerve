@@ -55,7 +55,8 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
     gamma[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
-    U_grid = new float[nlayers*nx*ny*(nt+1)*3/dprint];
+    U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
+    U_grid = new float[nlayers*nx*ny*3*(nt+1)];
 
     cout << "Made a Sea.\n";
     //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
@@ -84,9 +85,9 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         Q[i] = seaToCopy.Q[i];
     }
 
-    U_grid = new float[nlayers*nx*ny*(nt+1)*3/dprint];
+    U_grid = new float[nlayers*nx*ny*3*(nt+1)];// * int(ceil(float((nt+1)/dprint)))];
 
-    for (int i = 0; i < nlayers*nx*ny*(nt+1)*3/dprint; i++) {
+    for (int i = 0; i < nlayers*nx*ny*3*(nt+1);i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
         U_grid[i] = seaToCopy.U_grid[i];
     }
 
@@ -178,7 +179,7 @@ void SeaCuda::output(char * filename) {
     // open file
     ofstream outFile(filename);
 
-    for (int t = 0; t*dprint < (nt+1); t++) {
+    for (int t = 0; t < (nt+1); t+=dprint) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
@@ -197,8 +198,8 @@ int main() {
 
     // initialise parameters
     static const int nlayers = 2;
-    int nx = 150;
-    int ny = 150;
+    int nx = 250;
+    int ny = 200;
     int nt = 600;
     float xmin = 0.0;
     float xmax = 10.0;
