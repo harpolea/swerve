@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <cmath>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
@@ -7,6 +8,17 @@
 #include <helper_functions.h>
 #include <algorithm>
 #include "SeaCuda.h"
+
+#ifndef H5_NO_NAMESPACE
+#ifndef H5_NO_STD
+    using std::cout;
+    using std::endl;
+#endif  // H5_NO_STD
+#endif
+#include "H5Cpp.h"
+//#ifndef H5_NO_NAMESPACE
+//    using namespace H5;
+//#endif
 
 using namespace std;
 
@@ -295,7 +307,7 @@ void SeaCuda::output(char * filename) {
     // open file
     ofstream outFile(filename);
 
-    for (int t = 0; t < (nt+1); t+=dprint) {
+    for (int t = 0; t < (nt+1); t++) {//=dprint) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
@@ -310,6 +322,24 @@ void SeaCuda::output(char * filename) {
     }
 
     outFile.close();
+}
+
+void SeaCuda::output_hdf5(char * filename) {
+    // create file
+    H5::H5File outFile(filename, H5F_ACC_TRUNC);
+
+    hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+
+    H5::DataSpace dataspace(5, dims);
+    H5::DataSet dataset = outFile.createDataSet("SwerveOutput", H5::PredType::NATIVE_FLOAT, dataspace);
+
+    dataset.write(U_grid, H5::PredType::NATIVE_FLOAT);
+
+}
+
+void SeaCuda::output() {
+    // open file
+    output_hdf5(outfile);
 }
 
 int main() {
@@ -343,8 +373,7 @@ int main() {
     // run simulation
     sea.run();
 
-    //char filename[] = "../../Documents/Work/swerve/out.dat";
-    sea.output(filename);
+    sea.output();
 
     cout << "Output data to file.\n";
 

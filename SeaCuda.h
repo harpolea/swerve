@@ -27,6 +27,8 @@ public:
     void run();
 
     void output(char * filename);
+    void output_hdf5(char * filename);
+    void output();
 
     ~SeaCuda();
 

@@ -1,6 +1,6 @@
 nx      500
 ny      500
-nt      600
+nt      15
 nlayers 2
 xmin    0.0
 xmax    10.0
@@ -13,3 +13,4 @@ beta    0.0 0.0
 gamma   1.23457 0.0 0.0 1.23457
 periodic f
 dprint  10
+outfile ../../Documents/Work/swerve/out.h5

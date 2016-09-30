@@ -179,10 +179,12 @@ ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
+ALL_LDFLAGS += -lhdf5_cpp -lhdf5
 
 # Common includes and paths for CUDA
-INCLUDES  := -I$(CUDA_PATH)/samples/common/inc
-LIBRARIES :=
+INCLUDES  := -I$(CUDA_PATH)/samples/common/inc -I/usr/include/hdf5/serial -I/usr/include/hdf5
+LIBRARIES := -L/usr/lib/x86_64-linux-gnu/hdf5/serial
+
 
 ################################################################################
 
