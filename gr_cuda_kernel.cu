@@ -82,7 +82,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
         }
         // kernels.x-1
-        int nx_remaining = nx - threads[0].x * blocks[0].x;
+        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels.x - 1);
         for (int j = 0; j < (kernels.y-1); j++) {
 
 
@@ -100,7 +100,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
         }
 
         // kernels.y-1
-        int ny_remaining = ny - threads[0].y * blocks[0].y;
+        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels.y - 1);
         for (int i = 0; i < (kernels.x-1); i++) {
 
             threads[(kernels.y-1)*kernels.x + i].x =

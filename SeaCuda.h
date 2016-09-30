@@ -14,6 +14,8 @@ public:
             float _alpha, float * _beta, float * _gamma,
             bool _periodic, int _dprint);
 
+    SeaCuda(char * filename); // constructor which takes input from file
+
     SeaCuda(const SeaCuda &); // copy constructor
 
     void initial_data(float * D0, float * Sx0, float * Sy0);
@@ -29,13 +31,14 @@ public:
     ~SeaCuda();
 
     // these need to be public
+    int nlayers;
+    int nx;
+    int ny;
     float *xs;
     float *ys;
 
 private:
-    int nlayers;
-    int nx;
-    int ny;
+
     int nt;
 
     float *U_grid;
@@ -55,6 +58,8 @@ private:
     bool periodic;
 
     int dprint; // number of timesteps between printouts
+
+    char outfile[200];
 
     //void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx);
     //void Jy(float * u, float * beta_d, float * gamma_up_d, float * jx);

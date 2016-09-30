@@ -55,8 +55,124 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
     gamma[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
-    U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
+    //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
     U_grid = new float[nlayers*nx*ny*3*(nt+1)];
+
+    cout << "Made a Sea.\n";
+    //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
+
+}
+
+SeaCuda::SeaCuda(char * filename)
+{
+
+    // open file
+    ifstream inputFile(filename);
+
+    string variableName;
+    float value;
+    float xmin, xmax, ymin, ymax;
+
+    // read line
+    //inputFile >> variableName;
+
+    while (inputFile >> variableName) {
+
+        // need to have nlayers initialised before lots of other stuff, so shall do so here.
+        nlayers = 2;
+
+        // mega switch statement of doom
+        if (variableName == "nx") {
+            inputFile >> value;
+            nx = int(value);
+        } else if (variableName == "ny") {
+            inputFile >> value;
+            ny = int(value);
+        } else if (variableName == "nlayers") {
+            inputFile >> value;
+            nlayers = int(value);
+            rho = new float[nlayers];
+            Q = new float[nlayers];
+        } else if (variableName == "nt") {
+            inputFile >> value;
+            nt = int(value);
+        } else if (variableName == "xmin") {
+            inputFile >> xmin;
+        } else if (variableName == "xmax") {
+            inputFile >> xmax;
+        } else if (variableName == "ymin") {
+            inputFile >> ymin;
+        } else if (variableName == "ymax") {
+            inputFile >> ymax;
+        } else if (variableName == "rho") {
+            for (int i = 0; i < nlayers; i++) {
+                inputFile >> rho[i];
+            }
+        } else if (variableName == "Q") {
+            for (int i = 0; i < nlayers; i++) {
+                inputFile >> Q[i];
+            }
+        } else if (variableName == "alpha") {
+            inputFile >> alpha;
+        } else if (variableName == "beta") {
+            for (int i = 0; i < 2; i++) {
+                inputFile >> beta[i];
+            }
+        } else if (variableName == "gamma") {
+            for (int i = 0; i < 2*2; i++) {
+                inputFile >> gamma[i];
+            }
+        } else if (variableName == "periodic") {
+            string tf;
+            inputFile >> tf;
+            if (tf == "t" || tf == "T") {
+                periodic = true;
+            } else {
+                periodic = false;
+            }
+        } else if (variableName == "dprint") {
+            inputFile >> value;
+            dprint = int(value);
+        } else if (variableName == "outfile") {
+            string f;
+            inputFile >> f;
+            strncpy(outfile, f.c_str(), sizeof(outfile));
+            outfile[sizeof(outfile) - 1] = 0;
+        }
+
+    }
+
+    inputFile.close();
+
+    xs = new float[nx-2];
+    for (int i = 0; i < (nx - 2); i++) {
+        xs[i] = xmin + i * (xmax - xmin) / (nx-2);
+    }
+
+    ys = new float[ny-2];
+    for (int i = 0; i < (ny - 2); i++) {
+        ys[i] = ymin + i * (ymax - ymin) / (ny-2);
+    }
+
+    dx = xs[1] - xs[0];
+    dy = ys[1] - ys[0];
+    dt = 0.1 * min(dx, dy);
+
+    // find inverse of gamma
+    float det = gamma[0] * gamma[1*2+1] - gamma[0*2+1] * gamma[1*2+0];
+    //cout << "det = " << det << '\n';
+    gamma_up[0] = gamma[1*2+1] / det;
+    gamma[0*2+1] = -gamma[0*2+1]/det;
+    gamma[1*2+0] = -gamma[1*2+0]/det;
+    gamma_up[1*2+1] = gamma[0*2+0]/det;
+
+    //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
+    try {
+        U_grid = new float[int(nlayers*nx*ny*3*(nt+1))];
+    } catch (bad_alloc&) {
+        cerr << "Could not allocate U_grid - try smaller problem size.\n";
+        exit(1);
+    }
 
     cout << "Made a Sea.\n";
     //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
@@ -85,7 +201,7 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         Q[i] = seaToCopy.Q[i];
     }
 
-    U_grid = new float[nlayers*nx*ny*3*(nt+1)];// * int(ceil(float((nt+1)/dprint)))];
+    U_grid = new float[int(nlayers*nx*ny*3*(nt+1))];// * int(ceil(float((nt+1)/dprint)))];
 
     for (int i = 0; i < nlayers*nx*ny*3*(nt+1);i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
         U_grid[i] = seaToCopy.U_grid[i];
@@ -192,66 +308,42 @@ void SeaCuda::output(char * filename) {
             }
         }
     }
+
+    outFile.close();
 }
 
 int main() {
 
-    // initialise parameters
-    static const int nlayers = 2;
-    int nx = 250;
-    int ny = 200;
-    int nt = 600;
-    float xmin = 0.0;
-    float xmax = 10.0;
-    float ymin = 0.0;
-    float ymax = 10.0;
-    float rho[nlayers];
-    float Q[nlayers];
-    float alpha = 0.9;
-    float beta[2];
-    float gamma[2*2];
-    bool periodic = false;
-    int dprint = 10;
-
-    float D0[nlayers*nx*ny];
-    float Sx0[nlayers*nx*ny];
-    float Sy0[nlayers*nx*ny];
-
-    for (int i = 0; i < nlayers; i++) {
-        rho[i] = 1.0;
-        Q[i] = 0.0;
-    }
-
-    for (int i = 0; i < 2; i++) {
-        beta[i] = 0.0;
-        //gamma[i] = new float[2];
-        for (int j = 0; j < 2; j++) {
-            gamma[i*2+j] = 0.0;
-        }
-        gamma[i*2+i] = 1.0 / (alpha*alpha);
-    }
-
     // make a sea
-    SeaCuda sea(nlayers, nx, ny, nt, xmin, xmax, ymin, ymax, rho, Q, alpha, beta, gamma, periodic, dprint);
+    char input_filename[] = "input_file.txt";
+    SeaCuda sea(input_filename);
+
+    float * D0 = new float[sea.nlayers*sea.nx*sea.ny];
+    float * Sx0 = new float[sea.nlayers*sea.nx*sea.ny];
+    float * Sy0 = new float[sea.nlayers*sea.nx*sea.ny];
 
     // set initial data
-    for (int x = 1; x < (nx - 1); x++) {
-        for (int y = 1; y < (ny - 1); y++) {
-            D0[(y * nx + x) * nlayers] = 1.0 + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
-            D0[(y * nx + x) * nlayers + 1] = 0.8 + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
-            for (int l = 0; l < nlayers; l++) {
-                Sx0[(y * nx + x) * nlayers + l] = 0.0;
-                Sy0[(y * nx + x) * nlayers + l] = 0.0;
+    for (int x = 1; x < (sea.nx - 1); x++) {
+        for (int y = 1; y < (sea.ny - 1); y++) {
+            D0[(y * sea.nx + x) * sea.nlayers] = 1.0 + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8 + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
+            for (int l = 0; l < sea.nlayers; l++) {
+                Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
             }
         }
     }
 
     sea.initial_data(D0, Sx0, Sy0);
 
+    delete[] D0;
+    delete[] Sx0;
+    delete[] Sy0;
+
     // run simulation
     sea.run();
 
-    char filename[] = "out.dat";
+    //char filename[] = "../../Documents/Work/swerve/out.dat";
     sea.output(filename);
 
     cout << "Output data to file.\n";
