@@ -12,10 +12,6 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 unsigned int nextPow2(unsigned int x);
 
-
-// TODO: GET RID OF THIS
-//void __syncthreads() {}
-
 unsigned int nextPow2(unsigned int x)
 {
     --x;
@@ -28,6 +24,9 @@ unsigned int nextPow2(unsigned int x)
 }
 
 dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads) {
+    /*
+    Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
+    */
     // won't actually use maxThreads - fix to account for the fact we want something square
     *maxThreads = nlayers * int(sqrt(float(*maxThreads)/nlayers)) * int(sqrt(*maxThreads/nlayers));
     *maxBlocks = int(sqrt(float(*maxBlocks))) * int(sqrt(float(*maxBlocks)));
@@ -54,6 +53,9 @@ dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads)
 
 void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads)
 {
+    /*
+    Returns the number of blocks and threads required for each kernel given the size of the problem and the constraints of the device.
+    */
 
     //get device capability, to avoid block/grid size exceed the upper bound
     cudaDeviceProp prop;
@@ -174,6 +176,9 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 
 __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
+    /*
+    Enforce boundary conditions on section of grid.
+    */
     // outflow
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -196,6 +201,9 @@ __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, in
 }
 
 __device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, float alpha) {
+    /*
+    Calculate Jacobian in the x-direction.
+    */
 
     float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
                 2.0 * u[1]* u[2] * gamma_up_d[1] +
@@ -229,6 +237,9 @@ __device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, fl
 }
 
 __device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, float alpha) {
+    /*
+    Calculate Jacobian in the y-direction.
+    */
 
     float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
                 2.0 * u[1]* u[2] * gamma_up_d[1] +
@@ -267,6 +278,9 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
+    /*
+    First part of evolution through one timestep.
+    */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
@@ -476,6 +490,9 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
+    /*
+    Second part of evolution through one timestep.
+    */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
@@ -518,16 +535,15 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
     }
 
 
-    //if (x*y*l == 0) {
-        //printf("finished evolving\n");
-    //}
-
 }
 
 
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers,
          int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename) {
+    /*
+    Evolve system through nt timesteps, saving data to filename every dprint timesteps.
+    */
 
 
     // set up GPU stuff
@@ -555,7 +571,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     }
 
     // copy
-
     float * beta_d;
     float * gamma_up_d;
     float * Un_d;
@@ -586,7 +601,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
     // create dataspace
     int ndims = 5;
-    hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+    hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
     hid_t file_space = H5Screate_simple(ndims, dims, NULL);
 
     hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
@@ -659,16 +674,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         if (err != cudaSuccess)
             printf("Error: %s\n", cudaGetErrorString(err));
 
-
-
-        // save to U_grid
-        //if ((t+1) % dprint == 0) {
-            //for (int i = 0; i < nx*ny*nlayers*3; i++) {
-                //U_grid[(t+1)*nx*ny*nlayers*3/dprint + i] = Un_h[i];
-                //U_grid[(t+1)*nx*ny*nlayers*3 + i] = Un_h[i];
-            //}
-        //}
-
         if ((t+1) % dprint == 0) {
             printf("Printing t = %i\n", t+1);
             // copy stuff back
@@ -676,7 +681,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
             // select a hyperslab
             file_space = H5Dget_space(dset);
-            hsize_t start[] = {hsize_t(t), 0, 0, 0, 0};
+            hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
             hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
             H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
             // write to dataset

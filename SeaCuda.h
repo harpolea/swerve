@@ -23,7 +23,7 @@ public:
 
     void bcs();
 
-    //void evolve(int t, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d);
+    void print_inputs();
 
     void run();
 

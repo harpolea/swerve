@@ -78,6 +78,9 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
 
 SeaCuda::SeaCuda(char * filename)
 {
+    /*
+    Constructor for SeaCuda class using inputs from file.
+    */
 
     // open file
     ifstream inputFile(filename);
@@ -195,6 +198,7 @@ SeaCuda::SeaCuda(char * filename)
 
 }
 
+// copy constructor
 SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
     : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), mu(seaToCopy.mu), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
 {
@@ -249,6 +253,9 @@ SeaCuda::~SeaCuda() {
 
 // set the initial data
 void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
+    /*
+    Initialise D, Sx, Sy and Q.
+    */
     for (int i = 0; i < nlayers*nx*ny; i++) {
         U_grid[i*3] = D0[i];
         U_grid[i*3+1] = Sx0[i];
@@ -261,7 +268,29 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
     cout << "Set initial data.\n";
 }
 
+void SeaCuda::print_inputs() {
+    /*
+    Print some input and runtime parameters to screen.
+    */
+
+    cout << "\nINPUT DATA\n" << "----------\n";
+    cout << "(nx, ny, nlayers) \t(" << nx << ',' << ny << ',' << nlayers << ")\n";
+    cout << "nt \t\t\t" << nt << '\n';
+    cout << "dprint \t\t\t" << dprint << '\n';
+    cout << "(dx, dy, dt) \t\t(" << dx << ',' << dy << ',' << dt << ")\n";
+    cout << "rho \t\t\t(" << rho[0] << ',' << rho[1] << ")\n";
+    cout << "mu \t\t\t" << mu << '\n';
+    cout << "alpha \t\t\t" << alpha << '\n';
+    cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ")\n";
+    cout << "gamma \t\t\t((" << gamma[0] << ',' << gamma[1] << "),(" << gamma[2] << ',' << gamma[3] << "))\n";
+    cout << "outfile \t\t" << outfile << "\n\n";
+}
+
 void SeaCuda::bcs() {
+    /*
+    Enforce boundary conditions.
+    */
+
     if (periodic) {
 
         for (int l = 0; l < nlayers; l++) {
@@ -302,8 +331,10 @@ void SeaCuda::bcs() {
 }
 
 
-
 void SeaCuda::run() {
+    /*
+    Wrapper for cuda_run function.
+    */
 
     cout << "Beginning evolution.\n";
 
@@ -384,6 +415,8 @@ int main() {
     delete[] Sx0;
     delete[] Sy0;
     delete[] _Q;
+
+    sea.print_inputs();
 
     // run simulation
     sea.run();
