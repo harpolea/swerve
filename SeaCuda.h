@@ -2,7 +2,7 @@
 #define SEA_CUDA_H
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
-         float * rho, float * Q, int nx, int ny, int nlayers,
+         float * rho, float * Q, float mu, int nx, int ny, int nlayers,
          int nt, float alpha, float dx, float dy, float dt, int dprint);
 
 class SeaCuda {
@@ -10,7 +10,7 @@ public:
     SeaCuda(int n_layers, int _nx, int _ny, int _nt,
             float xmin, float xmax,
             float ymin, float ymax, float * _rho,
-            float * _Q,
+            float * _Q, float mu,
             float _alpha, float * _beta, float * _gamma,
             bool _periodic, int _dprint);
 
@@ -18,7 +18,7 @@ public:
 
     SeaCuda(const SeaCuda &); // copy constructor
 
-    void initial_data(float * D0, float * Sx0, float * Sy0);
+    void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q);
 
     void bcs(int t);
 
@@ -51,6 +51,7 @@ private:
 
     float *rho;
     float *Q;
+    float mu; // friction
 
     float alpha;
     float beta[2];

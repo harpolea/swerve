@@ -260,6 +260,7 @@ __device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, fl
 __global__ void evolve(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
+                     float mu,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
@@ -416,25 +417,25 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         float deltaQy = 0.0;
 
         if (l < (nlayers - 1)) {
-            sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[l+1] - Q_d[l]);
+            sum_qs += -rho_d[l+1] / rho_d[l] * abs(Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
             deltaQx = rho_d[l+1] / rho_d[l] *
-                max(float(0.0), Q_d[l] - Q_d[l+1]) *
+                (max(float(0.0), Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l+1]) + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+1] -
                  U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
             deltaQy = rho_d[l+1] / rho_d[l] *
-                max(float(0.0), Q_d[l] - Q_d[l+1]) *
+                (max(float(0.0), Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l+1]) + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+2] -
                  U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
         }
         if (l > 0) {
-            sum_qs += abs(Q_d[l] - Q_d[l-1]);
-            deltaQx = max(float(0.0), Q_d[l] - Q_d[l-1]) *
+            sum_qs += abs(Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
+            deltaQx = (max(float(0.0), Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]) + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+1] -
                  U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
-            deltaQy = max(float(0.0), Q_d[l] - Q_d[l-1]) *
+            deltaQy = (max(float(0.0), Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]) + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+2] -
                  U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
                  U_half[((y * nx + x) * nlayers + l)*3];
@@ -468,6 +469,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
+                     float mu,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
@@ -520,7 +522,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
 }
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
-         float * rho, float * Q, int nx, int ny, int nlayers,
+         float * rho, float * Q, float mu, int nx, int ny, int nlayers,
          int nt, float alpha, float dx, float dy, float dt, int dprint) {
 
 
@@ -569,14 +571,14 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaMalloc((void**)&gamma_up_d, 4*sizeof(float));
     cudaMalloc((void**)&Un_d, nx*ny*nlayers*3*sizeof(float));
     cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
-    cudaMalloc((void**)&Q_d, nlayers*sizeof(float));
+    cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 2*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 4*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Q_d, Q, nlayers*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Q_d, Q, nlayers*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
 
     float *Up_d, *U_half_d, *sum_phs_d;
     cudaMalloc((void**)&Up_d, nlayers*nx*ny*3*sizeof(float));
@@ -595,7 +597,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
             kx_offset = 0;
             for (int i = 0; i < kernels.x; i++) {
                 evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
+                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                        nx, ny, nlayers, alpha,
                        dx, dy, dt, kx_offset, ky_offset);
                 kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
@@ -611,7 +613,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
             kx_offset = 0;
             for (int i = 0; i < kernels.x; i++) {
                 evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
+                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                        nx, ny, nlayers, alpha,
                        dx, dy, dt, kx_offset, ky_offset);
                 kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;

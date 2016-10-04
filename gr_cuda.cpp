@@ -25,10 +25,10 @@ using namespace std;
 SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
         float xmin, float xmax,
         float ymin, float ymax, float * _rho,
-        float * _Q,
+        float * _Q, float _mu,
         float _alpha, float * _beta, float * _gamma,
         bool _periodic, int _dprint)
-        : nlayers(n_layers), nx(_nx), ny(_ny), nt(_nt), alpha(_alpha), periodic(_periodic), dprint(_dprint)
+        : nlayers(n_layers), nx(_nx), ny(_ny), nt(_nt), mu(_mu), alpha(_alpha), periodic(_periodic), dprint(_dprint)
 {
     xs = new float[nx-2];
     for (int i = 0; i < (nx - 2); i++) {
@@ -49,8 +49,12 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
 
     for (int i = 0; i < nlayers; i++) {
         rho[i] = _rho[i];
+    }
+
+    for (int i = 0; i < nlayers*nx*ny; i++) {
         Q[i] = _Q[i];
     }
+
 
     for (int i = 0; i < 2; i++) {
         beta[i] = _beta[i];
@@ -104,7 +108,7 @@ SeaCuda::SeaCuda(char * filename)
             inputFile >> value;
             nlayers = int(value);
             rho = new float[nlayers];
-            Q = new float[nlayers];
+            //Q = new float[nlayers];
         } else if (variableName == "nt") {
             inputFile >> value;
             nt = int(value);
@@ -124,6 +128,8 @@ SeaCuda::SeaCuda(char * filename)
             for (int i = 0; i < nlayers; i++) {
                 inputFile >> Q[i];
             }
+        } else if (variableName == "mu") {
+            inputFile >> mu;
         } else if (variableName == "alpha") {
             inputFile >> alpha;
         } else if (variableName == "beta") {
@@ -180,6 +186,7 @@ SeaCuda::SeaCuda(char * filename)
 
     //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
     try {
+        Q = new float[int(nlayers*nx*ny)];
         U_grid = new float[int(nlayers*nx*ny*3*(nt+1))];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
@@ -192,7 +199,7 @@ SeaCuda::SeaCuda(char * filename)
 }
 
 SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
-    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
+    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), mu(seaToCopy.mu), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx-2];
@@ -206,10 +213,13 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
     }
 
     rho = new float[nlayers];
-    Q = new float[nlayers];
+    Q = new float[nlayers*nx*ny];
 
     for (int i = 0; i < nlayers; i++) {
         rho[i] = seaToCopy.rho[i];
+    }
+
+    for (int i = 0; i < nlayers*nx*ny; i++) {
         Q[i] = seaToCopy.Q[i];
     }
 
@@ -241,11 +251,12 @@ SeaCuda::~SeaCuda() {
 
 
 // set the initial data
-void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0) {
+void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
     for (int i = 0; i < nlayers*nx*ny; i++) {
         U_grid[i*3] = D0[i];
         U_grid[i*3+1] = Sx0[i];
         U_grid[i*3+2] = Sy0[i];
+        Q[i] = _Q[i];
     }
 
     bcs(0);
@@ -299,7 +310,7 @@ void SeaCuda::run() {
 
     cout << "Beginning evolution.\n";
 
-    cuda_run(beta, gamma_up, U_grid, rho, Q, nx, ny, nlayers, nt,
+    cuda_run(beta, gamma_up, U_grid, rho, Q, mu, nx, ny, nlayers, nt,
              alpha, dx, dy, dt, dprint);
 }
 
@@ -331,7 +342,8 @@ void SeaCuda::output_hdf5(char * filename) {
     hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
 
     H5::DataSpace dataspace(5, dims);
-    H5::DataSet dataset = outFile.createDataSet("SwerveOutput", H5::PredType::NATIVE_FLOAT, dataspace);
+    H5::DataSet dataset = outFile.createDataSet("SwerveOutput",
+        H5::PredType::NATIVE_FLOAT, dataspace);
 
     dataset.write(U_grid, H5::PredType::NATIVE_FLOAT);
 
@@ -351,6 +363,7 @@ int main() {
     float * D0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * Sx0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * Sy0 = new float[sea.nlayers*sea.nx*sea.ny];
+    float * _Q = new float[sea.nlayers*sea.nx*sea.ny];
 
     // set initial data
     for (int x = 1; x < (sea.nx - 1); x++) {
@@ -360,15 +373,17 @@ int main() {
             for (int l = 0; l < sea.nlayers; l++) {
                 Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                _Q[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
             }
         }
     }
 
-    sea.initial_data(D0, Sx0, Sy0);
+    sea.initial_data(D0, Sx0, Sy0, _Q);
 
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;
+    delete[] _Q;
 
     // run simulation
     sea.run();
