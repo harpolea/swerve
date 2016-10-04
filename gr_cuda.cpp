@@ -16,9 +16,6 @@
 #endif  // H5_NO_STD
 #endif
 #include "H5Cpp.h"
-//#ifndef H5_NO_NAMESPACE
-//    using namespace H5;
-//#endif
 
 using namespace std;
 
@@ -72,7 +69,7 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
     //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
-    U_grid = new float[nlayers*nx*ny*3*(nt+1)];
+    U_grid = new float[nlayers*nx*ny*3];
 
     cout << "Made a Sea.\n";
     //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
@@ -187,7 +184,7 @@ SeaCuda::SeaCuda(char * filename)
     //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
     try {
         Q = new float[int(nlayers*nx*ny)];
-        U_grid = new float[int(nlayers*nx*ny*3*(nt+1))];
+        U_grid = new float[int(nlayers*nx*ny*3)];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
         exit(1);
@@ -223,9 +220,9 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         Q[i] = seaToCopy.Q[i];
     }
 
-    U_grid = new float[int(nlayers*nx*ny*3*(nt+1))];// * int(ceil(float((nt+1)/dprint)))];
+    U_grid = new float[int(nlayers*nx*ny*3)];// * int(ceil(float((nt+1)/dprint)))];
 
-    for (int i = 0; i < nlayers*nx*ny*3*(nt+1);i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
+    for (int i = 0; i < nlayers*nx*ny*3;i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
         U_grid[i] = seaToCopy.U_grid[i];
     }
 
@@ -259,27 +256,27 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
         Q[i] = _Q[i];
     }
 
-    bcs(0);
+    bcs();
 
     cout << "Set initial data.\n";
 }
 
-void SeaCuda::bcs(int t) {
+void SeaCuda::bcs() {
     if (periodic) {
 
         for (int l = 0; l < nlayers; l++) {
             for (int y = 0; y < ny; y++){
                 for (int i = 0; i < 3; i++) {
-                    U_grid[(((t * ny + y) * nx) * nlayers + l)*3+i] = U_grid[(((t * ny + y) * nx + (nx-2)) * nlayers + l)*3+i];
+                    U_grid[((y * nx) * nlayers + l)*3+i] = U_grid[((y * nx + (nx-2)) * nlayers + l)*3+i];
 
-                    U_grid[(((t * ny + y) * nx + (nx-1)) * nlayers + l)*3+i] = U_grid[(((t * ny + y) * nx + 1) * nlayers + l)*3+i];
+                    U_grid[((y * nx + (nx-1)) * nlayers + l)*3+i] = U_grid[((y * nx + 1) * nlayers + l)*3+i];
                 }
             }
             for (int x = 0; x < nx; x++){
                 for (int i = 0; i < 3; i++) {
-                    U_grid[(((t * ny) * nx + x) * nlayers + l)*3+i] = U_grid[(((t * ny + (ny-2)) * nx + x) * nlayers + l)*3+i];
+                    U_grid[(x * nlayers + l)*3+i] = U_grid[(((ny-2) * nx + x) * nlayers + l)*3+i];
 
-                    U_grid[(((t * ny + (ny-1)) * nx + x) * nlayers + l)*3+i] = U_grid[(((t * ny + 1) * nx + x) * nlayers + l)*3+i];
+                    U_grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = U_grid[((nx + x) * nlayers + l)*3+i];
                 }
             }
         }
@@ -287,16 +284,16 @@ void SeaCuda::bcs(int t) {
         for (int l = 0; l < nlayers; l++) {
             for (int y = 0; y < ny; y++){
                 for (int i = 0; i < 3; i++) {
-                    U_grid[(((t * ny + y) * nx) * nlayers + l)*3+i] = U_grid[(((t * ny + y) * nx + 1) * nlayers + l)*3+i];
+                    U_grid[((y * nx) * nlayers + l)*3+i] = U_grid[((y * nx + 1) * nlayers + l)*3+i];
 
-                    U_grid[(((t * ny + y) * nx + (nx-1)) * nlayers + l)*3+i] = U_grid[(((t * ny + y) * nx + (nx-2)) * nlayers + l)*3+i];
+                    U_grid[((y * nx + (nx-1)) * nlayers + l)*3+i] = U_grid[((y * nx + (nx-2)) * nlayers + l)*3+i];
                 }
             }
             for (int x = 0; x < nx; x++){
                 for (int i = 0; i < 3; i++) {
-                    U_grid[(((t * ny) * nx + x) * nlayers + l)*3+i] = U_grid[(((t * ny + 1) * nx + x) * nlayers + l)*3+i];
+                    U_grid[(x * nlayers + l)*3+i] = U_grid[((nx + x) * nlayers + l)*3+i];
 
-                    U_grid[(((t * ny + (ny-1)) * nx + x) * nlayers + l)*3+i] = U_grid[(((t * ny + (ny-2)) * nx + x) * nlayers + l)*3+i];
+                    U_grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = U_grid[(((ny-2) * nx + x) * nlayers + l)*3+i];
                 }
 
             }
@@ -311,9 +308,10 @@ void SeaCuda::run() {
     cout << "Beginning evolution.\n";
 
     cuda_run(beta, gamma_up, U_grid, rho, Q, mu, nx, ny, nlayers, nt,
-             alpha, dx, dy, dt, dprint);
+             alpha, dx, dy, dt, dprint, outfile);
 }
 
+// NOTE: this will not work now we don't store everything in U_grid
 void SeaCuda::output(char * filename) {
     // open file
     ofstream outFile(filename);
@@ -346,6 +344,8 @@ void SeaCuda::output_hdf5(char * filename) {
         H5::PredType::NATIVE_FLOAT, dataspace);
 
     dataset.write(U_grid, H5::PredType::NATIVE_FLOAT);
+
+    outFile.close();
 
 }
 
@@ -388,8 +388,8 @@ int main() {
     // run simulation
     sea.run();
 
-    sea.output();
+    //sea.output();
 
-    cout << "Output data to file.\n";
+    //cout << "Output data to file.\n";
 
 }

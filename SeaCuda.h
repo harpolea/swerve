@@ -3,7 +3,8 @@
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers,
-         int nt, float alpha, float dx, float dy, float dt, int dprint);
+         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename);
+
 
 class SeaCuda {
 public:
@@ -20,7 +21,7 @@ public:
 
     void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q);
 
-    void bcs(int t);
+    void bcs();
 
     //void evolve(int t, float * beta_d, float * gamma_up_d, float * U_grid_d, float * rho_d, float * Q_d);
 

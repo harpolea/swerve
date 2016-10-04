@@ -2,6 +2,9 @@
 #define _GR_CUDA_KERNEL_H_
 
 #include <stdio.h>
+#include "H5Cpp.h"
+
+using namespace std;
 
 dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads);
 
@@ -521,9 +524,10 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
 
 }
 
-void cuda_run(float * beta, float * gamma_up, float * U_grid,
+
+void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers,
-         int nt, float alpha, float dx, float dy, float dt, int dprint) {
+         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename) {
 
 
     // set up GPU stuff
@@ -548,14 +552,6 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
                blocks[i].x, blocks[i].y, blocks[i].z,
                threads[i].x, threads[i].y, threads[i].z);
-    }
-
-    // allocate Un memory
-    float * Un_h = new float[nx*ny*nlayers*3];
-
-    // copy U_grid stuff
-    for (int i = 0; i < nx*ny*nlayers*3; i++) {
-        Un_h[i] = U_grid[i];
     }
 
     // copy
@@ -585,11 +581,46 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaMalloc((void**)&U_half_d, nlayers*nx*ny*3*sizeof(float));
     cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
 
+    // create file
+    hid_t outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+    // create dataspace
+    int ndims = 5;
+    hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+    hid_t file_space = H5Screate_simple(ndims, dims, NULL);
+
+    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(plist, H5D_CHUNKED);
+    hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+    H5Pset_chunk(plist, ndims, chunk_dims);
+
+    // create dataset
+    hid_t dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+
+    H5Pclose(plist);
+
+    // make a memory dataspace
+    hid_t mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
+
+    // select a hyperslab
+    //printf("hyperslab selection\n");
+    file_space = H5Dget_space(dset);
+    hsize_t start[] = {0, 0, 0, 0, 0};
+    hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+    //printf("writing\n");
+    // write to dataset
+    printf("Printing t = %i\n", 0);
+    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+    // close file dataspace
+    //printf("wrote\n");
+    H5Sclose(file_space);
+
     for (int t = 0; t < nt; t++) {
 
-        if (t % 50 == 0) {
-            printf("t =  %i\n", t);
-        }
+        //if (t % 50 == 0) {
+            //printf("t =  %i\n", t);
+        //}
         int kx_offset = 0;
         int ky_offset = 0;
 
@@ -628,17 +659,34 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
         if (err != cudaSuccess)
             printf("Error: %s\n", cudaGetErrorString(err));
 
-        // copy stuff back
-        cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
 
         // save to U_grid
-        if ((t+1) % dprint == 0) {
-            for (int i = 0; i < nx*ny*nlayers*3; i++) {
+        //if ((t+1) % dprint == 0) {
+            //for (int i = 0; i < nx*ny*nlayers*3; i++) {
                 //U_grid[(t+1)*nx*ny*nlayers*3/dprint + i] = Un_h[i];
-                U_grid[(t+1)*nx*ny*nlayers*3 + i] = Un_h[i];
-            }
+                //U_grid[(t+1)*nx*ny*nlayers*3 + i] = Un_h[i];
+            //}
+        //}
+
+        if ((t+1) % dprint == 0) {
+            printf("Printing t = %i\n", t+1);
+            // copy stuff back
+            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+            // select a hyperslab
+            file_space = H5Dget_space(dset);
+            hsize_t start[] = {hsize_t(t), 0, 0, 0, 0};
+            hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+            // write to dataset
+            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+            // close file dataspae
+            H5Sclose(file_space);
         }
     }
+    H5Sclose(mem_space);
+    H5Fclose(outFile);
 
 
     // delete some stuff
@@ -651,7 +699,7 @@ void cuda_run(float * beta, float * gamma_up, float * U_grid,
     cudaFree(U_half_d);
     cudaFree(sum_phs_d);
 
-    delete[] Un_h;
+    //delete[] Un_h;
     delete[] threads;
     delete[] blocks;
 }
