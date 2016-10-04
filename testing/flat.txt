@@ -1,0 +1,16 @@
+nx      50
+ny      50
+nt      100
+nlayers 2
+xmin    0.0
+xmax    10.0
+ymin    0.0
+ymax    10.0
+rho     1.0 1.0
+mu      0.0
+alpha   1.0
+beta    0.0 0.0
+gamma   1.0 0.0 0.0 1.0
+periodic f
+dprint  10000
+outfile na
