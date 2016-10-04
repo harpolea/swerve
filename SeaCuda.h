@@ -64,9 +64,6 @@ private:
     int dprint; // number of timesteps between printouts
 
     char outfile[200];
-
-    //void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx);
-    //void Jy(float * u, float * beta_d, float * gamma_up_d, float * jx);
 };
 
 #endif
