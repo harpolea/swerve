@@ -17,6 +17,7 @@ before_install:
   # manually create CUDA symlink
   - sudo ln -s /usr/local/cuda-$CUDA_VERSION /usr/local/cuda
 install:
+  - sudo apt-get install cuda
   - nvcc --version
 script:
   - make test
