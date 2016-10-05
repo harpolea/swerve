@@ -1,6 +1,6 @@
-nx      500
-ny      500
-nt      15
+nx      600
+ny      600
+nt      3000
 nlayers 2
 xmin    0.0
 xmax    10.0

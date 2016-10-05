@@ -39,13 +39,12 @@ public:
     int ny;
     float *xs;
     float *ys;
+    float *U_grid;
 
 private:
 
     int nt;
-
-    float *U_grid;
-
+    
     float dx;
     float dy;
     float dt;

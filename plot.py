@@ -10,7 +10,7 @@ def plotme():
     # see it now? (crashes except for small stuff)
     to_show = False
     # save it?
-    to_save = False
+    to_save = True
 
     # read input file
     input_file = open('input_file.txt', 'r')
@@ -56,7 +56,7 @@ def plotme():
     input_file.close()
 
     # read data
-    outfile = '../../Documents/Work/swerve/out.h5'
+    outfile = '../../Documents/Work/swerve/iridis.h5'
     if (outfile[-2:] == 'h5'): #hdf5
         f = tb.open_file(outfile, 'r')
         table = f.root.SwerveOutput
@@ -88,6 +88,8 @@ def plotme():
     fig = plt.figure(figsize=(12,10))
     ax = fig.gca(projection='3d')
 
+    #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
+
     surface_1 = ax.plot_surface(X,Y,D_2d[0,1,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis, antialiased=True)
     surface_2 = ax.plot_wireframe(X,Y,D_2d[0,0,:,:].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
 
@@ -107,7 +109,7 @@ def plotme():
     if to_save:
         Writer = animation.writers['ffmpeg']
         writer = Writer(fps=5, metadata=dict(artist='Me'), bitrate=1800)
-        anim.save('gr_cuda.mp4', writer=writer)
+        anim.save('../../Documents/Work/swerve/iridis.mp4', writer=writer)
 
     if (outfile[-2:] == 'h5'): #hdf5
         f.close()

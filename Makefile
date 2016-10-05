@@ -181,7 +181,7 @@ ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 ALL_LDFLAGS += -lhdf5_cpp -lhdf5
 
-# Common includes and paths for CUDA    
+# Common includes and paths for CUDA
 INCLUDES  := -I$(CUDA_PATH)/samples/common/inc -I/usr/include/hdf5/serial -I/usr/include/hdf5
 LIBRARIES := -L/usr/lib/x86_64-linux-gnu/hdf5/serial
 
@@ -233,16 +233,27 @@ endif
 gr_cuda.o:gr_cuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
+SeaCuda.o: SeaCuda.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
 gr_cuda_kernel.o:gr_cuda_kernel.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
 
-gr_cuda: gr_cuda.o gr_cuda_kernel.o
+gr_cuda: gr_cuda.o gr_cuda_kernel.o SeaCuda.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 
 run: build
 	$(EXEC) ./reduction
 
 clean:
-	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o
+	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o
+
+testing/flat.o:testing/flat.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+
+testing/flat:testing/flat.o gr_cuda_kernel.o SeaCuda.o
+	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+
+test: testing/flat
 
 clobber: clean

@@ -596,102 +596,156 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     cudaMalloc((void**)&U_half_d, nlayers*nx*ny*3*sizeof(float));
     cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
 
-    // create file
-    hid_t outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (strcmp(filename, "na") != 0) {
 
-    // create dataspace
-    int ndims = 5;
-    hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
-    hid_t file_space = H5Screate_simple(ndims, dims, NULL);
+        // create file
+        hid_t outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-    H5Pset_layout(plist, H5D_CHUNKED);
-    hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
-    H5Pset_chunk(plist, ndims, chunk_dims);
+        // create dataspace
+        int ndims = 5;
+        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        hid_t file_space = H5Screate_simple(ndims, dims, NULL);
 
-    // create dataset
-    hid_t dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+        hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+        H5Pset_layout(plist, H5D_CHUNKED);
+        hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        H5Pset_chunk(plist, ndims, chunk_dims);
 
-    H5Pclose(plist);
+        // create dataset
+        hid_t dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
 
-    // make a memory dataspace
-    hid_t mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
+        H5Pclose(plist);
 
-    // select a hyperslab
-    //printf("hyperslab selection\n");
-    file_space = H5Dget_space(dset);
-    hsize_t start[] = {0, 0, 0, 0, 0};
-    hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
-    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
-    //printf("writing\n");
-    // write to dataset
-    printf("Printing t = %i\n", 0);
-    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
-    // close file dataspace
-    //printf("wrote\n");
-    H5Sclose(file_space);
+        // make a memory dataspace
+        hid_t mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
 
-    for (int t = 0; t < nt; t++) {
+        // select a hyperslab
+        //printf("hyperslab selection\n");
+        file_space = H5Dget_space(dset);
+        hsize_t start[] = {0, 0, 0, 0, 0};
+        hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+        //printf("writing\n");
+        // write to dataset
+        printf("Printing t = %i\n", 0);
+        H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+        // close file dataspace
+        //printf("wrote\n");
+        H5Sclose(file_space);
 
-        //if (t % 50 == 0) {
-            //printf("t =  %i\n", t);
-        //}
-        int kx_offset = 0;
-        int ky_offset = 0;
+        for (int t = 0; t < nt; t++) {
 
-        for (int j = 0; j < kernels.y; j++) {
+            //if (t % 50 == 0) {
+                //printf("t =  %i\n", t);
+            //}
+            int kx_offset = 0;
+            int ky_offset = 0;
+
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+
+                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            }
+
             kx_offset = 0;
-            for (int i = 0; i < kernels.x; i++) {
-                evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                       nx, ny, nlayers, alpha,
-                       dx, dy, dt, kx_offset, ky_offset);
-                kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+            ky_offset = 0;
+
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            }
+
+            cudaDeviceSynchronize();
+
+            cudaError_t err = cudaGetLastError();
+
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
+            if ((t+1) % dprint == 0) {
+                printf("Printing t = %i\n", t+1);
+                // copy stuff back
+                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+                // select a hyperslab
+                file_space = H5Dget_space(dset);
+                hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
+                hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+                H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+                // write to dataset
+                H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+                // close file dataspae
+                H5Sclose(file_space);
+            }
+        }
+        H5Sclose(mem_space);
+        H5Fclose(outFile);
+    } else { // don't print
+        for (int t = 0; t < nt; t++) {
+
+            //if (t % 50 == 0) {
+                //printf("t =  %i\n", t);
+            //}
+            int kx_offset = 0;
+            int ky_offset = 0;
+
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+
+                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            }
+
+            kx_offset = 0;
+            ky_offset = 0;
+
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            }
+
+            cudaDeviceSynchronize();
+
+            cudaError_t err = cudaGetLastError();
+
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
+            if ((t+1) % dprint == 0) {
+                printf("Printing t = %i\n", t+1);
+                // copy stuff back
+                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
 
             }
-            ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-        }
-
-        kx_offset = 0;
-        ky_offset = 0;
-
-        for (int j = 0; j < kernels.y; j++) {
-            kx_offset = 0;
-            for (int i = 0; i < kernels.x; i++) {
-                evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                       Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                       nx, ny, nlayers, alpha,
-                       dx, dy, dt, kx_offset, ky_offset);
-                kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-            }
-            ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-        }
-
-        cudaDeviceSynchronize();
-
-        cudaError_t err = cudaGetLastError();
-
-        if (err != cudaSuccess)
-            printf("Error: %s\n", cudaGetErrorString(err));
-
-        if ((t+1) % dprint == 0) {
-            printf("Printing t = %i\n", t+1);
-            // copy stuff back
-            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-
-            // select a hyperslab
-            file_space = H5Dget_space(dset);
-            hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-            hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
-            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
-            // write to dataset
-            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
-            // close file dataspae
-            H5Sclose(file_space);
         }
     }
-    H5Sclose(mem_space);
-    H5Fclose(outFile);
 
 
     // delete some stuff
