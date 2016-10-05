@@ -1,5 +1,8 @@
 language: generic
+dist: trusty
+sudo: required  # just guessing as has errored without it
 before_install:
+  # install CUDA toolkit
   - source .travis/install-cuda-trusty.sh
 install:
   - nvcc --version
