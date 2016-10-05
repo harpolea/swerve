@@ -19,6 +19,10 @@
 
 using namespace std;
 
+/*
+Implement SeaCuda class
+*/
+
 SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt,
         float xmin, float xmax,
         float ymin, float ymax, float * _rho,

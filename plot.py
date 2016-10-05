@@ -61,6 +61,7 @@ def plotme():
         f = tb.open_file(outfile, 'r')
         table = f.root.SwerveOutput
         D_2d = np.swapaxes(table[:,:,:,:,0], 1, 3)
+        D_2d = D_2d[::dprint,:,:,:]
     else: # assume some kind of csv
         data = np.loadtxt(outfile, delimiter=',')
         ts = data[:,0]
@@ -68,8 +69,8 @@ def plotme():
         ys = data[:,2]
         ls = data[:,3]
         Ds = data[:,4]
-        Sxs = data[:,5]
-        Syx = data[:,6]
+        #Sxs = data[:,5]
+        #Syx = data[:,6]
         #t = range(int((nt+1)/dprint))*dprint
 
         D_2d = np.zeros((int((nt+1)/dprint), nlayers, nx, ny))
@@ -78,7 +79,7 @@ def plotme():
 
         for i in range(int((nt+1)/dprint)*dprint*nlayers*nx*ny):
             #print(int(xs[i]*nx/xmax))
-            D_2d[int(ts[i]), int(ls[i]), int(xs[i]), int(ys[i])] = Ds[i]
+            D_2d[int(ts[i]), int(ls[i]), int(xs[i]), int(ys[i])] = Ds[i*dprint]
 
     x = np.linspace(0, xmax, num=nx, endpoint=False)
     y = np.linspace(0, ymax, num=ny, endpoint=False)
