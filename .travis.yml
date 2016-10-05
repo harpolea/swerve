@@ -20,6 +20,7 @@ install:
   #- sudo apt-get install cuda
   - sudo apt-get install nvidia-cuda-toolkit
   - nvcc --version
+  - sudo apt-get install libhdf5-serial-dev
 script:
   - make test
   - cd testing
