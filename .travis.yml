@@ -19,7 +19,7 @@ before_install:
 install:
   #- sudo apt-get install cuda
   - sudo apt-get install nvidia-cuda-toolkit
-  - sudo bash /usr/local/cuda-$CUDA_VERSION/bin/cuda-install-samples-$CUDA_VERSION.sh ~
+  #- sudo bash /usr/local/cuda-$CUDA_VERSION/bin/cuda-install-samples-$CUDA_VERSION.sh ~
   - nvcc --version
   - sudo apt-get install libhdf5-serial-dev
 script:
