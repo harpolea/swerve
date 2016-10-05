@@ -1,0 +1,7 @@
+language: cpp
+compiler:
+  - g++
+script:
+  - make test
+  - cd testing
+  - ./flat

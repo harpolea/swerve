@@ -84,5 +84,7 @@ int main() {
     delete[] _Q;
     delete[] err;
 
+    return int(passed);
+
 
 }
