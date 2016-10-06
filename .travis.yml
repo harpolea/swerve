@@ -13,7 +13,7 @@ before_install:
   # install packages
   - CUDA_PKG_VERSION="7-5"
   - CUDA_VERSION="7.5"
-  - sudo apt-get install cuda
+  - sudo apt-get install cuda-$CUDA_VERSION
   #- sudo apt-get install -y --no-install-recommends cuda-core-$CUDA_PKG_VERSION cuda-cudart-dev-$CUDA_PKG_VERSION cuda-cublas-dev-$CUDA_PKG_VERSION cuda-curand-dev-$CUDA_PKG_VERSION
   # manually create CUDA symlink
   - sudo ln -s /usr/local/cuda-$CUDA_VERSION /usr/local/cuda

@@ -9,11 +9,6 @@ import subprocess
 def quick_plot():
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
-    # see it now? (crashes except for small stuff)
-    to_show = False
-    # save it?
-    to_save = True
-
     # read input file
     input_file = open('input_file.txt', 'r')
     inputs = input_file.readlines()
@@ -107,8 +102,6 @@ def quick_plot():
     bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10 ../../Documents/Work/swerve/iridis.mp4"
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
-
-    #ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10 ../../Documents/Work/swerve/iridis.mp4
 
     # delete image files
     bashCommand = "rm ../../Documents/Work/swerve/plotting/iridis_*.png"
@@ -211,14 +204,14 @@ def plotme():
         ax.plot_surface(X,Y,D_2d[i,1,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis, antialiased=True)
         ax.plot_wireframe(X,Y,D_2d[i,0,:,:].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
 
-    anim = animation.FuncAnimation(fig, animate, frames=len(D_2d[:,0,0,0]), interval=200)#, blit=True)
+    anim = animation.FuncAnimation(fig, animate, frames=len(D_2d[:,0,0,0]), interval=100)#, blit=True)
 
     if to_show:
         plt.show()
 
     if to_save:
         Writer = animation.writers['ffmpeg']
-        writer = Writer(fps=5, metadata=dict(artist='Me'))#), bitrate=1800)
+        writer = Writer(fps=10, metadata=dict(artist='Me'))#), bitrate=1800)
         anim.save('../../Documents/Work/swerve/iridis2.mp4', writer=writer)
 
     if (outfile[-2:] == 'h5'): #hdf5
