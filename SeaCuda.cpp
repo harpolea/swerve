@@ -5,8 +5,6 @@
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include <fstream>
-//#include <helper_cuda.h>
-//#include <helper_functions.h>
 #include <algorithm>
 #include "SeaCuda.h"
 

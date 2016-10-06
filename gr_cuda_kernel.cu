@@ -694,6 +694,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         }
         H5Sclose(mem_space);
         H5Fclose(outFile);
+
     } else { // don't print
         for (int t = 0; t < nt; t++) {
 
