@@ -6,11 +6,19 @@ from mpl_toolkits.mplot3d import Axes3D
 import tables as tb
 import subprocess
 
-def quick_plot():
+def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
+    # set defaults
+    if input_filename is None:
+        input_filename =  'input_file.txt'
+    if data_filename is None:
+        data_filename = '../../Documents/Work/swerve/iridis2.h5'
+    if movie_filename is None:
+        movie_filename = '../../Documents/Work/swerve/iridis.mp4'
+
     # read input file
-    input_file = open('input_file.txt', 'r')
+    input_file = open(input_filename, 'r')
     inputs = input_file.readlines()
 
     for line in inputs:
@@ -32,7 +40,7 @@ def quick_plot():
             ymin = float(dat[0])
         elif name == 'ymax':
             ymax = float(dat[0])
-        elif name == 'rho':
+        """elif name == 'rho':
             rho = [float(d) for d in dat]
         elif name == 'mu':
             mu = float(dat[0])
@@ -41,11 +49,9 @@ def quick_plot():
         elif name == 'beta':
             beta = [float(d) for d in dat]
         elif name == 'gamma':
-            gamma = [float(d) for d in dat]
+            gamma = [float(d) for d in dat]"""
         elif name == 'dprint':
             dprint = int(dat[0])
-        elif name == 'outfile':
-            outfile = dat[0]
 
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
@@ -53,30 +59,11 @@ def quick_plot():
     input_file.close()
 
     # read data
-    outfile = '../../Documents/Work/swerve/iridis2.h5'
-    if (outfile[-2:] == 'h5'): #hdf5
-        f = tb.open_file(outfile, 'r')
-        table = f.root.SwerveOutput
-        D_2d = np.swapaxes(table[:,:,:,:,0], 1, 3)
+    f = tb.open_file(data_filename, 'r')
+    table = f.root.SwerveOutput
+    D_2d = np.swapaxes(table[:,:,:,:,0], 1, 3)
         #D_2d = D_2d[::dprint,:,:,:]
-    else: # assume some kind of csv
-        data = np.loadtxt(outfile, delimiter=',')
-        ts = data[:,0]
-        xs = data[:,1]
-        ys = data[:,2]
-        ls = data[:,3]
-        Ds = data[:,4]
-        #Sxs = data[:,5]
-        #Syx = data[:,6]
-        #t = range(int((nt+1)/dprint))*dprint
 
-        D_2d = np.zeros((int((nt+1)/dprint), nlayers, nx, ny))
-        #Sx_2d = np.zeros((nt, nlayers, nx, ny))
-        #Sy_2d = np.zeros((nt, nlayers, nx, ny))
-
-        for i in range(int((nt+1)/dprint)*dprint*nlayers*nx*ny):
-            #print(int(xs[i]*nx/xmax))
-            D_2d[int(ts[i]), int(ls[i]), int(xs[i]), int(ys[i])] = Ds[i]
 
     x = np.linspace(0, xmax, num=nx, endpoint=False)
     y = np.linspace(0, ymax, num=ny, endpoint=False)
@@ -98,8 +85,11 @@ def quick_plot():
         ax.plot_wireframe(X,Y,D_2d[i,0,:,:].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
         plt.savefig(outname)
 
+    # close hdf5 file
+    f.close()
+
     # now make a video!
-    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10 ../../Documents/Work/swerve/iridis.mp4"
+    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10" +  movie_filename
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
 
@@ -219,4 +209,4 @@ def plotme():
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot()
+    quick_plot(data_filename='../../Documents/Work/swerve/iridis_7_10_16.h5', movie_filename='../../Documents/Work/swerve/iridis_7_10_16.mp4')

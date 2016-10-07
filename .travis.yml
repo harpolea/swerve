@@ -3,7 +3,9 @@ dist: trusty
 sudo: required  # just guessing as has errored without it
 before_install:
   # install CUDA toolkit
+  #http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1204/x86_64/cuda-repo-ubuntu1204_5.5-0_amd64.deb
   #- source .travis/install-cuda-trusty.sh
+  - sudo /usr/bin/nvidia-uninstall
   - CUDA_REPO_PKG=cuda-repo-ubuntu1404_7.5-18_amd64.deb
   - wget http://developer.download.nvidia.com/compute/cuda/repos/ubuntu1404/x86_64/$CUDA_REPO_PKG
   - sudo dpkg -i $CUDA_REPO_PKG
