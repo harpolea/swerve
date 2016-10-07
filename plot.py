@@ -40,6 +40,8 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
             ymin = float(dat[0])
         elif name == 'ymax':
             ymax = float(dat[0])
+        elif name == 'dprint':
+            dprint = int(dat[0])
         """elif name == 'rho':
             rho = [float(d) for d in dat]
         elif name == 'mu':
@@ -50,8 +52,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
             beta = [float(d) for d in dat]
         elif name == 'gamma':
             gamma = [float(d) for d in dat]"""
-        elif name == 'dprint':
-            dprint = int(dat[0])
+
 
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
@@ -89,7 +90,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     f.close()
 
     # now make a video!
-    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10" +  movie_filename
+    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/iridis_?????.png' -c:v libx264 -r 10 " +  movie_filename
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
 
@@ -209,4 +210,4 @@ def plotme():
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename='../../Documents/Work/swerve/iridis_7_10_16.h5', movie_filename='../../Documents/Work/swerve/iridis_7_10_16.mp4')
+    quick_plot(data_filename='../../Documents/Work/swerve/iridis_7_10_16_2.h5', movie_filename='../../Documents/Work/swerve/iridis_7_10_16_2.mp4')

@@ -38,8 +38,8 @@ int main(int argc, char *argv[]) {
     for (int x = 1; x < (sea.nx - 1); x++) {
         for (int y = 1; y < (sea.ny - 1); y++) {
             // set D0 to be two hills of fluid
-            D0[(y * sea.nx + x) * sea.nlayers] = 1.0 + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
-            D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8 + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers] = 1.0;// + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
 
             _Q[(y * sea.nx + x) * sea.nlayers] = 0.0;
             _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.05 * exp(-(pow(sea.xs[x-1]-5.0, 2) + pow(sea.ys[y-1]-5.0, 2)) * 2.0);

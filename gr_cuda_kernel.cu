@@ -434,25 +434,25 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         float deltaQy = 0.0;
 
         if (l < (nlayers - 1)) {
-            sum_qs += -rho_d[l+1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
-            deltaQx = rho_d[l+1] / rho_d[l] *
-                (Q_d[(y * nx + x) * nlayers + l] + mu) *
+            sum_qs += (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
+            deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+1] -
                  U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
                  (W*U_half[((y * nx + x) * nlayers + l)*3]);
-            deltaQy = rho_d[l+1] / rho_d[l] *
-                (Q_d[(y * nx + x) * nlayers + l] + mu) *
+            deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+2] -
                  U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
                  (W*U_half[((y * nx + x) * nlayers + l)*3]);
         }
         if (l > 0) {
-            sum_qs += (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
-            deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
+            sum_qs += -rho_d[l-1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
+            deltaQx = rho_d[l-1] / rho_d[l] *
+                (Q_d[(y * nx + x) * nlayers + l] + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+1] -
                  U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
                  (W*U_half[((y * nx + x) * nlayers + l)*3]);
-            deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
+            deltaQy = rho_d[l-1] / rho_d[l] *
+                (Q_d[(y * nx + x) * nlayers + l] + mu) *
                 (U_half[((y * nx + x) * nlayers + l)*3+2] -
                  U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
                  (W*U_half[((y * nx + x) * nlayers + l)*3]);
