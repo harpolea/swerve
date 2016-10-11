@@ -469,14 +469,14 @@ void Sea::evolve(int t) {
                 sum_phs[(y * nx + x) * nlayers + l] = 0.0;
 
                 if (l < (nlayers - 1)) {
-                    sum_qs += -rho[l+1] / rho[l] * abs(Q[l+1] - Q[l]);
-                    deltaQx = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
-                    deltaQy = rho[l+1] / rho[l] * max(float(0.0), Q[l] - Q[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
+                    sum_qs += (Q[l+1] - Q[l]);
+                    deltaQx = (Q[l] - Q[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
+                    deltaQy = (Q[l] - Q[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
                 }
                 if (l > 0) {
-                    sum_qs += abs(Q[l] - Q[l-1]);
-                    deltaQx = max(float(0.0), Q[l] - Q[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
-                    deltaQy = max(float(0.0), Q[l] - Q[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+                    sum_qs += -rho[l-1] / rho[l] * (Q[l] - Q[l-1]);
+                    deltaQx = rho[l-1] / rho[l] * (Q[l] - Q[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
+                    deltaQy = rho[l-1] / rho[l] * (Q[l] - Q[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
                 }
 
                 for (int j = 0; j < l; j++) {
