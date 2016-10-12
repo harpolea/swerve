@@ -200,6 +200,31 @@ __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, in
 
 }
 
+__device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
+    /*
+    Enforce boundary conditions on section of grid.
+    */
+    // outflow
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
+
+    if ((l < nlayers) && (y < ny) && (x < nx) ) {
+        for (int i = 0; i < 3; i++) {
+            if (x == 0 || x == 1) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
+            } else if (x == (nx-1) || x == (nx-2)) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + (nx-3)) * nlayers + l)*3+i];
+            } else if (y == 0 || y == 1) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((2 * nx + x) *  + x) * nlayers + l)*3+i];
+            } else if (y == (ny-1) || y == (ny-2)) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
+            }
+        }
+    }
+
+}
+
 __device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, float alpha) {
     /*
     Calculate Jacobian in the x-direction.
@@ -498,27 +523,22 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
-    //float *U_plus_half, *U_minus_half;
-
-    //U_plus_half = (float *) malloc(3*sizeof(float));
-    //U_minus_half = (float *) malloc(3*sizeof(float));
+    int offset = ((y * nx + x) * nlayers + l) * 3;
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-        int offset = ((y * nx + x) * nlayers + l) * 3;
-
         // x-direction
         for (int i = 0; i < 3; i++) {
-            float S_upwind = (Up[((y * nx + x+1) * nlayers + l) * 3 + i] -
-                Up[((y * nx + x) * nlayers + l) * 3 + i]) / dx;
-            float S_downwind = (Up[((y * nx + x) * nlayers + l) * 3 + i] -
-                Up[((y * nx + x-1) * nlayers + l) * 3 + i]) / dx;
+            float S_upwind = (Un_d[((y * nx + x+1) * nlayers + l) * 3 + i] -
+                Un_d[((y * nx + x) * nlayers + l) * 3 + i]) / dx;
+            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 3 + i] -
+                Un_d[((y * nx + x-1) * nlayers + l) * 3 + i]) / dx;
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
-            float r = 1.0e6;
+            float r = 1.0e5;
 
             // make sure don't divide by zero
-            if (S_downwind > 1.0e-10) {
+            if (S_downwind > 1.0e-5) {
                 r = S_upwind / S_downwind;
             }
 
@@ -527,13 +547,13 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
             S *= phi;
 
-            qx_plus_half[offset + i] = Up[offset + i] + S * 0.5 * dx;
-            qx_minus_half[offset + i] = Up[offset + i] - S * 0.5 * dx;
+            qx_plus_half[offset + i] = Un_d[offset + i] + S * 0.5 * dx;
+            qx_minus_half[offset + i] = Un_d[offset + i] - S * 0.5 * dx;
         }
 
         // plus half stuff
 
-        float W = sqrt((qx_plus_half[offset + 1] * qx_plus_half[offset + 1] *
+        float W = sqrt(float(qx_plus_half[offset + 1] * qx_plus_half[offset + 1] *
             gamma_up_d[0] +
             2.0 * qx_plus_half[offset + 1] * qx_plus_half[offset + 2] *
             gamma_up_d[1] +
@@ -553,9 +573,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fx_plus_half[offset + 2] = qx_plus_half[offset + 2] * qx;
 
         // minus half stuff
-        W = sqrt((qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
+        W = sqrt(float(qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
             gamma_up_d[0] +
-            2.0*qx_minus_half[offset + 1] * qx_minus_half[offset + 2] *
+            2.0 * qx_minus_half[offset + 1] * qx_minus_half[offset + 2] *
             gamma_up_d[1] +
             qx_minus_half[offset + 2] * qx_minus_half[offset + 2] *
             gamma_up_d[1*2+1]) /
@@ -573,16 +593,16 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         // y-direction
         for (int i = 0; i < 3; i++) {
-            float S_upwind = (Up[(((y+1) * nx + x) * nlayers + l) * 3 + i] -
-                Up[((y * nx + x) * nlayers + l) * 3 + i]) / dy;
-            float S_downwind = (Up[((y * nx + x) * nlayers + l) * 3 + i] -
-                Up[(((y-1) * nx + x) * nlayers + l) * 3 + i]) / dy;
+            float S_upwind = (Un_d[(((y+1) * nx + x) * nlayers + l) * 3 + i] -
+                Un_d[((y * nx + x) * nlayers + l) * 3 + i]) / dy;
+            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 3 + i] -
+                Un_d[(((y-1) * nx + x) * nlayers + l) * 3 + i]) / dy;
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
-            float r = 1.0e6;
+            float r = 1.0e5;
 
             // make sure don't divide by zero
-            if (S_downwind > 1.0e-10) {
+            if (S_downwind > 1.0e-5) {
                 r = S_upwind / S_downwind;
             }
 
@@ -591,15 +611,15 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
             S *= phi;
 
-            qy_plus_half[offset + i] = Up[offset + i] + S * 0.5 * dy;
-            qy_minus_half[offset + i] = Up[offset + i] - S * 0.5 * dy;
+            qy_plus_half[offset + i] = Un_d[offset + i] + S * 0.5 * dy;
+            qy_minus_half[offset + i] = Un_d[offset + i] - S * 0.5 * dy;
         }
 
         // plus half stuff
 
-        W = sqrt((qy_plus_half[offset + 1] * qy_plus_half[offset + 1] *
+        W = sqrt(float(qy_plus_half[offset + 1] * qy_plus_half[offset + 1] *
             gamma_up_d[0] +
-            2.0 * qy_plus_half[offset + 1]*qy_plus_half[offset + 2] *
+            2.0 * qy_plus_half[offset + 1] * qy_plus_half[offset + 2] *
             gamma_up_d[1] +
             qy_plus_half[offset + 2] * qy_plus_half[offset + 2] *
             gamma_up_d[1*2+1]) /
@@ -616,7 +636,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             0.5 * qy_plus_half[offset] * qy_plus_half[offset] / (W*W);
 
         // minus half stuff
-        W = sqrt((qy_minus_half[offset+1] * qy_minus_half[offset+1] *
+        W = sqrt(float(qy_minus_half[offset+1] * qy_minus_half[offset+1] *
             gamma_up_d[0] +
             2.0 * qy_minus_half[offset + 1] * qy_minus_half[offset + 2] *
             gamma_up_d[1] +
@@ -634,7 +654,25 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             0.5 * qy_minus_half[offset] * qy_minus_half[offset] / (W*W);
     }
 
-    __syncthreads();
+}
+
+__global__ void evolve_fv_fluxes(float * beta_d, float * gamma_up_d,
+                     float * Un_d, float * Up, float * U_half,
+                     float * qx_plus_half, float * qx_minus_half,
+                     float * qy_plus_half, float * qy_minus_half,
+                     float * fx_plus_half, float * fx_minus_half,
+                     float * fy_plus_half, float * fy_minus_half,
+                     float * sum_phs, float * rho_d, float * Q_d,
+                     float mu,
+                     int nx, int ny, int nlayers, float alpha,
+                     float dx, float dy, float dt,
+                     int kx_offset, int ky_offset) {
+    /*
+    First part of evolution through one timestep using finite volume methods.
+    */
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
 
     // do fluxes
     if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (l < nlayers)) {
@@ -657,25 +695,40 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                 qy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] -
                 qy_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
 
+                //printf("fxp %f ", fy_m);
+
             float fy_p = 0.5 * (
                 fy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
                 fy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i] +
                 qy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
                 qy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i]);
 
+            //printf("fxp %f ", fy_p);
+
             Up[((y * nx + x) * nlayers + l)*3 + i] =
                 Un_d[((y * nx + x) * nlayers + l)*3 + i] -
                 (dt/dx) * alpha * (fx_p - fx_m) -
                 (dt/dy) * alpha * (fy_p - fy_m);
+
         }
+
 
     }
 
     __syncthreads();
 
     // enforce boundary conditions
-    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
+    bcs_fv(Up, nx, ny, nlayers, kx_offset, ky_offset);
 
+    // copy back to grid
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        //printf("D %f ", Up[((y * nx + x) * nlayers + l)*3]);
+        for (int i = 0; i < 3; i++) {
+            Un_d[((y * nx + x) * nlayers + l)*3+i] =
+                Up[((y * nx + x) * nlayers + l)*3+i];
+        }
+    }
+/*
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
         for (int i = 0; i < 3; i++) {
@@ -765,7 +818,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha * (-deltaQy);
 
     }
-
+*/
 }
 
 
@@ -965,6 +1018,27 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
 
+            if (finite_volume) {
+                kx_offset = 0;
+                ky_offset = 0;
+
+                for (int j = 0; j < kernels.y; j++) {
+                    kx_offset = 0;
+                    for (int i = 0; i < kernels.x; i++) {
+                        evolve_fv_fluxes<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d,
+                               gamma_up_d, Un_d,
+                               Up_d, U_half_d,
+                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                               sum_phs_d, rho_d, Q_d, mu,
+                               nx, ny, nlayers, alpha,
+                               dx, dy, dt, kx_offset, ky_offset);
+                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    }
+                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                }
+            }
+/*
             kx_offset = 0;
             ky_offset = 0;
 
@@ -979,7 +1053,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 }
                 ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
-
+*/
             cudaDeviceSynchronize();
 
             cudaError_t err = cudaGetLastError();
@@ -1069,6 +1143,17 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     cudaFree(Up_d);
     cudaFree(U_half_d);
     cudaFree(sum_phs_d);
+
+    if (finite_volume) {
+        cudaFree(qx_p_d);
+        cudaFree(qx_m_d);
+        cudaFree(qy_p_d);
+        cudaFree(qy_m_d);
+        cudaFree(fx_p_d);
+        cudaFree(fx_m_d);
+        cudaFree(fy_p_d);
+        cudaFree(fy_m_d);
+    }
 
     //delete[] Un_h;
     delete[] threads;

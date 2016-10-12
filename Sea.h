@@ -43,8 +43,10 @@ public:
 
     void bcs(int t);
     void bcs(float ** grid);
+    void bcs_fv(float ** grid);
 
     void evolve(int t);
+    void evolve_fv(int t);
     void evolve_cuda(int t, int numBlocks, int numThreads, float * beta_d, float * gamma_up_d, float * U_grid_d);
 
     void run();

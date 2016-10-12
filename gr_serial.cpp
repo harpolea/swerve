@@ -310,6 +310,54 @@ void Sea::bcs(float ** grid) {
     }
 }
 
+void Sea::bcs_fv(float ** grid) {
+    if (periodic) {
+
+        for (int l = 0; l < nlayers; l++) {
+            for (int y = 0; y < ny; y++){
+                for (int i = 0; i < 3; i++) {
+                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + (nx-3)) * nlayers + l][i];
+                    grid[(y * nx + 1) * nlayers + l][i] = grid[(y * nx + (nx-4)) * nlayers + l][i];
+
+                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + 2) * nlayers + l][i];
+                    grid[(y * nx + (nx-2)) * nlayers + l][i] = grid[(y * nx + 3) * nlayers + l][i];
+                }
+            }
+            for (int x = 0; x < nx; x++){
+                for (int i = 0; i < 3; i++) {
+                    grid[x * nlayers + l][i] = grid[((ny-3) * nx + x) * nlayers + l][i];
+                    grid[(nx + x) * nlayers + l][i] = grid[((ny-4) * nx + x) * nlayers + l][i];
+
+                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[(2 * nx + x) * nlayers + l][i];
+                    grid[((ny-2) * nx + x) * nlayers + l][i] = grid[(3 * nx + x) * nlayers + l][i];
+                }
+            }
+        }
+    } else { // outflow
+        for (int l = 0; l < nlayers; l++) {
+            for (int y = 0; y < ny; y++){
+                for (int i = 0; i < 3; i++) {
+                    grid[(y * nx) * nlayers + l][i] = grid[(y * nx + 2) * nlayers + l][i];
+                    grid[(y * nx + 1) * nlayers + l][i] = grid[(y * nx + 2) * nlayers + l][i];
+
+                    grid[(y * nx + (nx-1)) * nlayers + l][i] = grid[(y * nx + (nx-3)) * nlayers + l][i];
+                    grid[(y * nx + (nx-2)) * nlayers + l][i] = grid[(y * nx + (nx-3)) * nlayers + l][i];
+                }
+            }
+            for (int x = 0; x < nx; x++){
+                for (int i = 0; i < 3; i++) {
+                    grid[x * nlayers + l][i] = grid[(2*nx + x) * nlayers + l][i];
+                    grid[(nx + x) * nlayers + l][i] = grid[(2*nx + x) * nlayers + l][i];
+
+                    grid[((ny-1) * nx + x) * nlayers + l][i] = grid[((ny-3) * nx + x) * nlayers + l][i];
+                    grid[((ny-2) * nx + x) * nlayers + l][i] = grid[((ny-3) * nx + x) * nlayers + l][i];
+                }
+
+            }
+        }
+    }
+}
+
 SquareMatrix Sea::Jx(Vec u) {
 
     float W = sqrt((u.vec[1]*u.vec[1] * gamma_up[0][0] +
@@ -533,6 +581,342 @@ void Sea::evolve(int t) {
     for (int i=0; i < nlayers*nx*ny; i++){
         delete[] Up[i];
         delete[] U_half[i];
+    }
+
+}
+
+void Sea::evolve_fv(int t) {
+
+    if (t % 50 == 0) {
+        cout << "t = " << t << "\n";
+    }
+
+    Vec u, u_ip, u_im, u_jp, u_jm, u_pp, u_mm, u_imjp, u_ipjm, up;
+
+    float ** Up = new float*[nlayers*nx*ny];
+    float ** U_half = new float*[nlayers*nx*ny];
+    float ** qx_plus_half = new float*[nlayers*nx*ny];
+    float ** qx_minus_half = new float*[nlayers*nx*ny];
+    float ** qy_plus_half = new float*[nlayers*nx*ny];
+    float ** qy_minus_half = new float*[nlayers*nx*ny];
+    float ** fx_plus_half = new float*[nlayers*nx*ny];
+    float ** fx_minus_half = new float*[nlayers*nx*ny];
+    float ** fy_plus_half = new float*[nlayers*nx*ny];
+    float ** fy_minus_half = new float*[nlayers*nx*ny];
+
+    for (int i=0; i < nlayers*nx*ny; i++){
+        Up[i] = new float[3];
+        U_half[i] = new float[3];
+        for (int j = 0; j < 3; j++) {
+            // initialise
+            Up[i][j] = 0.0;
+            U_half[i][j] = 0.0;
+            qx_plus_half[i][j] = 0.0;
+            qx_minus_half[i][j] = 0.0;
+            qy_plus_half[i][j] = 0.0;
+            qy_minus_half[i][j] = 0.0;
+            fx_plus_half[i][j] = 0.0;
+            fx_minus_half[i][j] = 0.0;
+            fy_plus_half[i][j] = 0.0;
+            fy_minus_half[i][j] = 0.0;
+        }
+    }
+
+    for (int l = 0; l < nlayers; l++) {
+        for (int x = 1; x < (nx-1); x++) {
+            for (int y = 1; y < (ny-1); y++) {
+                u = U(l, x, y, t);
+                u_ip = U(l, x+1, y, t);
+                u_im = U(l, x-1, y, t);
+                u_jp = U(l, x, y+1, t);
+                u_jm = U(l, x, y-1, t);
+                u_pp = U(l, x+1, y+1, t);
+                u_mm = U(l, x-1, y-1, t);
+                u_ipjm = U(l, x+1, y-1, t);
+                u_imjp = U(l, x-1, y+1, t);
+
+                int offset = (y * nx + x) * nlayers + l;
+
+                // x-direction
+                for (int i = 0; i < 3; i++) {
+                    float S_upwind = (u_ip.vec[i] - u.vec[i]) / dx;
+                    float S_downwind = (u.vec[i] - u_im.vec[i]) / dx;
+                    float S = 0.5 * (S_upwind + S_downwind);
+
+                    float r = 1.0e5;
+
+                    if (S_downwind > 1.0e-5) {
+                        r = S_upwind / S_downwind;
+                    }
+
+                    // superbee
+                    float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+
+                    S *= phi;
+
+                    qx_plus_half[offset][i] = u.vec[i] + S * 0.5 * dx;
+                    qx_minus_half[offset][i] = u.vec[i] - S * 0.5 * dx;
+
+                }
+                // plus half stuff
+                float W = sqrt(float(qx_plus_half[offset][1] * qx_plus_half[offset][1] *
+                    gamma_up[0][0] +
+                    2.0 * qx_plus_half[offset][1] * qx_plus_half[offset][2] *
+                    gamma_up[0][1] +
+                    qx_plus_half[offset][2] * qx_plus_half[offset][2] *
+                    gamma_up[1][1]) /
+                    (qx_plus_half[offset][0] * qx_plus_half[offset][0]) + 1.0);
+
+                float uu = qx_plus_half[offset][1] / (qx_plus_half[offset][0] * W);
+                float v = qx_plus_half[offset][2] / (qx_plus_half[offset][0] * W);
+                float qx = uu * gamma_up[0][0] + v * gamma_up[0][1] - beta[0] / alpha;
+
+                fx_plus_half[offset][0] = qx_plus_half[offset][0] * qx;
+
+                fx_plus_half[offset][1] = qx_plus_half[offset][1] * qx +
+                    0.5 * qx_plus_half[offset][0] * qx_plus_half[offset][0] / (W*W);
+
+                fx_plus_half[offset][2] = qx_plus_half[offset][2] * qx;
+
+                // minus half stuff
+                W = sqrt(float(qx_minus_half[offset][1] * qx_minus_half[offset][1] *
+                    gamma_up[0][0] +
+                    2.0 * qx_minus_half[offset][1] * qx_minus_half[offset][2] *
+                    gamma_up[0][1] +
+                    qx_minus_half[offset][2] * qx_minus_half[offset][2] *
+                    gamma_up[1][1]) /
+                    (qx_minus_half[offset][0] * qx_minus_half[offset][0]) + 1.0);
+
+                uu = qx_minus_half[offset][1] / (qx_minus_half[offset][0] * W);
+                v = qx_minus_half[offset][2] / (qx_minus_half[offset][0] * W);
+                qx = uu * gamma_up[0][0] + v * gamma_up[0][1] - beta[0] / alpha;
+
+                fx_minus_half[offset][0] = qx_minus_half[offset][0] * qx;
+
+                fx_minus_half[offset][1] = qx_minus_half[offset][1] * qx +
+                    0.5 * qx_minus_half[offset][0] * qx_minus_half[offset][0] / (W*W);
+
+                fx_minus_half[offset][2] = qx_minus_half[offset][2] * qx;
+
+                // y-direction
+                for (int i = 0; i < 3; i++) {
+                    float S_upwind = (u_jp.vec[i] - u.vec[i]) / dy;
+                    float S_downwind = (u.vec[i] - u_jm.vec[i]) / dy;
+                    float S = 0.5 * (S_upwind + S_downwind);
+
+                    float r = 1.0e5;
+
+                    if (S_downwind > 1.0e-5) {
+                        r = S_upwind / S_downwind;
+                    }
+
+                    // superbee
+                    float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+
+                    S *= phi;
+
+                    qy_plus_half[offset][i] = u.vec[i] + S * 0.5 * dy;
+                    qy_minus_half[offset][i] = u.vec[i] - S * 0.5 * dy;
+
+                }
+                // plus half stuff
+                W = sqrt(float(qy_plus_half[offset][1] * qy_plus_half[offset][1] *
+                    gamma_up[0][0] +
+                    2.0 * qy_plus_half[offset][1] * qy_plus_half[offset][2] *
+                    gamma_up[0][1] +
+                    qy_plus_half[offset][2] * qy_plus_half[offset][2] *
+                    gamma_up[1][1]) /
+                    (qy_plus_half[offset][0] * qy_plus_half[offset][0]) + 1.0);
+
+                uu = qy_plus_half[offset][1] / (qy_plus_half[offset][0] * W);
+                v = qy_plus_half[offset][2] / (qy_plus_half[offset][0] * W);
+                float qy = v * gamma_up[1][1] + uu * gamma_up[0][1] - beta[1] / alpha;
+
+                fy_plus_half[offset][0] = qy_plus_half[offset][0] * qy;
+
+                fy_plus_half[offset][1] = qy_plus_half[offset][1] * qy;
+
+                fy_plus_half[offset][2] = qy_plus_half[offset][2] * qy +
+                    0.5 * qy_plus_half[offset][0] * qy_plus_half[offset][0] / (W*W);
+
+                // minus half stuff
+                W = sqrt(float(qy_minus_half[offset][1] * qy_minus_half[offset][1] *
+                    gamma_up[0][0] +
+                    2.0 * qy_minus_half[offset][1] * qy_minus_half[offset][2] *
+                    gamma_up[0][1] +
+                    qy_minus_half[offset][2] * qy_minus_half[offset][2] *
+                    gamma_up[1][1]) /
+                    (qy_minus_half[offset][0] * qy_minus_half[offset][0]) + 1.0);
+
+                uu = qy_minus_half[offset][1] / (qy_minus_half[offset][0] * W);
+                v = qy_minus_half[offset][2] / (qy_minus_half[offset][0] * W);
+                qy = v * gamma_up[1][1] + uu * gamma_up[0][1] - beta[1] / alpha;
+
+                fy_minus_half[offset][0] = qy_minus_half[offset][0] * qy;
+
+                fy_minus_half[offset][1] = qy_minus_half[offset][1] * qy +
+                    0.5 * qy_minus_half[offset][0] * qy_minus_half[offset][0] / (W*W);
+
+                fy_minus_half[offset][2] = qy_minus_half[offset][2] * qy;
+
+                for (int i = 0; i < 3; i++) {
+                    float fx_m = 0.5 * (
+                        fx_plus_half[((y * nx + x-1) * nlayers + l)][i] +
+                        fx_minus_half[((y * nx + x) * nlayers + l)][i] +
+                        qx_plus_half[((y * nx + x-1) * nlayers + l)][i] -
+                        qx_minus_half[((y * nx + x) * nlayers + l)][i]);
+
+                    float fx_p = 0.5 * (
+                        fx_plus_half[((y * nx + x) * nlayers + l)][i] +
+                        fx_minus_half[((y * nx + x+1) * nlayers + l)][i] +
+                        qx_plus_half[((y * nx + x) * nlayers + l)][i] -
+                        qx_minus_half[((y * nx + x+1) * nlayers + l)][i]);
+
+                    float fy_m = 0.5 * (
+                        fy_plus_half[(((y-1) * nx + x) * nlayers + l)][i] +
+                        fy_minus_half[((y * nx + x) * nlayers + l)][i] +
+                        qy_plus_half[(((y-1) * nx + x) * nlayers + l)][i] -
+                        qy_minus_half[((y * nx + x) * nlayers + l)][i]);
+
+                        //printf("fxp %f ", fy_m);
+
+                    float fy_p = 0.5 * (
+                        fy_plus_half[((y * nx + x) * nlayers + l)][i] +
+                        fy_minus_half[(((y+1) * nx + x) * nlayers + l)][i] +
+                        qy_plus_half[((y * nx + x) * nlayers + l)][i] -
+                        qy_minus_half[(((y+1) * nx + x) * nlayers + l)][i]);
+
+                    //printf("fxp %f ", fy_p);
+
+                    up.vec[i] =
+                        u.vec[i] -
+                        (dt/dx) * alpha * (fx_p - fx_m) -
+                        (dt/dy) * alpha * (fy_p - fy_m);
+
+                }
+
+
+
+                // copy to array
+                for (int i = 0; i < 3; i++) {
+                    Up[(y * nx + x) * nlayers + l][i] = up.vec[i];
+                }
+
+            }
+        }
+    }
+
+    // enforce boundary conditions
+    bcs_fv(Up);
+
+    // copy to U_half
+    for (int n = 0; n < nlayers*nx*ny; n++) {
+        for (int i = 0; i < 3; i++) {
+            U_half[n][i] = Up[n][i];
+        }
+    }
+
+    float * ph = new float[nlayers];
+    float * Sx = new float[nlayers];
+    float * Sy = new float[nlayers];
+    float * W = new float[nlayers];
+
+    float * sum_phs = new float[nlayers*nx*ny];
+
+    // do source terms
+    for (int x = 0; x < nx; x++) {
+        for (int y = 0; y < ny; y++) {
+
+            for (int l = 0; l < nlayers; l++) {
+                ph[l] = U_half[(y * nx + x) * nlayers + l][0];
+                Sx[l] = U_half[(y * nx + x) * nlayers + l][1];
+                Sy[l] = U_half[(y * nx + x) * nlayers + l][2];
+                W[l] = sqrt((Sx[l] * Sx[l] * gamma_up[0][0] +
+                               2.0 * Sx[l] * Sy[l] * gamma_up[0][1] +
+                               Sy[l] * Sy[l] * gamma_up[1][1]) /
+                               (ph[l] * ph[l]) + 1.0);
+                ph[l] /= W[l];
+            }
+
+            for (int l = 0; l < nlayers; l++) {
+                float sum_qs = 0.0;
+                float deltaQx = 0.0;
+                float deltaQy = 0.0;
+                sum_phs[(y * nx + x) * nlayers + l] = 0.0;
+
+                if (l < (nlayers - 1)) {
+                    sum_qs += (Q[l+1] - Q[l]);
+                    deltaQx = (Q[l] - Q[l+1]) * (Sx[l] - Sx[l+1]) / ph[l];
+                    deltaQy = (Q[l] - Q[l+1]) * (Sy[l] - Sy[l+1]) / ph[l];
+                }
+                if (l > 0) {
+                    sum_qs += -rho[l-1] / rho[l] * (Q[l] - Q[l-1]);
+                    deltaQx = rho[l-1] / rho[l] * (Q[l] - Q[l-1]) * (Sx[l] - Sx[l-1]) / ph[l];
+                    deltaQy = rho[l-1] / rho[l] * (Q[l] - Q[l-1]) * (Sy[l] - Sy[l-1]) / ph[l];
+                }
+
+                for (int j = 0; j < l; j++) {
+                    sum_phs[(y * nx + x) * nlayers + l] += rho[j] / rho[l] * ph[j];
+                }
+                for (int j = l+1; j < nlayers; j++) {
+                    sum_phs[(y * nx + x) * nlayers + l] += ph[j];
+                }
+
+                // D
+                Up[(y * nx + x) * nlayers + l][0] += dt * alpha * sum_qs;
+
+                // Sx
+                Up[(y * nx + x) * nlayers + l][1] += dt * alpha * ph[l] * (-deltaQx);
+
+                // Sy
+                Up[(y * nx + x) * nlayers + l][2] += dt * alpha * ph[l] * (-deltaQy);
+
+
+            }
+        }
+    }
+
+    for (int x = 1; x < (nx-1); x++) {
+        for (int y = 1; y < (ny-1); y++) {
+            for (int l = 0; l < nlayers; l++) {
+                // Sx
+                Up[(y * nx + x) * nlayers + l][1] -= dt * alpha * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dx * (sum_phs[(y * nx + (x+1)) * nlayers + l] - sum_phs[(y * nx + (x-1)) * nlayers + l]);
+
+                // Sy
+                Up[(y * nx + x) * nlayers + l][2] -= dt * alpha * U_half[(y * nx + x) * nlayers + l][0] * 0.5 / dy * (sum_phs[((y+1) * nx + x) * nlayers + l] - sum_phs[((y-1) * nx + x) * nlayers + l]);
+
+
+            }
+        }
+    }
+
+
+    // copy back to grid
+    for (int n = 0; n < nlayers*nx*ny; n++) {
+        for (int i = 0; i < 3; i++) {
+            U_grid[(t+1) * nlayers*nx*ny + n][i] = Up[n][i];
+        }
+    }
+
+    bcs(t+1);
+
+    delete[] ph;
+    delete[] Sx;
+    delete[] Sy;
+    delete[] W;
+    delete[] sum_phs;
+
+    for (int i=0; i < nlayers*nx*ny; i++){
+        delete[] Up[i];
+        delete[] U_half[i];
+        delete[] qx_plus_half[i];
+        delete[] qx_minus_half[i];
+        delete[] qy_plus_half[i];
+        delete[] qy_minus_half[i];
+        delete[] fx_plus_half[i];
+        delete[] fx_minus_half[i];
+        delete[] fy_plus_half[i];
+        delete[] fy_minus_half[i];
     }
 
 }

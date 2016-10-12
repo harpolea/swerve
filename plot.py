@@ -53,11 +53,13 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
     D_2d = np.swapaxes(table[:,:,:,:,0], 1, 3)
+    #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
+    print(D_2d[:,:,2:-2,2:-2])
 
 
-    x = np.linspace(0, xmax, num=nx, endpoint=False)
-    y = np.linspace(0, ymax, num=ny, endpoint=False)
+    x = np.linspace(0, xmax, num=nx-4, endpoint=False)
+    y = np.linspace(0, ymax, num=ny-4, endpoint=False)
 
     X, Y = np.meshgrid(x,y)
 
@@ -72,14 +74,15 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
         #ax.set_zlim(0.7,1.4)
-        ax.plot_surface(X,Y,D_2d[i,1,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis, antialiased=True)
-        ax.plot_wireframe(X,Y,D_2d[i,0,:,:].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
+        ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis, antialiased=True)
+        ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
         plt.savefig(outname)
 
     # close hdf5 file
     f.close()
 
     # now make a video!
+    """
     bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/fv_?????.png' -c:v libx264 -r 10 " +  movie_filename
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
@@ -87,7 +90,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     # delete image files
     bashCommand = "rm ../../Documents/Work/swerve/plotting/fv_*.png"
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
-    output, error = process.communicate()
+    output, error = process.communicate()"""
 
 
 if __name__ == '__main__':
