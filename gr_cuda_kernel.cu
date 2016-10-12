@@ -480,6 +480,294 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
 }
 
+__global__ void evolve_fv(float * beta_d, float * gamma_up_d,
+                     float * Un_d, float * Up, float * U_half,
+                     float * qx_plus_half, float * qx_minus_half,
+                     float * qy_plus_half, float * qy_minus_half,
+                     float * fx_plus_half, float * fx_minus_half,
+                     float * fy_plus_half, float * fy_minus_half,
+                     float * sum_phs, float * rho_d, float * Q_d,
+                     float mu,
+                     int nx, int ny, int nlayers, float alpha,
+                     float dx, float dy, float dt,
+                     int kx_offset, int ky_offset) {
+    /*
+    First part of evolution through one timestep using finite volume methods.
+    */
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
+
+    //float *U_plus_half, *U_minus_half;
+
+    //U_plus_half = (float *) malloc(3*sizeof(float));
+    //U_minus_half = (float *) malloc(3*sizeof(float));
+
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+
+        int offset = ((y * nx + x) * nlayers + l) * 3;
+
+        // x-direction
+        for (int i = 0; i < 3; i++) {
+            float S_upwind = (Up[((y * nx + x+1) * nlayers + l) * 3 + i] -
+                Up[((y * nx + x) * nlayers + l) * 3 + i]) / dx;
+            float S_downwind = (Up[((y * nx + x) * nlayers + l) * 3 + i] -
+                Up[((y * nx + x-1) * nlayers + l) * 3 + i]) / dx;
+            float S = 0.5 * (S_upwind + S_downwind); // S_av
+
+            float r = 1.0e6;
+
+            // make sure don't divide by zero
+            if (S_downwind > 1.0e-10) {
+                r = S_upwind / S_downwind;
+            }
+
+            // superbee
+            float phi = max(0.0, max(min(1.0, 2.0 * r), min(2.0, r)));
+
+            S *= phi;
+
+            qx_plus_half[offset + i] = Up[offset + i] + S * 0.5 * dx;
+            qx_minus_half[offset + i] = Up[offset + i] - S * 0.5 * dx;
+        }
+
+        // plus half stuff
+
+        float W = sqrt((qx_plus_half[offset + 1] * qx_plus_half[offset + 1] *
+            gamma_up_d[0] +
+            2.0 * qx_plus_half[offset + 1] * qx_plus_half[offset + 2] *
+            gamma_up_d[1] +
+            qx_plus_half[offset + 2] * qx_plus_half[offset + 2] *
+            gamma_up_d[1*2+1]) /
+            (qx_plus_half[offset] * qx_plus_half[offset]) + 1.0);
+
+        float u = qx_plus_half[offset + 1] / (qx_plus_half[offset] * W);
+        float v = qx_plus_half[offset + 2] / (qx_plus_half[offset] * W);
+        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[0] / alpha;
+
+        fx_plus_half[offset] = qx_plus_half[offset] * qx;
+
+        fx_plus_half[offset + 1] = qx_plus_half[offset + 1] * qx +
+            0.5 * qx_plus_half[offset] * qx_plus_half[offset] / (W*W);
+
+        fx_plus_half[offset + 2] = qx_plus_half[offset + 2] * qx;
+
+        // minus half stuff
+        W = sqrt((qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
+            gamma_up_d[0] +
+            2.0*qx_minus_half[offset + 1] * qx_minus_half[offset + 2] *
+            gamma_up_d[1] +
+            qx_minus_half[offset + 2] * qx_minus_half[offset + 2] *
+            gamma_up_d[1*2+1]) /
+            (qx_minus_half[offset] * qx_minus_half[offset]) + 1.0);
+
+        u = qx_minus_half[offset + 1] / (qx_minus_half[offset] * W);
+        v = qx_minus_half[offset + 2] / (qx_minus_half[offset] * W);
+        qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[0] / alpha;
+
+        fx_minus_half[offset] = qx_minus_half[offset] * qx;
+        fx_minus_half[offset + 1] = qx_minus_half[offset + 1] * qx +
+            0.5 * qx_minus_half[offset] * qx_minus_half[offset] / (W*W);
+        fx_minus_half[offset + 2] = qx_minus_half[offset + 2] * qx;
+
+
+        // y-direction
+        for (int i = 0; i < 3; i++) {
+            float S_upwind = (Up[(((y+1) * nx + x) * nlayers + l) * 3 + i] -
+                Up[((y * nx + x) * nlayers + l) * 3 + i]) / dy;
+            float S_downwind = (Up[((y * nx + x) * nlayers + l) * 3 + i] -
+                Up[(((y-1) * nx + x) * nlayers + l) * 3 + i]) / dy;
+            float S = 0.5 * (S_upwind + S_downwind); // S_av
+
+            float r = 1.0e6;
+
+            // make sure don't divide by zero
+            if (S_downwind > 1.0e-10) {
+                r = S_upwind / S_downwind;
+            }
+
+            // superbee
+            float phi = max(0.0, max(min(1.0, 2.0 * r), min(2.0, r)));
+
+            S *= phi;
+
+            qy_plus_half[offset + i] = Up[offset + i] + S * 0.5 * dy;
+            qy_minus_half[offset + i] = Up[offset + i] - S * 0.5 * dy;
+        }
+
+        // plus half stuff
+
+        W = sqrt((qy_plus_half[offset + 1] * qy_plus_half[offset + 1] *
+            gamma_up_d[0] +
+            2.0 * qy_plus_half[offset + 1]*qy_plus_half[offset + 2] *
+            gamma_up_d[1] +
+            qy_plus_half[offset + 2] * qy_plus_half[offset + 2] *
+            gamma_up_d[1*2+1]) /
+            (qy_plus_half[offset] * qy_plus_half[offset]) + 1.0);
+
+        u = qy_plus_half[offset + 1] / (qy_plus_half[offset] * W);
+        v = qy_plus_half[offset + 2] / (qy_plus_half[offset] * W);
+        float qy = v * gamma_up_d[1*2+1]
+            + u * gamma_up_d[1] - beta_d[1] / alpha;
+
+        fy_plus_half[offset] = qy_plus_half[offset] * qy;
+        fy_plus_half[offset + 1] = qy_plus_half[offset + 1] * qy;
+        fy_plus_half[offset + 2] = qy_plus_half[offset + 2] * qy +
+            0.5 * qy_plus_half[offset] * qy_plus_half[offset] / (W*W);
+
+        // minus half stuff
+        W = sqrt((qy_minus_half[offset+1] * qy_minus_half[offset+1] *
+            gamma_up_d[0] +
+            2.0 * qy_minus_half[offset + 1] * qy_minus_half[offset + 2] *
+            gamma_up_d[1] +
+            qy_minus_half[offset+2] * qy_minus_half[offset + 2] *
+            gamma_up_d[1*2+1]) /
+            (qy_minus_half[offset]*qy_minus_half[offset]) + 1.0);
+
+        u = qy_minus_half[offset + 1] / (qy_minus_half[offset] * W);
+        v = qy_minus_half[offset + 2] / (qy_minus_half[offset] * W);
+        qy = v * gamma_up_d[1*2+1] + u * gamma_up_d[1] - beta_d[1] / alpha;
+
+        fy_minus_half[offset] = qy_minus_half[offset] * qy;
+        fy_minus_half[offset + 1] = qy_minus_half[offset + 1] * qy;
+        fy_minus_half[offset + 2] = qy_minus_half[offset + 2] * qy +
+            0.5 * qy_minus_half[offset] * qy_minus_half[offset] / (W*W);
+    }
+
+    __syncthreads();
+
+    // do fluxes
+    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (l < nlayers)) {
+        for (int i = 0; i < 3; i++) {
+            float fx_m = 0.5 * (
+                fx_plus_half[((y * nx + x-1) * nlayers + l) * 3 + i] +
+                fx_minus_half[((y * nx + x) * nlayers + l) * 3 + i] +
+                qx_plus_half[((y * nx + x-1) * nlayers + l) * 3 + i] -
+                qx_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
+
+            float fx_p = 0.5 * (
+                fx_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
+                fx_minus_half[((y * nx + x+1) * nlayers + l) * 3 + i] +
+                qx_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
+                qx_minus_half[((y * nx + x+1) * nlayers + l) * 3 + i]);
+
+            float fy_m = 0.5 * (
+                fy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] +
+                fy_minus_half[((y * nx + x) * nlayers + l) * 3 + i] +
+                qy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] -
+                qy_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
+
+            float fy_p = 0.5 * (
+                fy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
+                fy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i] +
+                qy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
+                qy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i]);
+
+            Up[((y * nx + x) * nlayers + l)*3 + i] =
+                Un_d[((y * nx + x) * nlayers + l)*3 + i] -
+                (dt/dx) * alpha * (fx_p - fx_m) -
+                (dt/dy) * alpha * (fy_p - fy_m);
+        }
+
+    }
+
+    __syncthreads();
+
+    // enforce boundary conditions
+    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
+
+    // copy to U_half
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        for (int i = 0; i < 3; i++) {
+            U_half[((y * nx + x) * nlayers + l)*3+i] =
+                Up[((y * nx + x) * nlayers + l)*3+i];
+        }
+    }
+
+    float W = 1.0;
+
+    // do source terms
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+
+        //ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
+        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
+        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
+        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*3+1] *
+            U_half[((y * nx + x) * nlayers + l)*3+1] * gamma_up_d[0] +
+            2.0 * U_half[((y * nx + x) * nlayers + l)*3+1] *
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            gamma_up_d[1] +
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            gamma_up_d[3]) /
+            (U_half[((y * nx + x) * nlayers + l)*3] *
+            U_half[((y * nx + x) * nlayers + l)*3]) + 1.0));
+
+        //if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
+            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
+        //}
+        U_half[((y * nx + x) * nlayers + l)*3] /= W;
+
+    }
+
+    __syncthreads();
+
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+
+        sum_phs[(y * nx + x) * nlayers + l] = 0.0;
+
+
+        float sum_qs = 0.0;
+        float deltaQx = 0.0;
+        float deltaQy = 0.0;
+
+        if (l < (nlayers - 1)) {
+            sum_qs += (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
+            deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
+                (U_half[((y * nx + x) * nlayers + l)*3+1] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+            deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
+                (U_half[((y * nx + x) * nlayers + l)*3+2] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+        }
+        if (l > 0) {
+            sum_qs += -rho_d[l-1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
+            deltaQx = rho_d[l-1] / rho_d[l] *
+                (Q_d[(y * nx + x) * nlayers + l] + mu) *
+                (U_half[((y * nx + x) * nlayers + l)*3+1] -
+                 U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+            deltaQy = rho_d[l-1] / rho_d[l] *
+                (Q_d[(y * nx + x) * nlayers + l] + mu) *
+                (U_half[((y * nx + x) * nlayers + l)*3+2] -
+                 U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+        }
+
+        for (int j = 0; j < l; j++) {
+            sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
+                U_half[((y * nx + x) * nlayers + j)*3];
+        }
+        for (int j = l+1; j < nlayers; j++) {
+            sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
+                U_half[((y * nx + x) * nlayers + j)*3];
+        }
+
+        // D
+        Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
+
+        // Sx
+        Up[((y * nx + x) * nlayers + l)*3+1] += dt * alpha * (-deltaQx);
+
+        // Sy
+        Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha * (-deltaQy);
+
+    }
+
+}
+
 
 __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
@@ -543,6 +831,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
     */
 
+    bool finite_volume = true;
+
 
     // set up GPU stuff
     int count;
@@ -594,6 +884,18 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     cudaMalloc((void**)&U_half_d, nlayers*nx*ny*3*sizeof(float));
     cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
 
+    float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d;
+    if (finite_volume) {
+        cudaMalloc((void**)&qx_p_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&qx_m_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&qy_p_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&qy_m_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&fx_p_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&fx_m_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&fy_p_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&fy_m_d, nlayers*nx*ny*3*sizeof(float));
+    }
+
     if (strcmp(filename, "na") != 0) {
 
         // create file
@@ -642,11 +944,22 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels.y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels.x; i++) {
-                    evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    if (finite_volume) {
+                        evolve_fv<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                               Up_d, U_half_d,
+                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                               sum_phs_d, rho_d, Q_d, mu,
+                               nx, ny, nlayers, alpha,
+                               dx, dy, dt, kx_offset, ky_offset);
+                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    } else {
+                        evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                               Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                               nx, ny, nlayers, alpha,
+                               dx, dy, dt, kx_offset, ky_offset);
+                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    }
 
                 }
                 ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;

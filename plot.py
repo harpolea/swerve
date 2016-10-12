@@ -67,7 +67,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
 
     for i in range(len(D_2d[:,0,0,0])):
-        outname = '../../Documents/Work/swerve/plotting/tsunami_' + format(i, '05') + '.png'
+        outname = '../../Documents/Work/swerve/plotting/fv_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
@@ -80,16 +80,16 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     f.close()
 
     # now make a video!
-    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/tsunami_?????.png' -c:v libx264 -r 10 " +  movie_filename
+    bashCommand = "ffmpeg -framerate 10 -pattern_type glob -i '../../Documents/Work/swerve/plotting/fv_?????.png' -c:v libx264 -r 10 " +  movie_filename
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
 
     # delete image files
-    bashCommand = "rm ../../Documents/Work/swerve/plotting/tsunami_*.png"
+    bashCommand = "rm ../../Documents/Work/swerve/plotting/fv_*.png"
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
 
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename="../../Documents/Work/swerve/tsunami.h5", movie_filename="../../Documents/Work/swerve/tsunami.mp4")
+    quick_plot(data_filename="../../Documents/Work/swerve/out.h5", movie_filename="../../Documents/Work/swerve/fv.mp4")
