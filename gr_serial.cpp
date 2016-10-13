@@ -607,6 +607,16 @@ void Sea::evolve_fv(int t) {
     for (int i=0; i < nlayers*nx*ny; i++){
         Up[i] = new float[3];
         U_half[i] = new float[3];
+        qx_plus_half[i] = new float[3];
+        qx_minus_half[i] = new float[3];
+        qy_plus_half[i] = new float[3];
+        qy_minus_half[i] = new float[3];
+        fx_plus_half[i] = new float[3];
+        fx_minus_half[i] = new float[3];
+        fy_plus_half[i] = new float[3];
+        fy_minus_half[i] = new float[3];
+
+
         for (int j = 0; j < 3; j++) {
             // initialise
             Up[i][j] = 0.0;
@@ -759,6 +769,14 @@ void Sea::evolve_fv(int t) {
 
                 fy_minus_half[offset][2] = qy_minus_half[offset][2] * qy;
 
+            }
+        }
+    }
+    for (int l = 0; l < nlayers; l++) {
+        for (int x = 1; x < (nx-1); x++) {
+            for (int y = 1; y < (ny-1); y++) {
+                u = U(l, x, y, t);
+
                 for (int i = 0; i < 3; i++) {
                     float fx_m = 0.5 * (
                         fx_plus_half[((y * nx + x-1) * nlayers + l)][i] +
@@ -795,8 +813,6 @@ void Sea::evolve_fv(int t) {
 
                 }
 
-
-
                 // copy to array
                 for (int i = 0; i < 3; i++) {
                     Up[(y * nx + x) * nlayers + l][i] = up.vec[i];
@@ -804,6 +820,17 @@ void Sea::evolve_fv(int t) {
 
             }
         }
+    }
+
+    for (int i=0; i < nlayers*nx*ny; i++){
+        delete[] qx_plus_half[i];
+        delete[] qx_minus_half[i];
+        delete[] qy_plus_half[i];
+        delete[] qy_minus_half[i];
+        delete[] fx_plus_half[i];
+        delete[] fx_minus_half[i];
+        delete[] fy_plus_half[i];
+        delete[] fy_minus_half[i];
     }
 
     // enforce boundary conditions
@@ -909,14 +936,6 @@ void Sea::evolve_fv(int t) {
     for (int i=0; i < nlayers*nx*ny; i++){
         delete[] Up[i];
         delete[] U_half[i];
-        delete[] qx_plus_half[i];
-        delete[] qx_minus_half[i];
-        delete[] qy_plus_half[i];
-        delete[] qy_minus_half[i];
-        delete[] fx_plus_half[i];
-        delete[] fx_minus_half[i];
-        delete[] fy_plus_half[i];
-        delete[] fy_minus_half[i];
     }
 
 }
@@ -925,7 +944,7 @@ void Sea::run() {
     cout << "Beginning evolution.\n";
 
     for (int t = 0; t < nt; t++) {
-        evolve(t);
+        evolve_fv(t);
     }
 }
 
@@ -934,7 +953,7 @@ void Sea::output(char * filename) {
     ofstream outFile(filename);
 
     // only going to output every 10 because file size is ridiculous
-    for (int t = 0; t < (nt+1); t+=10) {
+    for (int t = 0; t < (nt+1); t++) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
@@ -953,9 +972,9 @@ int main() {
 
     // initialise parameters
     static const int nlayers = 2;
-    int nx = 200;
-    int ny = 200;
-    int nt = 600;
+    int nx = 50;
+    int ny = 50;
+    int nt = 100;
     float xmin = 0.0;
     float xmax = 10.0;
     float ymin = 0.0;
