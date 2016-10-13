@@ -12,6 +12,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxT
 
 unsigned int nextPow2(unsigned int x);
 
+void bcs_fv(float * grid, int nx, int ny, int nlayers);
+
 unsigned int nextPow2(unsigned int x)
 {
     --x;
@@ -211,18 +213,56 @@ __device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int kx_offset,
 
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
         for (int i = 0; i < 3; i++) {
-            if (x == 0 || x == 1) {
+            if ((x == 0) || (x == 1)) {
                 grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
-            } else if (x == (nx-1) || x == (nx-2)) {
+            } else if ((x == (nx-1)) || (x == (nx-2))) {
                 grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + (nx-3)) * nlayers + l)*3+i];
-            } else if (y == 0 || y == 1) {
+            } else if ((y == 0) || (y == 1)) {
                 grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((2 * nx + x) *  + x) * nlayers + l)*3+i];
-            } else if (y == (ny-1) || y == (ny-2)) {
+            } else if ((y == (ny-1)) || (y == (ny-2))) {
                 grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
             }
         }
     }
 
+}
+
+void bcs_fv(float * grid, int nx, int ny, int nlayers) {
+    /*
+    Enforce boundary conditions on section of grid.
+    */
+    // outflow
+    for (int y = 0; y < ny; y++) {
+        for (int l = 0; l < nlayers; l++) {
+            for (int i = 0; i < 3; i++) {
+                // x = 0
+                grid[((y * nx) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
+                // x = 1
+                grid[((y * nx + 1) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
+
+                // x = nx-1
+                grid[((y * nx + nx-1) * nlayers + l)*3+i] = grid[((y * nx + nx-3) * nlayers + l)*3+i];
+                // x = nx - 2
+                grid[((y * nx + nx-2) * nlayers + l)*3+i] = grid[((y * nx + nx-3) * nlayers + l)*3+i];
+            }
+        }
+    }
+
+    for (int x = 0; x < nx; x++) {
+        for (int l = 0; l < nlayers; l++) {
+            for (int i = 0; i < 3; i++) {
+                // y = 0
+                grid[(x * nlayers + l)*3+i] = grid[((2 * nx + x) * nlayers + l)*3+i];
+                // y = 1
+                grid[((nx + x) * nlayers + l)*3+i] = grid[((2 * nx + x) * nlayers + l)*3+i];
+
+                // y = ny-1
+                grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
+                // y = ny - 2
+                grid[(((ny-2) * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
+            }
+        }
+    }
 }
 
 __device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, float alpha) {
@@ -543,22 +583,27 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             }
 
             // superbee
-            float phi = max(0.0, max(min(1.0, 2.0 * r), min(2.0, r)));
+            float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
             S *= phi;
 
             qx_plus_half[offset + i] = Un_d[offset + i] + S * 0.5 * dx;
             qx_minus_half[offset + i] = Un_d[offset + i] - S * 0.5 * dx;
+
+            // initialise
+            fx_plus_half[offset + i] = 0.0;
+            fx_minus_half[offset + i] = 0.0;
         }
 
         // plus half stuff
 
-        float W = sqrt(float(qx_plus_half[offset + 1] * qx_plus_half[offset + 1] *
+        float W = sqrt(
+            float(qx_plus_half[offset + 1] * qx_plus_half[offset + 1] *
             gamma_up_d[0] +
             2.0 * qx_plus_half[offset + 1] * qx_plus_half[offset + 2] *
             gamma_up_d[1] +
             qx_plus_half[offset + 2] * qx_plus_half[offset + 2] *
-            gamma_up_d[1*2+1]) /
+            gamma_up_d[3]) /
             (qx_plus_half[offset] * qx_plus_half[offset]) + 1.0);
 
         float u = qx_plus_half[offset + 1] / (qx_plus_half[offset] * W);
@@ -573,12 +618,13 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fx_plus_half[offset + 2] = qx_plus_half[offset + 2] * qx;
 
         // minus half stuff
-        W = sqrt(float(qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
+        W = sqrt(
+            float(qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
             gamma_up_d[0] +
             2.0 * qx_minus_half[offset + 1] * qx_minus_half[offset + 2] *
             gamma_up_d[1] +
             qx_minus_half[offset + 2] * qx_minus_half[offset + 2] *
-            gamma_up_d[1*2+1]) /
+            gamma_up_d[3]) /
             (qx_minus_half[offset] * qx_minus_half[offset]) + 1.0);
 
         u = qx_minus_half[offset + 1] / (qx_minus_half[offset] * W);
@@ -589,6 +635,10 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fx_minus_half[offset + 1] = qx_minus_half[offset + 1] * qx +
             0.5 * qx_minus_half[offset] * qx_minus_half[offset] / (W*W);
         fx_minus_half[offset + 2] = qx_minus_half[offset + 2] * qx;
+
+    }
+    __syncthreads();
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
 
         // y-direction
@@ -607,46 +657,58 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             }
 
             // superbee
-            float phi = max(0.0, max(min(1.0, 2.0 * r), min(2.0, r)));
+            float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
             S *= phi;
 
             qy_plus_half[offset + i] = Un_d[offset + i] + S * 0.5 * dy;
             qy_minus_half[offset + i] = Un_d[offset + i] - S * 0.5 * dy;
+
+            // initialise
+            //fy_plus_half[offset + i] = 0.0;
+            //fy_minus_half[offset + i] = 0.0;
         }
+    }
+    __syncthreads();
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         // plus half stuff
 
-        W = sqrt(float(qy_plus_half[offset + 1] * qy_plus_half[offset + 1] *
+        float W = sqrt(
+            float(qy_plus_half[offset + 1] * qy_plus_half[offset + 1] *
             gamma_up_d[0] +
             2.0 * qy_plus_half[offset + 1] * qy_plus_half[offset + 2] *
             gamma_up_d[1] +
             qy_plus_half[offset + 2] * qy_plus_half[offset + 2] *
-            gamma_up_d[1*2+1]) /
+            gamma_up_d[3]) /
             (qy_plus_half[offset] * qy_plus_half[offset]) + 1.0);
 
-        u = qy_plus_half[offset + 1] / (qy_plus_half[offset] * W);
-        v = qy_plus_half[offset + 2] / (qy_plus_half[offset] * W);
-        float qy = v * gamma_up_d[1*2+1]
-            + u * gamma_up_d[1] - beta_d[1] / alpha;
+        float u = qy_plus_half[offset + 1] / (qy_plus_half[offset] * W);
+        float v = qy_plus_half[offset + 2] / (qy_plus_half[offset] * W);
+        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[1] / alpha;
 
         fy_plus_half[offset] = qy_plus_half[offset] * qy;
         fy_plus_half[offset + 1] = qy_plus_half[offset + 1] * qy;
         fy_plus_half[offset + 2] = qy_plus_half[offset + 2] * qy +
             0.5 * qy_plus_half[offset] * qy_plus_half[offset] / (W*W);
 
+    }
+    __syncthreads();
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+
         // minus half stuff
-        W = sqrt(float(qy_minus_half[offset+1] * qy_minus_half[offset+1] *
+        float W = sqrt(
+            float(qy_minus_half[offset+1] * qy_minus_half[offset+1] *
             gamma_up_d[0] +
             2.0 * qy_minus_half[offset + 1] * qy_minus_half[offset + 2] *
             gamma_up_d[1] +
             qy_minus_half[offset+2] * qy_minus_half[offset + 2] *
-            gamma_up_d[1*2+1]) /
+            gamma_up_d[3]) /
             (qy_minus_half[offset]*qy_minus_half[offset]) + 1.0);
 
-        u = qy_minus_half[offset + 1] / (qy_minus_half[offset] * W);
-        v = qy_minus_half[offset + 2] / (qy_minus_half[offset] * W);
-        qy = v * gamma_up_d[1*2+1] + u * gamma_up_d[1] - beta_d[1] / alpha;
+        float u = qy_minus_half[offset + 1] / (qy_minus_half[offset] * W);
+        float v = qy_minus_half[offset + 2] / (qy_minus_half[offset] * W);
+        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[1] / alpha;
 
         fy_minus_half[offset] = qy_minus_half[offset] * qy;
         fy_minus_half[offset + 1] = qy_minus_half[offset + 1] * qy;
@@ -675,7 +737,7 @@ __global__ void evolve_fv_fluxes(float * beta_d, float * gamma_up_d,
     int l = threadIdx.z;
 
     // do fluxes
-    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (l < nlayers)) {
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
         for (int i = 0; i < 3; i++) {
             float fx_m = 0.5 * (
                 fx_plus_half[((y * nx + x-1) * nlayers + l) * 3 + i] +
@@ -715,7 +777,7 @@ __global__ void evolve_fv_fluxes(float * beta_d, float * gamma_up_d,
 
     }
 
-    __syncthreads();
+    /*__syncthreads();
 
     // enforce boundary conditions
     bcs_fv(Up, nx, ny, nlayers, kx_offset, ky_offset);
@@ -727,7 +789,7 @@ __global__ void evolve_fv_fluxes(float * beta_d, float * gamma_up_d,
             Un_d[((y * nx + x) * nlayers + l)*3+i] =
                 Up[((y * nx + x) * nlayers + l)*3+i];
         }
-    }
+    }*/
 /*
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -836,8 +898,20 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
+    // enforce boundary conditions
+    bcs_fv(Up, nx, ny, nlayers, kx_offset, ky_offset);
 
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+    // copy back to grid
+    if ((x < nx) && (y < ny) && (l < nlayers)) {
+        //printf("D %f ", Up[((y * nx + x) * nlayers + l)*3]);
+        for (int i = 0; i < 3; i++) {
+            Un_d[((y * nx + x) * nlayers + l)*3+i] =
+                Up[((y * nx + x) * nlayers + l)*3+i];
+        }
+    }
+
+
+    /*if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         float a = dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
@@ -871,7 +945,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
             Un_d[((y * nx + x) * nlayers + l)*3+i] =
                 Up[((y * nx + x) * nlayers + l)*3+i];
         }
-    }
+    }*/
 
 
 }
@@ -885,7 +959,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     */
 
     bool finite_volume = true;
-
 
     // set up GPU stuff
     int count;
@@ -1018,6 +1091,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
 
+            //cudaDeviceSynchronize();
+
             if (finite_volume) {
                 kx_offset = 0;
                 ky_offset = 0;
@@ -1038,7 +1113,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                     ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
                 }
             }
-/*
+
             kx_offset = 0;
             ky_offset = 0;
 
@@ -1053,7 +1128,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 }
                 ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
-*/
+
             cudaDeviceSynchronize();
 
             cudaError_t err = cudaGetLastError();
@@ -1061,10 +1136,16 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));
 
+            // boundaries
+            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+            bcs_fv(Un_h, nx, ny, nlayers);
+            cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+
+
             if ((t+1) % dprint == 0) {
                 printf("Printing t = %i\n", t+1);
                 // copy stuff back
-                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                //cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
 
                 // select a hyperslab
                 file_space = H5Dget_space(dset);
