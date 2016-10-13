@@ -764,10 +764,10 @@ void Sea::evolve_fv(int t) {
 
                 fy_minus_half[offset][0] = qy_minus_half[offset][0] * qy;
 
-                fy_minus_half[offset][1] = qy_minus_half[offset][1] * qy +
-                    0.5 * qy_minus_half[offset][0] * qy_minus_half[offset][0] / (W*W);
+                fy_minus_half[offset][1] = qy_minus_half[offset][1] * qy;
 
-                fy_minus_half[offset][2] = qy_minus_half[offset][2] * qy;
+                fy_minus_half[offset][2] = qy_minus_half[offset][2] * qy +
+                    0.5 * qy_minus_half[offset][0] * qy_minus_half[offset][0] / (W*W);
 
             }
         }
@@ -779,35 +779,34 @@ void Sea::evolve_fv(int t) {
 
                 for (int i = 0; i < 3; i++) {
                     float fx_m = 0.5 * (
-                        fx_plus_half[((y * nx + x-1) * nlayers + l)][i] +
-                        fx_minus_half[((y * nx + x) * nlayers + l)][i] +
-                        qx_plus_half[((y * nx + x-1) * nlayers + l)][i] -
-                        qx_minus_half[((y * nx + x) * nlayers + l)][i]);
+                        fx_plus_half[(y * nx + x-1) * nlayers + l][i] +
+                        fx_minus_half[(y * nx + x) * nlayers + l][i] +
+                        qx_plus_half[(y * nx + x-1) * nlayers + l][i] -
+                        qx_minus_half[(y * nx + x) * nlayers + l][i]);
 
                     float fx_p = 0.5 * (
-                        fx_plus_half[((y * nx + x) * nlayers + l)][i] +
-                        fx_minus_half[((y * nx + x+1) * nlayers + l)][i] +
-                        qx_plus_half[((y * nx + x) * nlayers + l)][i] -
-                        qx_minus_half[((y * nx + x+1) * nlayers + l)][i]);
+                        fx_plus_half[(y * nx + x) * nlayers + l][i] +
+                        fx_minus_half[(y * nx + x+1) * nlayers + l][i] +
+                        qx_plus_half[(y * nx + x) * nlayers + l][i] -
+                        qx_minus_half[(y * nx + x+1) * nlayers + l][i]);
 
                     float fy_m = 0.5 * (
-                        fy_plus_half[(((y-1) * nx + x) * nlayers + l)][i] +
-                        fy_minus_half[((y * nx + x) * nlayers + l)][i] +
-                        qy_plus_half[(((y-1) * nx + x) * nlayers + l)][i] -
-                        qy_minus_half[((y * nx + x) * nlayers + l)][i]);
+                        fy_plus_half[((y-1) * nx + x) * nlayers + l][i] +
+                        fy_minus_half[(y * nx + x) * nlayers + l][i] +
+                        qy_plus_half[((y-1) * nx + x) * nlayers + l][i] -
+                        qy_minus_half[(y * nx + x) * nlayers + l][i]);
 
                         //printf("fxp %f ", fy_m);
 
                     float fy_p = 0.5 * (
-                        fy_plus_half[((y * nx + x) * nlayers + l)][i] +
-                        fy_minus_half[(((y+1) * nx + x) * nlayers + l)][i] +
-                        qy_plus_half[((y * nx + x) * nlayers + l)][i] -
-                        qy_minus_half[(((y+1) * nx + x) * nlayers + l)][i]);
+                        fy_plus_half[(y * nx + x) * nlayers + l][i] +
+                        fy_minus_half[((y+1) * nx + x) * nlayers + l][i] +
+                        qy_plus_half[(y * nx + x) * nlayers + l][i] -
+                        qy_minus_half[((y+1) * nx + x) * nlayers + l][i]);
 
                     //printf("fxp %f ", fy_p);
 
-                    up.vec[i] =
-                        u.vec[i] -
+                    up.vec[i] = u.vec[i] -
                         (dt/dx) * alpha * (fx_p - fx_m) -
                         (dt/dy) * alpha * (fy_p - fy_m);
 
