@@ -750,8 +750,8 @@ __global__ void evolve_fv_fluxes(float * F,
 
             //printf("fxp %f ", fy_p);
             F[((y * nx + x) * nlayers + l)*3 + i] =
-                (1.0/dx) * alpha * (fx_p - fx_m) +
-                (1.0/dy) * alpha * (fy_p - fy_m);
+                -((1.0/dx) * alpha * (fx_p - fx_m) +
+                (1.0/dy) * alpha * (fy_p - fy_m));
 
             //Up[((y * nx + x) * nlayers + l)*3 + i] =
                 //Un_d[((y * nx + x) * nlayers + l)*3 + i] -
@@ -759,7 +759,6 @@ __global__ void evolve_fv_fluxes(float * F,
                 //(dt/dy) * alpha * (fy_p - fy_m);
 
         }
-
 
     }
 }
@@ -942,7 +941,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
 
 }
 
-void homogeneuous_fv(dim3 kernels, dim3 * blocks, dim3 * threads, float * beta_d, float * gamma_up_d,
+void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -990,7 +989,8 @@ void homogeneuous_fv(dim3 kernels, dim3 * blocks, dim3 * threads, float * beta_d
 
 }
 
-void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d, float * Un_d,
+void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
+       float * beta_d, float * gamma_up_d, float * Un_d,
        float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -1014,7 +1014,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float *
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
                 for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x+1) * nlayers + l) * 3 + i] = Un_h[((y * nx + x+1) * nlayers + l) * 3 + i] + dt * F_h[((y * nx + x+1) * nlayers + l) * 3 + i];
+                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = Un_h[((y * nx + x) * nlayers + l) * 3 + i] + dt * F_h[((y * nx + x) * nlayers + l) * 3 + i];
                 }
             }
         }
@@ -1040,10 +1040,10 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float *
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
                 for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x+1) * nlayers + l) * 3 + i] = 0.25 * (
-                        3.0 * Un_h[((y * nx + x+1) * nlayers + l) * 3 + i] +
-                        Up_h[((y * nx + x+1) * nlayers + l) * 3 + i] +
-                        dt * F_h[((y * nx + x+1) * nlayers + l) * 3 + i]);
+                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = 0.25 * (
+                        3.0 * Un_h[((y * nx + x) * nlayers + l) * 3 + i] +
+                        Up_h[((y * nx + x) * nlayers + l) * 3 + i] +
+                        dt * F_h[((y * nx + x) * nlayers + l) * 3 + i]);
                 }
             }
         }
@@ -1069,10 +1069,10 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float *
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
                 for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x+1) * nlayers + l) * 3 + i] = (1/3.0) * (
-                        Un_h[((y * nx + x+1) * nlayers + l) * 3 + i] +
-                        2.0*Up_h[((y * nx + x+1) * nlayers + l) * 3 + i] +
-                        2.0*dt * F_h[((y * nx + x+1) * nlayers + l) * 3 + i]);
+                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = (1/3.0) * (
+                        Un_h[((y * nx + x) * nlayers + l) * 3 + i] +
+                        2.0*Up_h[((y * nx + x) * nlayers + l) * 3 + i] +
+                        2.0*dt * F_h[((y * nx + x) * nlayers + l) * 3 + i]);
                 }
             }
         }
