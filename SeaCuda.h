@@ -2,13 +2,14 @@
 #define SEA_CUDA_H
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
-         float * rho, float * Q, float mu, int nx, int ny, int nlayers,
+         float * rho, float * Q, float mu,
+         int nx, int ny, int nlayers, int ng,
          int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename);
 
 
 class SeaCuda {
 public:
-    SeaCuda(int n_layers, int _nx, int _ny, int _nt,
+    SeaCuda(int n_layers, int _nx, int _ny, int _nt, int _ng,
             float xmin, float xmax,
             float ymin, float ymax, float * _rho,
             float * _Q, float mu,
@@ -37,6 +38,7 @@ public:
     int nlayers;
     int nx;
     int ny;
+    int ng;
     float *xs;
     float *ys;
     float *U_grid;
@@ -44,7 +46,7 @@ public:
 private:
 
     int nt;
-    
+
     float dx;
     float dy;
     float dt;

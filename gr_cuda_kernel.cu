@@ -6,13 +6,13 @@
 
 using namespace std;
 
-dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads);
+dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *maxThreads);
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads);
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads);
 
 unsigned int nextPow2(unsigned int x);
 
-void bcs_fv(float * grid, int nx, int ny, int nlayers);
+void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
 
 unsigned int nextPow2(unsigned int x)
 {
@@ -25,7 +25,7 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads) {
+dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *maxThreads) {
     /*
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
     */
@@ -41,8 +41,8 @@ dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads)
     // calculate number of kernels needed
 
     if (nx*ny*nlayers > *maxBlocks * *maxThreads) {
-        kernels.x = int(ceil(float(nx-2) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0)));
-        kernels.y = int(ceil(float(ny-2) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0)));
+        kernels.x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
+        kernels.y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
 
     } else {
 
@@ -53,7 +53,7 @@ dim3 getNumKernels(int nx, int ny, int nlayers, int *maxBlocks, int *maxThreads)
     return kernels;
 }
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads)
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads)
 {
     /*
     Returns the number of blocks and threads required for each kernel given the size of the problem and the constraints of the device.
@@ -202,7 +202,7 @@ __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, in
 
 }
 
-__device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
+__device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng, int kx_offset, int ky_offset) {
     /*
     Enforce boundary conditions on section of grid.
     */
@@ -211,6 +211,20 @@ __device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int kx_offset,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
+    if ((l < nlayers) && (y < ny) && (x < nx) ) {
+        for (int i = 0; i < 3; i++) {
+            if (x < ng) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + ng) * nlayers + l)*3+i];
+            } else if (x > (nx-ng-1)) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + (nx-ng-1)) * nlayers + l)*3+i];
+            } else if (y < ng) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ng * nx + x) *  + x) * nlayers + l)*3+i];
+            } else if (y > (ny-ng-1)) {
+                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ny-ng-1) * nx + x) * nlayers + l)*3+i];
+            }
+        }
+    }
+/*
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
         for (int i = 0; i < 3; i++) {
             if ((x == 0) || (x == 1)) {
@@ -224,14 +238,15 @@ __device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int kx_offset,
             }
         }
     }
-
+*/
 }
 
-void bcs_fv(float * grid, int nx, int ny, int nlayers) {
+void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
     /*
     Enforce boundary conditions on section of grid.
     */
     // outflow
+    /*
     for (int y = 0; y < ny; y++) {
         for (int l = 0; l < nlayers; l++) {
             for (int i = 0; i < 3; i++) {
@@ -261,6 +276,28 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers) {
                 // y = ny - 2
                 grid[(((ny-2) * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
             }
+        }
+    }*/
+
+    for (int l = 0; l < nlayers; l++) {
+        for (int y = 0; y < ny; y++){
+            for (int i = 0; i < 3; i++) {
+                for (int g = 0; g < ng; g++) {
+                    grid[((y * nx + g) * nlayers + l)*3+i] = grid[((y * nx + ng) * nlayers + l)*3+i];
+
+                    grid[((y * nx + (nx-1-g)) * nlayers + l)*3+i] = grid[((y * nx + (nx-1-ng)) * nlayers + l)*3+i];
+                }
+            }
+        }
+        for (int x = 0; x < nx; x++){
+            for (int i = 0; i < 3; i++) {
+                for (int g = 0; g < ng; g++) {
+                    grid[((g * nx + x) * nlayers + l)*3+i] = grid[((ng * nx + x) * nlayers + l)*3+i];
+
+                    grid[(((ny-1-g) * nx + x) * nlayers + l)*3+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*3+i];
+                }
+            }
+
         }
     }
 }
@@ -890,7 +927,7 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
     int l = threadIdx.z;
 
     // enforce boundary conditions
-    //bcs_fv(Up, nx, ny, nlayers, kx_offset, ky_offset);
+    //bcs_fv(Up, nx, ny, nlayers, ng, kx_offset, ky_offset);
 
     /*// copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -959,13 +996,14 @@ void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nlayers, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
+          kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
        }
        ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
     }
 
     // boundaries
     //cudaMemcpy(Up_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-    //bcs_fv(Un_h, nx, ny, nlayers);
+    //bcs_fv(Un_h, nx, ny, nlayers, ng);
     //cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
     ky_offset = 0;
@@ -994,7 +1032,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
        float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
-       int nx, int ny, int nlayers, float alpha,
+       int nx, int ny, int nlayers, int ng, float alpha,
        float dx, float dy, float dt,
        float * Up_h, float * F_h, float * Un_h) {
 
@@ -1008,7 +1046,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-    bcs_fv(F_h, nx, ny, nlayers);
+    bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1021,7 +1059,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
     }
 
     // enforce boundaries and copy back
-    bcs_fv(Up_h, nx, ny, nlayers);
+    bcs_fv(Up_h, nx, ny, nlayers, ng);
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
@@ -1034,7 +1072,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-    bcs_fv(F_h, nx, ny, nlayers);
+    bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1050,7 +1088,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
     }
 
     // enforce boundaries and copy back
-    bcs_fv(Up_h, nx, ny, nlayers);
+    bcs_fv(Up_h, nx, ny, nlayers, ng);
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
@@ -1063,7 +1101,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-    bcs_fv(F_h, nx, ny, nlayers);
+    bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1079,7 +1117,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
     }
 
     // enforce boundaries
-    bcs_fv(Up_h, nx, ny, nlayers);
+    bcs_fv(Up_h, nx, ny, nlayers, ng);
 
     cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -1088,7 +1126,7 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
 
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
-         float * rho, float * Q, float mu, int nx, int ny, int nlayers,
+         float * rho, float * Q, float mu, int nx, int ny, int nlayers, int ng,
          int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename) {
     /*
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
@@ -1104,12 +1142,12 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     int maxThreads = 256;
     int maxBlocks = 256; //64;
 
-    dim3 kernels = getNumKernels(nx, ny, nlayers, &maxBlocks, &maxThreads);
+    dim3 kernels = getNumKernels(nx, ny, nlayers, ng, &maxBlocks, &maxThreads);
 
     dim3 *blocks = new dim3[kernels.x*kernels.y];
     dim3 *threads = new dim3[kernels.x*kernels.y];
 
-    getNumBlocksAndThreads(nx, ny, nlayers, maxBlocks, maxThreads, kernels, blocks, threads);
+    getNumBlocksAndThreads(nx, ny, nlayers, ng, maxBlocks, maxThreads, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
     printf("kernels: (%i, %i)\n", kernels.x, kernels.y);
@@ -1223,7 +1261,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
                 // boundaries
                 cudaMemcpy(Un_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-                bcs_fv(Un_h, nx, ny, nlayers);
+                bcs_fv(Un_h, nx, ny, nlayers, ng);
                 cudaMemcpy(Up_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
 
@@ -1248,16 +1286,13 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
                 // boundaries
                 cudaMemcpy(Un_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-                bcs_fv(Un_h, nx, ny, nlayers);*/
+                bcs_fv(Un_h, nx, ny, nlayers, ng);*/
                 rk4_fv(kernels, threads, blocks,
                     beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                     qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                     fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                    nx, ny, nlayers, alpha,
+                    nx, ny, nlayers, ng, alpha,
                     dx, dy, dt, Up_h, F_h, Un_h);
-
-                kx_offset = 0;
-                ky_offset = 0;
 
                 for (int j = 0; j < kernels.y; j++) {
                     kx_offset = 0;
@@ -1316,7 +1351,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
             // boundaries
             cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-            bcs_fv(Un_h, nx, ny, nlayers);
+            bcs_fv(Un_h, nx, ny, nlayers, ng);
             cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
 
