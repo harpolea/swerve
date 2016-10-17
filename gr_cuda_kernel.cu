@@ -6,6 +6,8 @@
 
 using namespace std;
 
+// prototypes
+
 dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *maxThreads);
 
 void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads);
@@ -13,6 +15,22 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 unsigned int nextPow2(unsigned int x);
 
 void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
+
+void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
+       float * Un_d, float * F_d,
+       float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+       float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+       int nx, int ny, int nlayers, float alpha,
+       float dx, float dy, float dt);
+
+void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
+      float * beta_d, float * gamma_up_d, float * Un_d,
+      float * F_d, float * Up_d,
+      float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+      float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+      int nx, int ny, int nlayers, int ng, float alpha,
+      float dx, float dy, float dt,
+      float * Up_h, float * F_h, float * Un_h);
 
 unsigned int nextPow2(unsigned int x)
 {
@@ -224,21 +242,7 @@ __device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng, int kx
             }
         }
     }
-/*
-    if ((l < nlayers) && (y < ny) && (x < nx) ) {
-        for (int i = 0; i < 3; i++) {
-            if ((x == 0) || (x == 1)) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
-            } else if ((x == (nx-1)) || (x == (nx-2))) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + (nx-3)) * nlayers + l)*3+i];
-            } else if ((y == 0) || (y == 1)) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((2 * nx + x) *  + x) * nlayers + l)*3+i];
-            } else if ((y == (ny-1)) || (y == (ny-2))) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
-            }
-        }
-    }
-*/
+
 }
 
 void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
@@ -246,38 +250,6 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
     Enforce boundary conditions on section of grid.
     */
     // outflow
-    /*
-    for (int y = 0; y < ny; y++) {
-        for (int l = 0; l < nlayers; l++) {
-            for (int i = 0; i < 3; i++) {
-                // x = 0
-                grid[((y * nx) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
-                // x = 1
-                grid[((y * nx + 1) * nlayers + l)*3+i] = grid[((y * nx + 2) * nlayers + l)*3+i];
-
-                // x = nx-1
-                grid[((y * nx + nx-1) * nlayers + l)*3+i] = grid[((y * nx + nx-3) * nlayers + l)*3+i];
-                // x = nx - 2
-                grid[((y * nx + nx-2) * nlayers + l)*3+i] = grid[((y * nx + nx-3) * nlayers + l)*3+i];
-            }
-        }
-    }
-
-    for (int x = 0; x < nx; x++) {
-        for (int l = 0; l < nlayers; l++) {
-            for (int i = 0; i < 3; i++) {
-                // y = 0
-                grid[(x * nlayers + l)*3+i] = grid[((2 * nx + x) * nlayers + l)*3+i];
-                // y = 1
-                grid[((nx + x) * nlayers + l)*3+i] = grid[((2 * nx + x) * nlayers + l)*3+i];
-
-                // y = ny-1
-                grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
-                // y = ny - 2
-                grid[(((ny-2) * nx + x) * nlayers + l)*3+i] = grid[(((ny-3) * nx + x) * nlayers + l)*3+i];
-            }
-        }
-    }*/
 
     for (int l = 0; l < nlayers; l++) {
         for (int y = 0; y < ny; y++){
@@ -593,6 +565,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      int kx_offset, int ky_offset) {
     /*
     First part of evolution through one timestep using finite volume methods.
+    Reconstructs state vector to cell boundaries using slope limiter
+    and calculates fluxes there.
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -613,12 +587,14 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             float r = 1.0e5;
 
             // make sure don't divide by zero
-            if (S_downwind > 1.0e-5) {
+            if (abs(S_downwind) > 1.0e-5) {
                 r = S_upwind / S_downwind;
             }
 
+            // MC
+            float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
             // superbee
-            float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+            //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
             S *= phi;
 
@@ -682,12 +658,14 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             float r = 1.0e5;
 
             // make sure don't divide by zero
-            if (S_downwind > 1.0e-5) {
+            if (abs(S_downwind) > 1.0e-5) {
                 r = S_upwind / S_downwind;
             }
 
+            // MC
+            float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
             // superbee
-            float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+            //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
             S *= phi;
 
@@ -750,7 +728,8 @@ __global__ void evolve_fv_fluxes(float * F,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
     /*
-    First part of evolution through one timestep using finite volume methods.
+    Calculates fluxes in finite volume evolution by solving the Riemann
+    problem at the cell boundaries.
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -777,7 +756,6 @@ __global__ void evolve_fv_fluxes(float * F,
                 qy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] -
                 qy_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
 
-                //printf("fxp %f ", fy_m);
 
             float fy_p = 0.5 * (
                 fy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
@@ -785,15 +763,9 @@ __global__ void evolve_fv_fluxes(float * F,
                 qy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
                 qy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i]);
 
-            //printf("fxp %f ", fy_p);
             F[((y * nx + x) * nlayers + l)*3 + i] =
                 -((1.0/dx) * alpha * (fx_p - fx_m) +
                 (1.0/dy) * alpha * (fy_p - fy_m));
-
-            //Up[((y * nx + x) * nlayers + l)*3 + i] =
-                //Un_d[((y * nx + x) * nlayers + l)*3 + i] -
-                //(dt/dx) * alpha * (fx_p - fx_m) -
-                //(dt/dy) * alpha * (fy_p - fy_m);
 
         }
 
@@ -812,7 +784,7 @@ __global__ void evolve_fv_heating(float * beta_d, float * gamma_up_d,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
     /*
-    First part of evolution through one timestep using finite volume methods.
+    Does the heating part of the evolution.
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -920,24 +892,11 @@ __global__ void evolve2(float * beta_d, float * gamma_up_d,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
     /*
-    Second part of evolution through one timestep.
+    Adds buoyancy terms.
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
-
-    // enforce boundary conditions
-    //bcs_fv(Up, nx, ny, nlayers, ng, kx_offset, ky_offset);
-
-    /*// copy back to grid
-    if ((x < nx) && (y < ny) && (l < nlayers)) {
-        //printf("D %f ", Up[((y * nx + x) * nlayers + l)*3]);
-        for (int i = 0; i < 3; i++) {
-            Un_d[((y * nx + x) * nlayers + l)*3+i] =
-                Up[((y * nx + x) * nlayers + l)*3+i];
-        }
-    }*/
-
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
@@ -984,6 +943,9 @@ void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
        int nx, int ny, int nlayers, float alpha,
        float dx, float dy, float dt) {
+    /*
+    Solves the homogeneous part of the equation (ie the bit without source terms).
+    */
 
     int kx_offset = 0;
     int ky_offset = 0;
@@ -1000,11 +962,6 @@ void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d
        }
        ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
     }
-
-    // boundaries
-    //cudaMemcpy(Up_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-    //bcs_fv(Un_h, nx, ny, nlayers, ng);
-    //cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
     ky_offset = 0;
 
@@ -1027,7 +984,7 @@ void homogeneuous_fv(dim3 kernels, dim3 * threads, dim3 * blocks, float * beta_d
 
 }
 
-void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
+void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
        float * beta_d, float * gamma_up_d, float * Un_d,
        float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
@@ -1035,6 +992,9 @@ void rk4_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
        int nx, int ny, int nlayers, int ng, float alpha,
        float dx, float dy, float dt,
        float * Up_h, float * F_h, float * Un_h) {
+    /*
+    Integrates the homogeneous part of the ODE in time using RK3.
+    */
 
     // u1 = un + dt * F(un)
     homogeneuous_fv(kernels, threads, blocks,
@@ -1238,56 +1198,12 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         for (int t = 0; t < nt; t++) {
 
-            //if (t % 50 == 0) {
-                //printf("t =  %i\n", t);
-            //}
             int kx_offset = 0;
             int ky_offset = 0;
 
             if (finite_volume) {
-                /*for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve_fv<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                               Up_d, U_half_d,
-                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                               sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-                }
 
-                // boundaries
-                cudaMemcpy(Un_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-                bcs_fv(Un_h, nx, ny, nlayers, ng);
-                cudaMemcpy(Up_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
-
-
-                kx_offset = 0;
-                ky_offset = 0;
-
-                for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve_fv_fluxes<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d,
-                               gamma_up_d, Un_d,
-                               Up_d, U_half_d,
-                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                               sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-                }
-
-                // boundaries
-                cudaMemcpy(Un_h, Up_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-                bcs_fv(Un_h, nx, ny, nlayers, ng);*/
-                rk4_fv(kernels, threads, blocks,
+                rk3_fv(kernels, threads, blocks,
                     beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                     qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                     fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1325,8 +1241,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 }
             }
 
-
-
             kx_offset = 0;
             ky_offset = 0;
 
@@ -1349,16 +1263,21 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));
 
-            // boundaries
-            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-            bcs_fv(Un_h, nx, ny, nlayers, ng);
-            cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+            if (finite_volume) {
+                // boundaries
+                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                bcs_fv(Un_h, nx, ny, nlayers, ng);
+                cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+            }
 
 
             if ((t+1) % dprint == 0) {
                 printf("Printing t = %i\n", t+1);
-                // copy stuff back
-                //cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+                if (finite_volume == false) {
+                    // copy stuff back
+                    cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                }
 
                 // select a hyperslab
                 file_space = H5Dget_space(dset);

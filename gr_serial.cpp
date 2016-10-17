@@ -5,6 +5,17 @@
 using namespace std;
 
 // compile with g++ gr_serial.cpp -o gr_serial
+float sign(float f);
+
+float sign(float f) {
+    if (f > 0.0) {
+        return 1.0;
+    } else if (f < 0.0) {
+        return -1.0;
+    }
+
+    return 0.0;
+}
 
 Vec::Vec() {
     for (int i = 0; i < dim; i++) {
@@ -218,11 +229,12 @@ Vec Sea::U(int l, int x, int y, int t) {
 }
 
 // set the initial data
-void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
+void Sea::initial_data(float * D0, float * Sx0, float * Sy0, float * Q0) {
     for (int i = 0; i < nlayers*nx*ny; i++) {
         U_grid[i][0] = D0[i];
         U_grid[i][1] = Sx0[i];
         U_grid[i][2] = Sy0[i];
+
     }
 
     bcs(0);
@@ -655,12 +667,16 @@ void Sea::evolve_fv(int t) {
 
                     float r = 1.0e5;
 
-                    if (S_downwind > 1.0e-5) {
+                    if (abs(S_downwind) > 1.0e-5) {
                         r = S_upwind / S_downwind;
+                    } else {
+                        r *= sign(S_upwind) * sign(S_downwind);
                     }
 
+                    // MC
+                    float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
                     // superbee
-                    float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+                    //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
                     S *= phi;
 
@@ -716,12 +732,16 @@ void Sea::evolve_fv(int t) {
 
                     float r = 1.0e5;
 
-                    if (S_downwind > 1.0e-5) {
+                    if (abs(S_downwind) > 1.0e-5) {
                         r = S_upwind / S_downwind;
+                    } else {
+                        r*= sign(S_upwind) * sign(S_downwind);
                     }
 
+                    // MC
+                    float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
                     // superbee
-                    float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+                    //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
 
                     S *= phi;
 
@@ -952,11 +972,11 @@ void Sea::output(char * filename) {
     ofstream outFile(filename);
 
     // only going to output every 10 because file size is ridiculous
-    for (int t = 0; t < (nt+1); t++) {
+    for (int t = 0; t < (nt+1); t+=10) {
         for (int y = 0; y < ny; y++) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
-                    outFile << t << ", " << x << ", " << y << ", " << l;
+                    outFile << t/10 << ", " << x << ", " << y << ", " << l;
                     for (int i = 0; i < 3; i++ ) {
                         outFile << ", " << U_grid[((t * ny + y) * nx + x) * nlayers + l][i];
                     }
@@ -971,9 +991,9 @@ int main() {
 
     // initialise parameters
     static const int nlayers = 2;
-    int nx = 50;
-    int ny = 50;
-    int nt = 100;
+    int nx = 150;
+    int ny = 150;
+    int nt = 600;
     float xmin = 0.0;
     float xmax = 10.0;
     float ymin = 0.0;
@@ -988,6 +1008,7 @@ int main() {
     float D0[nlayers*nx*ny];
     float Sx0[nlayers*nx*ny];
     float Sy0[nlayers*nx*ny];
+    float Q0[nlayers*nx*ny];
 
     for (int i =0; i < nlayers; i++) {
         rho[i] = 1.0;
@@ -1006,8 +1027,10 @@ int main() {
     // set initial data
     for (int x = 1; x < (nx - 1); x++) {
         for (int y = 1; y < (ny - 1); y++) {
+            //D0[(y * nx + x) * nlayers] = 1.0 + 0.1 * exp(-(pow(sea.ys[y-1]-5.0, 2)) * 2.0);
             D0[(y * nx + x) * nlayers] = 1.0 + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
             D0[(y * nx + x) * nlayers + 1] = 0.8 + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
+            //Q0[(y * nx + x) * nlayers] = 0.1 * exp(-(pow(sea.xs[x-1]-2.0, 2)) * 2.0);
             for (int l = 0; l < nlayers; l++) {
                 Sx0[(y * nx + x) * nlayers + l] = 0.0;
                 Sy0[(y * nx + x) * nlayers + l] = 0.0;
@@ -1015,7 +1038,7 @@ int main() {
         }
     }
 
-    sea.initial_data(D0, Sx0, Sy0);
+    sea.initial_data(D0, Sx0, Sy0, Q0);
 
     // run simulation
     sea.run();

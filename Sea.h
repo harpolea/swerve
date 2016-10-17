@@ -39,7 +39,7 @@ public:
 
     Vec U(int l, int x, int y, int t);
 
-    void initial_data(float * D0, float * Sx0, float * Sy0);
+    void initial_data(float * D0, float * Sx0, float * Sy0, float * Q);
 
     void bcs(int t);
     void bcs(float ** grid);

@@ -2,6 +2,7 @@ nx      50
 ny      50
 nt      100
 nlayers 2
+ng      2
 xmin    0.0
 xmax    10.0
 ymin    0.0

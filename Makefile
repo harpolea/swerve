@@ -247,6 +247,9 @@ run: build
 
 clean:
 	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o
+clean_test:
+	rm -f testing/flat testing/flat.o SeaCuda.o
+
 
 testing/flat.o:testing/flat.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
@@ -254,6 +257,9 @@ testing/flat.o:testing/flat.cpp
 testing/flat:testing/flat.o gr_cuda_kernel.o SeaCuda.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 
+test: clean_test
+test: ALL_CCFLAGS += -g -G
+test: SeaCuda.o
 test: testing/flat
 
 clobber: clean
