@@ -674,9 +674,16 @@ void Sea::evolve_fv(int t) {
                     }
 
                     // MC
-                    float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
+                    //float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
                     // superbee
-                    //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+                    float phi = 0.0;
+                    if (r >= 1.0) {
+                        phi = min(float(2.0), min(r, float(2.0 / (1.0 + r))));
+                    } else if (r >= 0.5) {
+                        phi = 1.0;
+                    } else if (r > 0.0) {
+                        phi = 2.0 * r;
+                    }
 
                     S *= phi;
 
@@ -739,9 +746,16 @@ void Sea::evolve_fv(int t) {
                     }
 
                     // MC
-                    float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
+                    //float phi = max(float(0.0), min(float((2.0 * r) / (1.0 + r)), float(2.0 / (1.0 + r))));
                     // superbee
-                    //float phi = max(float(0.0), max(min(float(1.0), float(2.0 * r)), min(float(2.0), r)));
+                    float phi = 0.0;
+                    if (r >= 1.0) {
+                        phi = min(float(2.0), min(r, float(2.0 / (1.0 + r))));
+                    } else if (r >= 0.5) {
+                        phi = 1.0;
+                    } else if (r > 0.0) {
+                        phi = 2.0 * r;
+                    }
 
                     S *= phi;
 

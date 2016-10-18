@@ -1,6 +1,6 @@
-nx      600
-ny      600
-nt      8000
+nx      100
+ny      100
+nt      15
 ng      2
 nlayers 2
 xmin    0.0
@@ -10,7 +10,6 @@ ymax    10.0
 rho     1.0 1.0
 mu      0.0
 alpha   0.9
-beta    0.0 0.0
 gamma   1.23457 0.0 0.0 1.23457
 periodic f
 dprint  10

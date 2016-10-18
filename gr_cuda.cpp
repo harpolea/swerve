@@ -33,6 +33,7 @@ int main(int argc, char *argv[]) {
     float * Sx0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * Sy0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * _Q = new float[sea.nlayers*sea.nx*sea.ny];
+    float * _beta = new float[2*sea.nx*sea.ny];
 
     // set initial data
     for (int x = 1; x < (sea.nx - 1); x++) {
@@ -42,7 +43,10 @@ int main(int argc, char *argv[]) {
             D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
 
             _Q[(y * sea.nx + x) * sea.nlayers] = 0.0;
-            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.2 * exp(-(pow(sea.xs[x-1]-5.0, 2)) * 2.0);
+            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.2 * exp(-(pow(sea.xs[x-1]-5.0, 2) + pow(sea.ys[y-1]-5.0, 2)) * 2.0);
+
+            _beta[(y * sea.nx + x) * 2] = 0.2;
+            _beta[(y * sea.nx + x) * 2 + 1] = 0.2;
 
             // set everything else (Sx, Sy, Q) to be 0
             for (int l = 0; l < sea.nlayers; l++) {
@@ -53,12 +57,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    sea.initial_data(D0, Sx0, Sy0, _Q);
+    sea.initial_data(D0, Sx0, Sy0, _Q, _beta);
 
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;
     delete[] _Q;
+    delete[] _beta;
 
     sea.print_inputs();
 

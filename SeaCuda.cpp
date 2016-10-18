@@ -194,6 +194,7 @@ SeaCuda::SeaCuda(char * filename)
     try {
         Q = new float[int(nlayers*nx*ny)];
         U_grid = new float[int(nlayers*nx*ny*3)];
+        beta = new float[int(2*nx*ny)];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
         exit(1);
@@ -221,6 +222,7 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
 
     rho = new float[nlayers];
     Q = new float[nlayers*nx*ny];
+    beta = new float[2*nx*ny];
 
     for (int i = 0; i < nlayers; i++) {
         rho[i] = seaToCopy.rho[i];
@@ -230,6 +232,10 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         Q[i] = seaToCopy.Q[i];
     }
 
+    for (int i = 0; i < 2*nx*ny; i++) {
+        beta[i] = seaToCopy.beta[i];
+    }
+
     U_grid = new float[int(nlayers*nx*ny*3)];// * int(ceil(float((nt+1)/dprint)))];
 
     for (int i = 0; i < nlayers*nx*ny*3;i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
@@ -237,7 +243,7 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
     }
 
     for (int i = 0; i < 2; i++) {
-        beta[i] = seaToCopy.beta[i];
+        //beta[i] = seaToCopy.beta[i];
         for (int j = 0; j < 2; j++) {
             gamma[i*2+j] = seaToCopy.gamma[i*2+j];
             gamma_up[i*2+j] = seaToCopy.gamma_up[i*2+j];
@@ -252,13 +258,14 @@ SeaCuda::~SeaCuda() {
     delete[] ys;
     delete[] rho;
     delete[] Q;
+    delete[] beta;
 
     delete[] U_grid;
 }
 
 
 // set the initial data
-void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
+void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, float * _beta) {
     /*
     Initialise D, Sx, Sy and Q.
     */
@@ -267,6 +274,10 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q) {
         U_grid[i*3+1] = Sx0[i];
         U_grid[i*3+2] = Sy0[i];
         Q[i] = _Q[i];
+    }
+
+    for (int i = 0; i < 2*nx*ny; i++) {
+        beta[i] = _beta[i];
     }
 
     bcs();

@@ -20,7 +20,7 @@ public:
 
     SeaCuda(const SeaCuda &); // copy constructor
 
-    void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q);
+    void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, float * _beta);
 
     void bcs();
 
@@ -56,7 +56,7 @@ private:
     float mu; // friction
 
     float alpha;
-    float beta[2];
+    float *beta;
     float gamma[2*2];
     float gamma_up[2*2];
 

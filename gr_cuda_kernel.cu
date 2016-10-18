@@ -377,15 +377,19 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
     //}
 
     float d, e, f, g, h;
+    float * beta;
+    beta = (float *) malloc(2*sizeof(float));
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         for (int i = 0; i < 3; i++) {
             u[i] = Un_d[((y * nx + x) * nlayers + l)*3+i];
         }
+        beta[0] = beta_d[(y * nx + x) * 2];
+        beta[1] = beta_d[(y * nx + x) * 2 + 1];
 
-        Jx(u, beta_d, gamma_up_d, A, alpha);
-        Jy(u, beta_d, gamma_up_d, B, alpha);
+        Jx(u, beta, gamma_up_d, A, alpha);
+        Jy(u, beta, gamma_up_d, B, alpha);
 
         // matrix multiplication
         for (int i = 0; i < 3; i++) {
@@ -456,6 +460,7 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
     free(A2);
     free(B2);
     free(AB);
+    free(beta);
 
     __syncthreads();
 
@@ -626,7 +631,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         float u = qx_plus_half[offset + 1] / (qx_plus_half[offset] * W);
         float v = qx_plus_half[offset + 2] / (qx_plus_half[offset] * W);
-        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[0] / alpha;
+        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[(y * nx + x) * 2] / alpha;
 
         fx_plus_half[offset] = qx_plus_half[offset] * qx;
 
@@ -647,7 +652,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qx_minus_half[offset + 1] / (qx_minus_half[offset] * W);
         v = qx_minus_half[offset + 2] / (qx_minus_half[offset] * W);
-        qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[0] / alpha;
+        qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[(y * nx + x) * 2] / alpha;
 
         fx_minus_half[offset] = qx_minus_half[offset] * qx;
         fx_minus_half[offset + 1] = qx_minus_half[offset + 1] * qx +
@@ -704,7 +709,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qy_plus_half[offset + 1] / (qy_plus_half[offset] * W);
         v = qy_plus_half[offset + 2] / (qy_plus_half[offset] * W);
-        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[1] / alpha;
+        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[(y * nx + x) * 2 + 1] / alpha;
 
         fy_plus_half[offset] = qy_plus_half[offset] * qy;
         fy_plus_half[offset + 1] = qy_plus_half[offset + 1] * qy;
@@ -723,7 +728,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qy_minus_half[offset + 1] / (qy_minus_half[offset] * W);
         v = qy_minus_half[offset + 2] / (qy_minus_half[offset] * W);
-        qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[1] / alpha;
+        qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[(y * nx + x) * 2 + 1] / alpha;
 
         fy_minus_half[offset] = qy_minus_half[offset] * qy;
         fy_minus_half[offset + 1] = qy_minus_half[offset + 1] * qy;
@@ -786,7 +791,7 @@ __global__ void evolve_fv_fluxes(float * F,
     }
 }
 
-__global__ void evolve_fv_heating(float * beta_d, float * gamma_up_d,
+__global__ void evolve_fv_heating(float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * qx_plus_half, float * qx_minus_half,
                      float * qy_plus_half, float * qy_minus_half,
@@ -898,7 +903,7 @@ __global__ void evolve_fv_heating(float * beta_d, float * gamma_up_d,
 }
 
 
-__global__ void evolve2(float * beta_d, float * gamma_up_d,
+__global__ void evolve2(float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      float mu,
@@ -1140,14 +1145,14 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     float * Q_d;
 
     // allocate memory on device
-    cudaMalloc((void**)&beta_d, 2*sizeof(float));
+    cudaMalloc((void**)&beta_d, 2*nx*ny*sizeof(float));
     cudaMalloc((void**)&gamma_up_d, 4*sizeof(float));
     cudaMalloc((void**)&Un_d, nx*ny*nlayers*3*sizeof(float));
     cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
     cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
 
     // copy stuff to GPU
-    cudaMemcpy(beta_d, beta, 2*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(beta_d, beta, 2*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 4*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
@@ -1227,7 +1232,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 for (int j = 0; j < kernels.y; j++) {
                     kx_offset = 0;
                     for (int i = 0; i < kernels.x; i++) {
-                        evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d,
+                        evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
                                gamma_up_d, Un_d,
                                Up_d, U_half_d,
                                qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1261,7 +1266,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels.y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels.x; i++) {
-                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
@@ -1335,7 +1340,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels.y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels.x; i++) {
-                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
