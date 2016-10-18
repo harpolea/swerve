@@ -1,6 +1,6 @@
-nx      200
-ny      200
-nt      500
+nx      600
+ny      600
+nt      8000
 ng      2
 nlayers 2
 xmin    0.0

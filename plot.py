@@ -69,7 +69,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
 
     for i in range(len(D_2d[:,0,0,0])):
-        outname = '../../Documents/Work/swerve/plotting/tsunami_fv_' + format(i, '05') + '.png'
+        outname = '../../Documents/Work/swerve/plotting/tsunami_superbee_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
@@ -95,4 +95,4 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename="../../Documents/Work/swerve/tsunami_fv.h5", movie_filename="../../Documents/Work/swerve/tsunami_fv.mp4")
+    quick_plot(data_filename="../../Documents/Work/swerve/tsunami_superbee.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")
