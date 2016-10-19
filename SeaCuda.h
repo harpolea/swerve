@@ -22,7 +22,7 @@ public:
 
     void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, float * _beta);
 
-    void bcs();
+    void bcs(float * grid, int vec_dim);
 
     void print_inputs();
 

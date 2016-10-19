@@ -280,7 +280,9 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, flo
         beta[i] = _beta[i];
     }
 
-    bcs();
+    bcs(U_grid, nlayers*3);
+    bcs(Q, nlayers);
+    bcs(beta, 2);
 
     cout << "Set initial data.\n";
 }
@@ -303,51 +305,48 @@ void SeaCuda::print_inputs() {
     cout << "outfile \t\t" << outfile << "\n\n";
 }
 
-void SeaCuda::bcs() {
+void SeaCuda::bcs(float * grid, int vec_dim) {
     /*
-    Enforce boundary conditions.
+    Enforce boundary conditions on grid of quantities with dimension vec_dim.
+
     */
 
     if (periodic) {
 
-        for (int l = 0; l < nlayers; l++) {
+        for (int l = 0; l < vec_dim; l++) {
             for (int y = 0; y < ny; y++){
-                for (int i = 0; i < 3; i++) {
-                    for (int g = 0; g < ng; g++) {
-                        U_grid[((y * nx + g) * nlayers + l)*3+i] = U_grid[((y * nx + (nx-2*ng+g)) * nlayers + l)*3+i];
+                for (int g = 0; g < ng; g++) {
+                    grid[(y * nx + g) * vec_dim + l] = grid[(y * nx + (nx-2*ng+g)) * vec_dim + l];
 
-                        U_grid[((y * nx + (nx-ng+g)) * nlayers + l)*3+i] = U_grid[((y * nx + ng+g) * nlayers + l)*3+i];
-                    }
+                    grid[(y * nx + (nx-ng+g)) * vec_dim + l] = grid[(y * nx + ng+g) * vec_dim + l];
+
                 }
             }
             for (int x = 0; x < nx; x++){
-                for (int i = 0; i < 3; i++) {
-                    for (int g = 0; g < ng; g++) {
-                        U_grid[((g * nx + x) * nlayers + l)*3+i] = U_grid[(((ny-ng-1) * nx + x) * nlayers + l)*3+i];
+                for (int g = 0; g < ng; g++) {
+                    grid[(g * nx + x) * vec_dim + l] = grid[((ny-ng-1) * nx + x) * vec_dim + l];
 
-                        U_grid[(((ny-ng+g) * nx + x) * nlayers + l)*3+i] = U_grid[((ng * nx + x) * nlayers + l)*3+i];
-                    }
+                    grid[((ny-ng+g) * nx + x) * vec_dim + l] = grid[(ng * nx + x) * vec_dim + l];
+
                 }
             }
         }
     } else { // outflow
-        for (int l = 0; l < nlayers; l++) {
+        for (int l = 0; l < vec_dim; l++) {
             for (int y = 0; y < ny; y++){
-                for (int i = 0; i < 3; i++) {
-                    for (int g = 0; g < ng; g++) {
-                        U_grid[((y * nx + g) * nlayers + l)*3+i] = U_grid[((y * nx + ng) * nlayers + l)*3+i];
+                for (int g = 0; g < ng; g++) {
+                    grid[(y * nx + g) * vec_dim + l] = grid[(y * nx + ng) * vec_dim + l];
 
-                        U_grid[((y * nx + (nx-1-g)) * nlayers + l)*3+i] = U_grid[((y * nx + (nx-1-ng)) * nlayers + l)*3+i];
-                    }
+                    grid[(y * nx + (nx-1-g)) * vec_dim + l] = grid[(y * nx + (nx-1-ng)) * vec_dim + l];
+
                 }
             }
             for (int x = 0; x < nx; x++){
-                for (int i = 0; i < 3; i++) {
-                    for (int g = 0; g < ng; g++) {
-                        U_grid[((g * nx + x) * nlayers + l)*3+i] = U_grid[((ng * nx + x) * nlayers + l)*3+i];
+                for (int g = 0; g < ng; g++) {
+                    grid[(g * nx + x) * vec_dim + l] = grid[(ng * nx + x) * vec_dim + l];
 
-                        U_grid[(((ny-1-g) * nx + x) * nlayers + l)*3+i] = U_grid[(((ny-1-ng) * nx + x) * nlayers + l)*3+i];
-                    }
+                    grid[((ny-1-g) * nx + x) * vec_dim + l] = grid[((ny-1-ng) * nx + x) * vec_dim + l];
+
                 }
 
             }

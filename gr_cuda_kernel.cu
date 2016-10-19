@@ -572,6 +572,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
     First part of evolution through one timestep using finite volume methods.
     Reconstructs state vector to cell boundaries using slope limiter
     and calculates fluxes there.
+
+    NOTE: we assume that beta is smooth so can get value at cell boundaries with simple averaging
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -631,7 +633,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         float u = qx_plus_half[offset + 1] / (qx_plus_half[offset] * W);
         float v = qx_plus_half[offset + 2] / (qx_plus_half[offset] * W);
-        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[(y * nx + x) * 2] / alpha;
+        // beta[0] at i+1/2, j
+        float beta = 0.5 * (beta_d[(y * nx + x) * 2] + beta_d[(y * nx + x+1) * 2]);
+        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta / alpha;
 
         fx_plus_half[offset] = qx_plus_half[offset] * qx;
 
@@ -652,7 +656,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qx_minus_half[offset + 1] / (qx_minus_half[offset] * W);
         v = qx_minus_half[offset + 2] / (qx_minus_half[offset] * W);
-        qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta_d[(y * nx + x) * 2] / alpha;
+        // beta[0] at i-1/2, j
+        beta = 0.5 * (beta_d[(y * nx + x-1) * 2] + beta_d[(y * nx + x) * 2]);
+        qx = u * gamma_up_d[0] + v * gamma_up_d[1] - beta / alpha;
 
         fx_minus_half[offset] = qx_minus_half[offset] * qx;
         fx_minus_half[offset + 1] = qx_minus_half[offset + 1] * qx +
@@ -709,7 +715,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qy_plus_half[offset + 1] / (qy_plus_half[offset] * W);
         v = qy_plus_half[offset + 2] / (qy_plus_half[offset] * W);
-        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[(y * nx + x) * 2 + 1] / alpha;
+        // beta[1] at i, j+1/2
+        beta = 0.5 * (beta_d[((y+1) * nx + x) * 2 + 1] + beta_d[(y * nx + x) * 2 + 1]);
+        float qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta / alpha;
 
         fy_plus_half[offset] = qy_plus_half[offset] * qy;
         fy_plus_half[offset + 1] = qy_plus_half[offset + 1] * qy;
@@ -728,7 +736,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         u = qy_minus_half[offset + 1] / (qy_minus_half[offset] * W);
         v = qy_minus_half[offset + 2] / (qy_minus_half[offset] * W);
-        qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta_d[(y * nx + x) * 2 + 1] / alpha;
+        // beta[1] at i, j-1/2
+        beta = 0.5 * (beta_d[((y-1) * nx + x) * 2 + 1] + beta_d[(y * nx + x) * 2 + 1]);
+        qy = v * gamma_up_d[3] + u * gamma_up_d[1] - beta / alpha;
 
         fy_minus_half[offset] = qy_minus_half[offset] * qy;
         fy_minus_half[offset + 1] = qy_minus_half[offset + 1] * qy;
