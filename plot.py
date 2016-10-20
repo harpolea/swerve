@@ -69,7 +69,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
 
     for i in range(len(D_2d[:,0,0,0])):
-        outname = '../../Documents/Work/swerve/plotting/hurricane_' + format(i, '05') + '.png'
+        outname = '../../Documents/Work/swerve/plotting/friction_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
@@ -95,4 +95,4 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename="../../Documents/Work/swerve/hurricane2.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")
+    quick_plot(data_filename="../../Documents/Work/swerve/friction2.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")

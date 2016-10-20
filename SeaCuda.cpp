@@ -30,14 +30,14 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt, int _ng,
         bool _periodic, int _dprint)
         : nlayers(n_layers), nx(_nx), ny(_ny), ng(_ng), nt(_nt), mu(_mu), alpha(_alpha), periodic(_periodic), dprint(_dprint)
 {
-    xs = new float[nx-2];
-    for (int i = 0; i < (nx - 2); i++) {
-        xs[i] = xmin + i * (xmax - xmin) / (nx-2);
+    xs = new float[nx];
+    for (int i = 0; i < nx; i++) {
+        xs[i] = xmin + (i-ng) * (xmax - xmin) / (nx-2*ng);
     }
 
-    ys = new float[ny-2];
-    for (int i = 0; i < (ny - 2); i++) {
-        ys[i] = ymin + i * (ymax - ymin) / (ny-2);
+    ys = new float[ny];
+    for (int i = 0; i < ny; i++) {
+        ys[i] = ymin + (i-ng) * (ymax - ymin) / (ny-2*ng);
     }
 
     dx = xs[1] - xs[0];
@@ -168,14 +168,14 @@ SeaCuda::SeaCuda(char * filename)
 
     inputFile.close();
 
-    xs = new float[nx-2];
-    for (int i = 0; i < (nx - 2); i++) {
-        xs[i] = xmin + i * (xmax - xmin) / (nx-2);
+    xs = new float[nx];
+    for (int i = 0; i < nx; i++) {
+        xs[i] = xmin + (i-ng) * (xmax - xmin) / (nx-2*ng);
     }
 
-    ys = new float[ny-2];
-    for (int i = 0; i < (ny - 2); i++) {
-        ys[i] = ymin + i * (ymax - ymin) / (ny-2);
+    ys = new float[ny];
+    for (int i = 0; i < ny; i++) {
+        ys[i] = ymin + (i-ng) * (ymax - ymin) / (ny-2*ng);
     }
 
     dx = xs[1] - xs[0];
@@ -281,8 +281,8 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, flo
     }
 
     bcs(U_grid, nlayers*3);
-    bcs(Q, nlayers);
-    bcs(beta, 2);
+    //bcs(Q, nlayers);
+    //bcs(beta, 2);
 
     cout << "Set initial data.\n";
 }

@@ -345,6 +345,31 @@ __device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, fl
 
 }
 
+__device__ void calc_Q(float * U, float * rho_d, float * Q_d,
+                       int nx, int ny, int nlayers,
+                       int kx_offset, int ky_offset) {
+    /*
+    Calculate heating rate using equation 64 of Spitkovsky 2002.
+    */
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int l = threadIdx.z;
+
+    // set some constants
+    float kappa = 0.03; // opacity, constant
+    float column_depth = 5.4; // y
+    float Y = 1.0; // for simplicity as they do just have eps_3alpha = 0 so that helium abundance remains constant.
+
+    // in this model the scale height represents the temperature
+
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+
+        Q_d[(y * nx + x) * nlayers + l] = 3.0e15 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-44.0/U[((y * nx + x) * nlayers + l)*3]) / pow(U[((y * nx + x) * nlayers + l)*3], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*3], 4) / (3.0 * kappa * column_depth * column_depth);
+    }
+
+
+}
+
 __global__ void evolve(float * beta_d, float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,

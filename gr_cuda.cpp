@@ -36,23 +36,34 @@ int main(int argc, char *argv[]) {
     float * _beta = new float[2*sea.nx*sea.ny];
 
     // set initial data
-    for (int x = sea.ng; x < (sea.nx - sea.ng); x++) {
-        for (int y = sea.ng; y < (sea.ny - sea.ng); y++) {
+    for (int x = 0; x < sea.nx; x++) {
+        for (int y = 0; y < sea.ny; y++) {
             // set D0 to be two hills of fluid
-            D0[(y * sea.nx + x) * sea.nlayers] = 1.0;// + 0.4 * exp(-(pow(sea.xs[x-1]-2.0, 2) + pow(sea.ys[y-1]-2.0, 2)) * 2.0);
-            D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x-1]-7.0, 2) + pow(sea.ys[y-1]-7.0, 2)) * 2.0);
+            //D0[(y * sea.nx + x) * sea.nlayers] = 1.0;// + 0.4 * exp(-(pow(sea.xs[x]-2.0, 2) + pow(sea.ys[y]-2.0, 2)) * 2.0);
+            //D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x]-7.0, 2) + pow(sea.ys[y]-7.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers] = 1.0-0.2 * exp(-(0.5*pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;//0.2 * exp(-(pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
 
             _Q[(y * sea.nx + x) * sea.nlayers] = 0.0;
-            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.4 * exp(-(pow(sea.xs[x-sea.ng]-5.0, 2) + pow(sea.ys[y-sea.ng]-5.0, 2)) * 2.0);
+            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.0;//0.4 * exp(-(pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
 
-            _beta[(y * sea.nx + x) * 2] = 0.04 * (sea.xs[x-sea.ng]+5.0);
+            _beta[(y * sea.nx + x) * 2] = 0.0;//0.04 * (sea.ys[y]+5.0);
             _beta[(y * sea.nx + x) * 2 + 1] = 0.0;
+
+            //float r = sqrt(pow(sea.xs[x]-5.0,2) + pow(sea.ys[y]-5.0,2));
+            // angular velocity
+            float omega = 0.02;
 
             // set everything else (Sx, Sy, Q) to be 0
             for (int l = 0; l < sea.nlayers; l++) {
-                Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
-                Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                //Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                //sSy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 //_Q[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+
+
+                // make swirly
+                Sx0[(y * sea.nx + x) * sea.nlayers + l] = -omega * (sea.ys[y]-5.0);
+                Sy0[(y * sea.nx + x) * sea.nlayers + l] = omega * (sea.xs[x]-5.0);
             }
         }
     }
