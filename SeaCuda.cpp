@@ -65,17 +65,15 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt, int _ng,
 
     // find inverse of gamma
     float det = gamma[0] * gamma[1*2+1] - gamma[0*2+1] * gamma[1*2+0];
-    //cout << "det = " << det << '\n';
     gamma_up[0] = gamma[1*2+1] / det;
     gamma[0*2+1] = -gamma[0*2+1]/det;
     gamma[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
-    //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
-    U_grid = new float[nlayers*nx*ny*3];
+    // D, Sx, Sy, zeta
+    U_grid = new float[nlayers*nx*ny*4];
 
     cout << "Made a Sea.\n";
-    //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
 
 }
 
@@ -184,16 +182,14 @@ SeaCuda::SeaCuda(char * filename)
 
     // find inverse of gamma
     float det = gamma[0] * gamma[1*2+1] - gamma[0*2+1] * gamma[1*2+0];
-    //cout << "det = " << det << '\n';
     gamma_up[0] = gamma[1*2+1] / det;
     gamma[0*2+1] = -gamma[0*2+1]/det;
     gamma[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
-    //U_grid = new float[nlayers*nx*ny*3 * int(ceil(float((nt+1)/dprint)))];
     try {
         Q = new float[int(nlayers*nx*ny)];
-        U_grid = new float[int(nlayers*nx*ny*3)];
+        U_grid = new float[int(nlayers*nx*ny*4)];
         beta = new float[int(2*nx*ny)];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
@@ -201,7 +197,6 @@ SeaCuda::SeaCuda(char * filename)
     }
 
     cout << "Made a Sea.\n";
-    //cout << "dt = " << dt << "\tdx = " << dx << "\tdy = " << dy << '\n';
 
 }
 
@@ -210,13 +205,13 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
     : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), mu(seaToCopy.mu), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
 {
 
-    xs = new float[nx-2];
-    for (int i = 0; i < (nx - 2); i++) {
+    xs = new float[nx];
+    for (int i = 0; i < nx; i++) {
         xs[i] = seaToCopy.xs[i];
     }
 
-    ys = new float[ny-2];
-    for (int i = 0; i < (ny - 2); i++) {
+    ys = new float[ny];
+    for (int i = 0; i < ny; i++) {
         ys[i] = seaToCopy.ys[i];
     }
 
@@ -236,14 +231,13 @@ SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
         beta[i] = seaToCopy.beta[i];
     }
 
-    U_grid = new float[int(nlayers*nx*ny*3)];// * int(ceil(float((nt+1)/dprint)))];
+    U_grid = new float[int(nlayers*nx*ny*4)];
 
-    for (int i = 0; i < nlayers*nx*ny*3;i++) {// * int(ceil(float((nt+1)/dprint))); i++) {
+    for (int i = 0; i < nlayers*nx*ny*4;i++) {
         U_grid[i] = seaToCopy.U_grid[i];
     }
 
     for (int i = 0; i < 2; i++) {
-        //beta[i] = seaToCopy.beta[i];
         for (int j = 0; j < 2; j++) {
             gamma[i*2+j] = seaToCopy.gamma[i*2+j];
             gamma_up[i*2+j] = seaToCopy.gamma_up[i*2+j];
@@ -265,14 +259,15 @@ SeaCuda::~SeaCuda() {
 
 
 // set the initial data
-void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, float * _beta) {
+void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * zeta0, float * _Q, float * _beta) {
     /*
     Initialise D, Sx, Sy and Q.
     */
     for (int i = 0; i < nlayers*nx*ny; i++) {
-        U_grid[i*3] = D0[i];
-        U_grid[i*3+1] = Sx0[i];
-        U_grid[i*3+2] = Sy0[i];
+        U_grid[i*4] = D0[i];
+        U_grid[i*4+1] = Sx0[i];
+        U_grid[i*4+2] = Sy0[i];
+        U_grid[i*4+3] = zeta0[i];
         Q[i] = _Q[i];
     }
 
@@ -280,9 +275,7 @@ void SeaCuda::initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, flo
         beta[i] = _beta[i];
     }
 
-    bcs(U_grid, nlayers*3);
-    //bcs(Q, nlayers);
-    //bcs(beta, 2);
+    bcs(U_grid, nlayers*4);
 
     cout << "Set initial data.\n";
 }
@@ -376,8 +369,8 @@ void SeaCuda::output(char * filename) {
             for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
                     outFile << t << ", " << x << ", " << y << ", " << l;
-                    for (int i = 0; i < 3; i++ ) {
-                        outFile << ", " << U_grid[(((t * ny + y) * nx + x) * nlayers + l)*3+i];
+                    for (int i = 0; i < 4; i++ ) {
+                        outFile << ", " << U_grid[(((t * ny + y) * nx + x) * nlayers + l)*4+i];
                     }
                     outFile << '\n';
                 }
@@ -392,7 +385,7 @@ void SeaCuda::output_hdf5(char * filename) {
     // create file
     H5::H5File outFile(filename, H5F_ACC_TRUNC);
 
-    hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+    hsize_t dims[] = {hsize_t(nt+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
 
     H5::DataSpace dataspace(5, dims);
     H5::DataSet dataset = outFile.createDataSet("SwerveOutput",

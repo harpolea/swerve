@@ -20,7 +20,7 @@ public:
 
     SeaCuda(const SeaCuda &); // copy constructor
 
-    void initial_data(float * D0, float * Sx0, float * Sy0, float * _Q, float * _beta);
+    void initial_data(float * D0, float * Sx0, float * Sy0, float * zeta0, float * _Q, float * _beta);
 
     void bcs(float * grid, int vec_dim);
 

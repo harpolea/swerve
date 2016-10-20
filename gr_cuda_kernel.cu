@@ -205,15 +205,15 @@ __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, in
     int l = threadIdx.z;
 
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             if (x == 0) {
-                grid[((y * nx) * nlayers + l)*3+i] = grid[((y * nx + 1) * nlayers + l)*3+i];
+                grid[((y * nx) * nlayers + l)*4+i] = grid[((y * nx + 1) * nlayers + l)*4+i];
             } else if (x == (nx-1)) {
-                grid[((y * nx + (nx-1)) * nlayers + l)*3+i] = grid[((y * nx + (nx-2)) * nlayers + l)*3+i];
+                grid[((y * nx + (nx-1)) * nlayers + l)*4+i] = grid[((y * nx + (nx-2)) * nlayers + l)*4+i];
             } else if (y == 0) {
-                grid[(x * nlayers + l)*3+i] = grid[((nx + x) * nlayers + l)*3+i];
+                grid[(x * nlayers + l)*4+i] = grid[((nx + x) * nlayers + l)*4+i];
             } else if (y == (ny-1)) {
-                grid[(((ny-1) * nx + x) * nlayers + l)*3+i] = grid[(((ny-2) * nx + x) * nlayers + l)*3+i];
+                grid[(((ny-1) * nx + x) * nlayers + l)*4+i] = grid[(((ny-2) * nx + x) * nlayers + l)*4+i];
             }
         }
     }
@@ -230,15 +230,15 @@ __device__ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng, int kx
     int l = threadIdx.z;
 
     if ((l < nlayers) && (y < ny) && (x < nx) ) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             if (x < ng) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + ng) * nlayers + l)*3+i];
+                grid[((y * nx + x) * nlayers + l)*4+i] = grid[((y * nx + ng) * nlayers + l)*4+i];
             } else if (x > (nx-ng-1)) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[((y * nx + (nx-ng-1)) * nlayers + l)*3+i];
+                grid[((y * nx + x) * nlayers + l)*4+i] = grid[((y * nx + (nx-ng-1)) * nlayers + l)*4+i];
             } else if (y < ng) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ng * nx + x) *  + x) * nlayers + l)*3+i];
+                grid[((y * nx + x) * nlayers + l)*4+i] = grid[(((ng * nx + x) *  + x) * nlayers + l)*4+i];
             } else if (y > (ny-ng-1)) {
-                grid[((y * nx + x) * nlayers + l)*3+i] = grid[(((ny-ng-1) * nx + x) * nlayers + l)*3+i];
+                grid[((y * nx + x) * nlayers + l)*4+i] = grid[(((ny-ng-1) * nx + x) * nlayers + l)*4+i];
             }
         }
     }
@@ -253,20 +253,20 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
 
     for (int l = 0; l < nlayers; l++) {
         for (int y = 0; y < ny; y++){
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
                 for (int g = 0; g < ng; g++) {
-                    grid[((y * nx + g) * nlayers + l)*3+i] = grid[((y * nx + ng) * nlayers + l)*3+i];
+                    grid[((y * nx + g) * nlayers + l)*4+i] = grid[((y * nx + ng) * nlayers + l)*4+i];
 
-                    grid[((y * nx + (nx-1-g)) * nlayers + l)*3+i] = grid[((y * nx + (nx-1-ng)) * nlayers + l)*3+i];
+                    grid[((y * nx + (nx-1-g)) * nlayers + l)*4+i] = grid[((y * nx + (nx-1-ng)) * nlayers + l)*4+i];
                 }
             }
         }
         for (int x = 0; x < nx; x++){
-            for (int i = 0; i < 3; i++) {
+            for (int i = 0; i < 4; i++) {
                 for (int g = 0; g < ng; g++) {
-                    grid[((g * nx + x) * nlayers + l)*3+i] = grid[((ng * nx + x) * nlayers + l)*3+i];
+                    grid[((g * nx + x) * nlayers + l)*4+i] = grid[((ng * nx + x) * nlayers + l)*4+i];
 
-                    grid[(((ny-1-g) * nx + x) * nlayers + l)*3+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*3+i];
+                    grid[(((ny-1-g) * nx + x) * nlayers + l)*4+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*4+i];
                 }
             }
 
@@ -356,15 +356,15 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
     int l = threadIdx.z;
 
     // set some constants
-    float kappa = 0.03; // opacity, constant
-    float column_depth = 5.4; // y
+    //float kappa = 0.03; // opacity, constant
+    //float column_depth = 5.4; // y
     float Y = 1.0; // for simplicity as they do just have eps_3alpha = 0 so that helium abundance remains constant.
 
     // in this model the scale height represents the temperature
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-        Q_d[(y * nx + x) * nlayers + l] = 3.0e15 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-44.0/U[((y * nx + x) * nlayers + l)*3]) / pow(U[((y * nx + x) * nlayers + l)*3], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*3], 4) / (3.0 * kappa * column_depth * column_depth);
+        Q_d[(y * nx + x) * nlayers + l] = 3.0e15 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-44.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
     }
 
 
@@ -407,8 +407,8 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
-        for (int i = 0; i < 3; i++) {
-            u[i] = Un_d[((y * nx + x) * nlayers + l)*3+i];
+        for (int i = 0; i < 4; i++) {
+            u[i] = Un_d[((y * nx + x) * nlayers + l)*4+i];
         }
         beta[0] = beta_d[(y * nx + x) * 2];
         beta[1] = beta_d[(y * nx + x) * 2 + 1];
@@ -437,33 +437,33 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
             f = 0;
             g = 0;
             h = 0;
-            for (int j = 0; j < 3; j++) {
+            for (int j = 0; j < 4; j++) {
                 d += A[i*3+j] *
-                    (Un_d[((y * nx + x+1) * nlayers + l)*3+j] -
-                    Un_d[((y * nx + x-1) * nlayers + l)*3+j]);
+                    (Un_d[((y * nx + x+1) * nlayers + l)*4+j] -
+                    Un_d[((y * nx + x-1) * nlayers + l)*4+j]);
 
                 e += B[i*3+j] *
-                    (Un_d[(((y+1) * nx + x) * nlayers + l)*3+j] -
-                    Un_d[(((y-1) * nx + x) * nlayers + l)*3+j]);
+                    (Un_d[(((y+1) * nx + x) * nlayers + l)*4+j] -
+                    Un_d[(((y-1) * nx + x) * nlayers + l)*4+j]);
 
                 f += A2[i*3+j] *
-                    (Un_d[((y * nx + x+1) * nlayers + l)*3+j] - 2.0 *
-                    Un_d[((y * nx + x) * nlayers + l)*3+j] +
-                    Un_d[((y * nx + x-1) * nlayers + l)*3+j]);
+                    (Un_d[((y * nx + x+1) * nlayers + l)*4+j] - 2.0 *
+                    Un_d[((y * nx + x) * nlayers + l)*4+j] +
+                    Un_d[((y * nx + x-1) * nlayers + l)*4+j]);
 
                 g += B2[i*3+j] *
-                    (Un_d[(((y+1) * nx + x) * nlayers + l)*3+j] - 2.0 *
-                    Un_d[((y * nx + x) * nlayers + l)*3+j] +
-                    Un_d[(((y-1) * nx + x) * nlayers + l)*3+j]);
+                    (Un_d[(((y+1) * nx + x) * nlayers + l)*4+j] - 2.0 *
+                    Un_d[((y * nx + x) * nlayers + l)*4+j] +
+                    Un_d[(((y-1) * nx + x) * nlayers + l)*4+j]);
 
                 h += AB[i*3+j] *
-                    (Un_d[(((y+1) * nx + x+1) * nlayers + l)*3+j] -
-                    Un_d[(((y-1) * nx + x+1) * nlayers + l)*3+j] -
-                    Un_d[(((y+1) * nx + x-1) * nlayers + l)*3+j] +
-                    Un_d[(((y-1) * nx + x-1) * nlayers + l)*3+j]);
+                    (Un_d[(((y+1) * nx + x+1) * nlayers + l)*4+j] -
+                    Un_d[(((y-1) * nx + x+1) * nlayers + l)*4+j] -
+                    Un_d[(((y+1) * nx + x-1) * nlayers + l)*4+j] +
+                    Un_d[(((y-1) * nx + x-1) * nlayers + l)*4+j]);
             }
 
-            Up[((y * nx + x) * nlayers + l) * 3 + i] = u[i] + alpha * (
+            Up[((y * nx + x) * nlayers + l) * 4 + i] = u[i] + alpha * (
                     -0.5 * dt/dx * d -
                     0.5 * dt/dy * e +
                     0.5 * dt*dt/(dx*dx) * f +
@@ -472,8 +472,8 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
         }
 
-        //if (isnan(Up[((y * nx + x) * nlayers + l)*3])) {
-            //printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*3]);
+        //if (isnan(Up[((y * nx + x) * nlayers + l)*4])) {
+            //printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*4]);
         //}
 
 
@@ -494,9 +494,9 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
 
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
-        for (int i = 0; i < 3; i++) {
-            U_half[((y * nx + x) * nlayers + l)*3+i] =
-                Up[((y * nx + x) * nlayers + l)*3+i];
+        for (int i = 0; i < 4; i++) {
+            U_half[((y * nx + x) * nlayers + l)*4+i] =
+                Up[((y * nx + x) * nlayers + l)*4+i];
         }
     }
 
@@ -505,24 +505,24 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
     // do source terms
     if ((x < nx) && (y < ny) && (l < nlayers)) {
 
-        //ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
-        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
-        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
-        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*3+1] *
-            U_half[((y * nx + x) * nlayers + l)*3+1] * gamma_up_d[0] +
-            2.0 * U_half[((y * nx + x) * nlayers + l)*3+1] *
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
+        //ph[l] = U_half[((y * nx + x) * nlayers + l)*4];
+        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*4+1];
+        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*4+2];
+        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*4+1] *
+            U_half[((y * nx + x) * nlayers + l)*4+1] * gamma_up_d[0] +
+            2.0 * U_half[((y * nx + x) * nlayers + l)*4+1] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
             gamma_up_d[1] +
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
             gamma_up_d[3]) /
-            (U_half[((y * nx + x) * nlayers + l)*3] *
-            U_half[((y * nx + x) * nlayers + l)*3]) + 1.0));
+            (U_half[((y * nx + x) * nlayers + l)*4] *
+            U_half[((y * nx + x) * nlayers + l)*4]) + 1.0));
 
-        //if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
-            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
+        //if (isnan(U_half[((y * nx + x) * nlayers + l)*4])) {
+            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*4]);
         //}
-        U_half[((y * nx + x) * nlayers + l)*3] /= W;
+        U_half[((y * nx + x) * nlayers + l)*4] /= W;
 
     }
 
@@ -540,45 +540,45 @@ __global__ void evolve(float * beta_d, float * gamma_up_d,
         if (l < (nlayers - 1)) {
             sum_qs += (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
             deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+1] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+1] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*4+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
             deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+2] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+2] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*4+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
         }
         if (l > 0) {
             sum_qs += -rho_d[l-1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
             deltaQx = rho_d[l-1] / rho_d[l] *
                 (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+1] -
-                 U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+1] -
+                 U_half[((y * nx + x) * nlayers + l-1)*4+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
             deltaQy = rho_d[l-1] / rho_d[l] *
                 (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+2] -
-                 U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+2] -
+                 U_half[((y * nx + x) * nlayers + l-1)*4+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
         }
 
         for (int j = 0; j < l; j++) {
             sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
-                U_half[((y * nx + x) * nlayers + j)*3];
+                U_half[((y * nx + x) * nlayers + j)*4];
         }
         for (int j = l+1; j < nlayers; j++) {
             sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
-                U_half[((y * nx + x) * nlayers + j)*3];
+                U_half[((y * nx + x) * nlayers + j)*4];
         }
 
         // D
-        Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
+        Up[((y * nx + x) * nlayers + l)*4] += dt * alpha * sum_qs;
 
         // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] += dt * alpha * (-deltaQx);
+        Up[((y * nx + x) * nlayers + l)*4+1] += dt * alpha * (-deltaQx);
 
         // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha * (-deltaQy);
+        Up[((y * nx + x) * nlayers + l)*4+2] += dt * alpha * (-deltaQy);
 
     }
 
@@ -604,16 +604,16 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
-    int offset = ((y * nx + x) * nlayers + l) * 3;
+    int offset = ((y * nx + x) * nlayers + l) * 4;
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         // x-direction
-        for (int i = 0; i < 3; i++) {
-            float S_upwind = (Un_d[((y * nx + x+1) * nlayers + l) * 3 + i] -
-                Un_d[((y * nx + x) * nlayers + l) * 3 + i]) / dx;
-            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 3 + i] -
-                Un_d[((y * nx + x-1) * nlayers + l) * 3 + i]) / dx;
+        for (int i = 0; i < 4; i++) {
+            float S_upwind = (Un_d[((y * nx + x+1) * nlayers + l) * 4 + i] -
+                Un_d[((y * nx + x) * nlayers + l) * 4 + i]) / dx;
+            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 4 + i] -
+                Un_d[((y * nx + x-1) * nlayers + l) * 4 + i]) / dx;
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e5;
@@ -691,11 +691,11 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fx_minus_half[offset + 2] = qx_minus_half[offset + 2] * qx;
 
         // y-direction
-        for (int i = 0; i < 3; i++) {
-            float S_upwind = (Un_d[(((y+1) * nx + x) * nlayers + l) * 3 + i] -
-                Un_d[((y * nx + x) * nlayers + l) * 3 + i]) / dy;
-            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 3 + i] -
-                Un_d[(((y-1) * nx + x) * nlayers + l) * 3 + i]) / dy;
+        for (int i = 0; i < 4; i++) {
+            float S_upwind = (Un_d[(((y+1) * nx + x) * nlayers + l) * 4 + i] -
+                Un_d[((y * nx + x) * nlayers + l) * 4 + i]) / dy;
+            float S_downwind = (Un_d[((y * nx + x) * nlayers + l) * 4 + i] -
+                Un_d[(((y-1) * nx + x) * nlayers + l) * 4 + i]) / dy;
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e5;
@@ -723,8 +723,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             qy_minus_half[offset + i] = Un_d[offset + i] - S * 0.5 * dy;
 
             // initialise
-            //fy_plus_half[offset + i] = 0.0;
-            //fy_minus_half[offset + i] = 0.0;
+            fy_plus_half[offset + i] = 0.0;
+            fy_minus_half[offset + i] = 0.0;
         }
 
         // plus half stuff
@@ -791,33 +791,33 @@ __global__ void evolve_fv_fluxes(float * F,
 
     // do fluxes
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             float fx_m = 0.5 * (
-                fx_plus_half[((y * nx + x-1) * nlayers + l) * 3 + i] +
-                fx_minus_half[((y * nx + x) * nlayers + l) * 3 + i] +
-                qx_plus_half[((y * nx + x-1) * nlayers + l) * 3 + i] -
-                qx_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
+                fx_plus_half[((y * nx + x-1) * nlayers + l) * 4 + i] +
+                fx_minus_half[((y * nx + x) * nlayers + l) * 4 + i] +
+                qx_plus_half[((y * nx + x-1) * nlayers + l) * 4 + i] -
+                qx_minus_half[((y * nx + x) * nlayers + l) * 4 + i]);
 
             float fx_p = 0.5 * (
-                fx_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
-                fx_minus_half[((y * nx + x+1) * nlayers + l) * 3 + i] +
-                qx_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
-                qx_minus_half[((y * nx + x+1) * nlayers + l) * 3 + i]);
+                fx_plus_half[((y * nx + x) * nlayers + l) * 4 + i] +
+                fx_minus_half[((y * nx + x+1) * nlayers + l) * 4 + i] +
+                qx_plus_half[((y * nx + x) * nlayers + l) * 4 + i] -
+                qx_minus_half[((y * nx + x+1) * nlayers + l) * 4 + i]);
 
             float fy_m = 0.5 * (
-                fy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] +
-                fy_minus_half[((y * nx + x) * nlayers + l) * 3 + i] +
-                qy_plus_half[(((y-1) * nx + x) * nlayers + l) * 3 + i] -
-                qy_minus_half[((y * nx + x) * nlayers + l) * 3 + i]);
+                fy_plus_half[(((y-1) * nx + x) * nlayers + l) * 4 + i] +
+                fy_minus_half[((y * nx + x) * nlayers + l) * 4 + i] +
+                qy_plus_half[(((y-1) * nx + x) * nlayers + l) * 4 + i] -
+                qy_minus_half[((y * nx + x) * nlayers + l) * 4 + i]);
 
 
             float fy_p = 0.5 * (
-                fy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] +
-                fy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i] +
-                qy_plus_half[((y * nx + x) * nlayers + l) * 3 + i] -
-                qy_minus_half[(((y+1) * nx + x) * nlayers + l) * 3 + i]);
+                fy_plus_half[((y * nx + x) * nlayers + l) * 4 + i] +
+                fy_minus_half[(((y+1) * nx + x) * nlayers + l) * 4 + i] +
+                qy_plus_half[((y * nx + x) * nlayers + l) * 4 + i] -
+                qy_minus_half[(((y+1) * nx + x) * nlayers + l) * 4 + i]);
 
-            F[((y * nx + x) * nlayers + l)*3 + i] =
+            F[((y * nx + x) * nlayers + l)*4 + i] =
                 -((1.0/dx) * alpha * (fx_p - fx_m) +
                 (1.0/dy) * alpha * (fy_p - fy_m));
 
@@ -847,9 +847,9 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
     // copy to U_half
     if ((x < nx) && (y < ny) && (l < nlayers)) {
-        for (int i = 0; i < 3; i++) {
-            U_half[((y * nx + x) * nlayers + l)*3+i] =
-                Up[((y * nx + x) * nlayers + l)*3+i];
+        for (int i = 0; i < 4; i++) {
+            U_half[((y * nx + x) * nlayers + l)*4+i] =
+                Up[((y * nx + x) * nlayers + l)*4+i];
         }
     }
 
@@ -858,24 +858,24 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
     // do source terms
     if ((x < nx) && (y < ny) && (l < nlayers)) {
 
-        //ph[l] = U_half[((y * nx + x) * nlayers + l)*3];
-        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*3+1];
-        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*3+2];
-        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*3+1] *
-            U_half[((y * nx + x) * nlayers + l)*3+1] * gamma_up_d[0] +
-            2.0 * U_half[((y * nx + x) * nlayers + l)*3+1] *
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
+        //ph[l] = U_half[((y * nx + x) * nlayers + l)*4];
+        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*4+1];
+        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*4+2];
+        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*4+1] *
+            U_half[((y * nx + x) * nlayers + l)*4+1] * gamma_up_d[0] +
+            2.0 * U_half[((y * nx + x) * nlayers + l)*4+1] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
             gamma_up_d[1] +
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
-            U_half[((y * nx + x) * nlayers + l)*3+2] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
+            U_half[((y * nx + x) * nlayers + l)*4+2] *
             gamma_up_d[3]) /
-            (U_half[((y * nx + x) * nlayers + l)*3] *
-            U_half[((y * nx + x) * nlayers + l)*3]) + 1.0));
+            (U_half[((y * nx + x) * nlayers + l)*4] *
+            U_half[((y * nx + x) * nlayers + l)*4]) + 1.0));
 
-        //if (isnan(U_half[((y * nx + x) * nlayers + l)*3])) {
-            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*3]);
+        //if (isnan(U_half[((y * nx + x) * nlayers + l)*4])) {
+            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*4]);
         //}
-        U_half[((y * nx + x) * nlayers + l)*3] /= W;
+        U_half[((y * nx + x) * nlayers + l)*4] /= W;
 
     }
 
@@ -893,45 +893,45 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         if (l < (nlayers - 1)) {
             sum_qs += (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
             deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+1] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*3+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+1] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*4+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
             deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+2] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*3+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+2] -
+                 U_half[((y * nx + x) * nlayers + (l+1))*4+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
         }
         if (l > 0) {
             sum_qs += -rho_d[l-1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
             deltaQx = rho_d[l-1] / rho_d[l] *
                 (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+1] -
-                 U_half[((y * nx + x) * nlayers + l-1)*3+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+1] -
+                 U_half[((y * nx + x) * nlayers + l-1)*4+1]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
             deltaQy = rho_d[l-1] / rho_d[l] *
                 (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*3+2] -
-                 U_half[((y * nx + x) * nlayers + l-1)*3+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*3]);
+                (U_half[((y * nx + x) * nlayers + l)*4+2] -
+                 U_half[((y * nx + x) * nlayers + l-1)*4+2]) /
+                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
         }
 
         for (int j = 0; j < l; j++) {
             sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
-                U_half[((y * nx + x) * nlayers + j)*3];
+                U_half[((y * nx + x) * nlayers + j)*4];
         }
         for (int j = l+1; j < nlayers; j++) {
             sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
-                U_half[((y * nx + x) * nlayers + j)*3];
+                U_half[((y * nx + x) * nlayers + j)*4];
         }
 
         // D
-        Up[((y * nx + x) * nlayers + l)*3] += dt * alpha * sum_qs;
+        Up[((y * nx + x) * nlayers + l)*4] += dt * alpha * sum_qs;
 
         // Sx
-        Up[((y * nx + x) * nlayers + l)*3+1] += dt * alpha * (-deltaQx);
+        Up[((y * nx + x) * nlayers + l)*4+1] += dt * alpha * (-deltaQx);
 
         // Sy
-        Up[((y * nx + x) * nlayers + l)*3+2] += dt * alpha * (-deltaQy);
+        Up[((y * nx + x) * nlayers + l)*4+2] += dt * alpha * (-deltaQy);
 
     }
 
@@ -955,22 +955,22 @@ __global__ void evolve2(float * gamma_up_d,
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         float a = dt * alpha *
-            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
+            U_half[((y * nx + x) * nlayers + l)*4] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
             sum_phs[(y * nx + x-1) * nlayers + l]);
 
         if (abs(a) < 0.9 * dx / dt) {
             //printf("a is %f! ", a);
-            Up[((y * nx + x) * nlayers + l)*3+1] = Up[((y * nx + x) * nlayers + l)*3+1] - a;
+            Up[((y * nx + x) * nlayers + l)*4+1] = Up[((y * nx + x) * nlayers + l)*4+1] - a;
         }
 
         a = dt * alpha *
-            U_half[((y * nx + x) * nlayers + l)*3] * (0.5 / dy) *
+            U_half[((y * nx + x) * nlayers + l)*4] * (0.5 / dy) *
             (sum_phs[((y+1) * nx + x) * nlayers + l] -
              sum_phs[((y-1) * nx + x) * nlayers + l]);
 
         if (abs(a) < 0.9 * dy / dt) {
             //printf("a is %f! ", a);
-            Up[((y * nx + x) * nlayers + l)*3+2] = Up[((y * nx + x) * nlayers + l)*3+2] - a;
+            Up[((y * nx + x) * nlayers + l)*4+2] = Up[((y * nx + x) * nlayers + l)*4+2] - a;
         }
 
 
@@ -982,9 +982,9 @@ __global__ void evolve2(float * gamma_up_d,
 
     // copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
-        for (int i = 0; i < 3; i++) {
-            Un_d[((y * nx + x) * nlayers + l)*3+i] =
-                Up[((y * nx + x) * nlayers + l)*3+i];
+        for (int i = 0; i < 4; i++) {
+            Un_d[((y * nx + x) * nlayers + l)*4+i] =
+                Up[((y * nx + x) * nlayers + l)*4+i];
         }
     }
 
@@ -1059,14 +1059,14 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
           dx, dy, dt);
 
     // copy back flux
-    cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
-                for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = Un_h[((y * nx + x) * nlayers + l) * 3 + i] + dt * F_h[((y * nx + x) * nlayers + l) * 3 + i];
+                for (int i = 0; i < 4; i++) {
+                    Up_h[((y * nx + x) * nlayers + l) * 4 + i] = Un_h[((y * nx + x) * nlayers + l) * 4 + i] + dt * F_h[((y * nx + x) * nlayers + l) * 4 + i];
                 }
             }
         }
@@ -1074,7 +1074,7 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries and copy back
     bcs_fv(Up_h, nx, ny, nlayers, ng);
-    cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
     homogeneuous_fv(kernels, threads, blocks,
@@ -1085,17 +1085,17 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
           dx, dy, dt);
 
     // copy back flux
-    cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
-                for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = 0.25 * (
-                        3.0 * Un_h[((y * nx + x) * nlayers + l) * 3 + i] +
-                        Up_h[((y * nx + x) * nlayers + l) * 3 + i] +
-                        dt * F_h[((y * nx + x) * nlayers + l) * 3 + i]);
+                for (int i = 0; i < 4; i++) {
+                    Up_h[((y * nx + x) * nlayers + l) * 4 + i] = 0.25 * (
+                        3.0 * Un_h[((y * nx + x) * nlayers + l) * 4 + i] +
+                        Up_h[((y * nx + x) * nlayers + l) * 4 + i] +
+                        dt * F_h[((y * nx + x) * nlayers + l) * 4 + i]);
                 }
             }
         }
@@ -1103,7 +1103,7 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries and copy back
     bcs_fv(Up_h, nx, ny, nlayers, ng);
-    cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
     homogeneuous_fv(kernels, threads, blocks,
@@ -1114,17 +1114,17 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
           dx, dy, dt);
 
     // copy back flux
-    cudaMemcpy(F_h, F_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     bcs_fv(F_h, nx, ny, nlayers, ng);
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
             for (int l = 0; l < nlayers; l++) {
-                for (int i = 0; i < 3; i++) {
-                    Up_h[((y * nx + x) * nlayers + l) * 3 + i] = (1/3.0) * (
-                        Un_h[((y * nx + x) * nlayers + l) * 3 + i] +
-                        2.0*Up_h[((y * nx + x) * nlayers + l) * 3 + i] +
-                        2.0*dt * F_h[((y * nx + x) * nlayers + l) * 3 + i]);
+                for (int i = 0; i < 4; i++) {
+                    Up_h[((y * nx + x) * nlayers + l) * 4 + i] = (1/3.0) * (
+                        Un_h[((y * nx + x) * nlayers + l) * 4 + i] +
+                        2.0*Up_h[((y * nx + x) * nlayers + l) * 4 + i] +
+                        2.0*dt * F_h[((y * nx + x) * nlayers + l) * 4 + i]);
                 }
             }
         }
@@ -1133,7 +1133,7 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
     // enforce boundaries
     bcs_fv(Up_h, nx, ny, nlayers, ng);
 
-    cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
 
 }
@@ -1182,35 +1182,35 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 2*nx*ny*sizeof(float));
     cudaMalloc((void**)&gamma_up_d, 4*sizeof(float));
-    cudaMalloc((void**)&Un_d, nx*ny*nlayers*3*sizeof(float));
+    cudaMalloc((void**)&Un_d, nx*ny*nlayers*4*sizeof(float));
     cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
     cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 2*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 4*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Q_d, Q, nlayers*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
 
     float *Up_d, *U_half_d, *sum_phs_d;
-    cudaMalloc((void**)&Up_d, nlayers*nx*ny*3*sizeof(float));
-    cudaMalloc((void**)&U_half_d, nlayers*nx*ny*3*sizeof(float));
+    cudaMalloc((void**)&Up_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&U_half_d, nlayers*nx*ny*4*sizeof(float));
     cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
 
     float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d;
-    float *Up_h = new float[nlayers*nx*ny*3];
-    float *F_h = new float[nlayers*nx*ny*3];
+    float *Up_h = new float[nlayers*nx*ny*4];
+    float *F_h = new float[nlayers*nx*ny*4];
 
     if (finite_volume) {
-        cudaMalloc((void**)&qx_p_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&qx_m_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&qy_p_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&qy_m_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&fx_p_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&fx_m_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&fy_p_d, nlayers*nx*ny*3*sizeof(float));
-        cudaMalloc((void**)&fy_m_d, nlayers*nx*ny*3*sizeof(float));
+        cudaMalloc((void**)&qx_p_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&qx_m_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&qy_p_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&qy_m_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&fx_p_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&fx_m_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&fy_p_d, nlayers*nx*ny*4*sizeof(float));
+        cudaMalloc((void**)&fy_m_d, nlayers*nx*ny*4*sizeof(float));
     }
 
     if (strcmp(filename, "na") != 0) {
@@ -1220,12 +1220,12 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         // create dataspace
         int ndims = 5;
-        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
         hid_t file_space = H5Screate_simple(ndims, dims, NULL);
 
         hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
         H5Pset_layout(plist, H5D_CHUNKED);
-        hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
         H5Pset_chunk(plist, ndims, chunk_dims);
 
         // create dataset
@@ -1240,7 +1240,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         //printf("hyperslab selection\n");
         file_space = H5Dget_space(dset);
         hsize_t start[] = {0, 0, 0, 0, 0};
-        hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+        hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
         H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
         //printf("writing\n");
         // write to dataset
@@ -1319,9 +1319,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
             if (finite_volume) {
                 // boundaries
-                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
                 bcs_fv(Un_h, nx, ny, nlayers, ng);
-                cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+                cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
             }
 
 
@@ -1330,13 +1330,13 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
                 if (finite_volume == false) {
                     // copy stuff back
-                    cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                    cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
                 }
 
                 // select a hyperslab
                 file_space = H5Dget_space(dset);
                 hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 3};
+                hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
                 H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
                 // write to dataset
                 H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
@@ -1394,7 +1394,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             if ((t+1) % dprint == 0) {
                 printf("Printing t = %i\n", t+1);
                 // copy stuff back
-                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
 
             }
         }

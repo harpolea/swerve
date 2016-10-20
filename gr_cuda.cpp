@@ -32,6 +32,7 @@ int main(int argc, char *argv[]) {
     float * D0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * Sx0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * Sy0 = new float[sea.nlayers*sea.nx*sea.ny];
+    float * zeta0 = new float[sea.nlayers*sea.nx*sea.ny];
     float * _Q = new float[sea.nlayers*sea.nx*sea.ny];
     float * _beta = new float[2*sea.nx*sea.ny];
 
@@ -54,6 +55,8 @@ int main(int argc, char *argv[]) {
             // angular velocity
             float omega = 0.02;
 
+            zeta0[(y * sea.nx + x) * sea.nlayers] = 0.0;
+
             // set everything else (Sx, Sy, Q) to be 0
             for (int l = 0; l < sea.nlayers; l++) {
                 //Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
@@ -68,11 +71,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    sea.initial_data(D0, Sx0, Sy0, _Q, _beta);
+    sea.initial_data(D0, Sx0, Sy0, zeta0, _Q, _beta);
 
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;
+    delete[] zeta0;
     delete[] _Q;
     delete[] _beta;
 
