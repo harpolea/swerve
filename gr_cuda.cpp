@@ -42,20 +42,19 @@ int main(int argc, char *argv[]) {
             // set D0 to be two hills of fluid
             //D0[(y * sea.nx + x) * sea.nlayers] = 1.0;// + 0.4 * exp(-(pow(sea.xs[x]-2.0, 2) + pow(sea.ys[y]-2.0, 2)) * 2.0);
             //D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x]-7.0, 2) + pow(sea.ys[y]-7.0, 2)) * 2.0);
-            D0[(y * sea.nx + x) * sea.nlayers] = 1.0-0.2 * exp(-(0.5*pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers] = 1.0;//-0.1 * exp(-(0.3*pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
             D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;//0.2 * exp(-(pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
 
             _Q[(y * sea.nx + x) * sea.nlayers] = 0.0;
-            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.0;//0.4 * exp(-(pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
+            _Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.1 * exp(-(0.3*pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
+            //_Q[(y * sea.nx + x) * sea.nlayers + 1] = 0.0;//0.4 * exp(-(pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
 
             _beta[(y * sea.nx + x) * 2] = 0.0;//0.04 * (sea.ys[y]+5.0);
             _beta[(y * sea.nx + x) * 2 + 1] = 0.0;
 
             //float r = sqrt(pow(sea.xs[x]-5.0,2) + pow(sea.ys[y]-5.0,2));
             // angular velocity
-            float omega = 0.02;
-
-            zeta0[(y * sea.nx + x) * sea.nlayers] = 0.0;
+            float omega = 0.03;
 
             // set everything else (Sx, Sy, Q) to be 0
             for (int l = 0; l < sea.nlayers; l++) {
@@ -67,6 +66,8 @@ int main(int argc, char *argv[]) {
                 // make swirly
                 Sx0[(y * sea.nx + x) * sea.nlayers + l] = -omega * (sea.ys[y]-5.0);
                 Sy0[(y * sea.nx + x) * sea.nlayers + l] = omega * (sea.xs[x]-5.0);
+
+                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
             }
         }
     }

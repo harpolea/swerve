@@ -669,6 +669,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         fx_plus_half[offset + 2] = qx_plus_half[offset + 2] * qx;
 
+        fx_plus_half[offset + 3] = qx_plus_half[offset + 3] * qx;
+
         // minus half stuff
         W = sqrt(
             float(qx_minus_half[offset + 1] * qx_minus_half[offset + 1] *
@@ -689,6 +691,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fx_minus_half[offset + 1] = qx_minus_half[offset + 1] * qx +
             0.5 * qx_minus_half[offset] * qx_minus_half[offset] / (W*W);
         fx_minus_half[offset + 2] = qx_minus_half[offset + 2] * qx;
+        fx_minus_half[offset + 3] = qx_minus_half[offset + 3] * qx;
 
         // y-direction
         for (int i = 0; i < 4; i++) {
@@ -748,6 +751,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fy_plus_half[offset + 1] = qy_plus_half[offset + 1] * qy;
         fy_plus_half[offset + 2] = qy_plus_half[offset + 2] * qy +
             0.5 * qy_plus_half[offset] * qy_plus_half[offset] / (W*W);
+        fy_plus_half[offset + 3] = qy_plus_half[offset + 3] * qy;
 
         // minus half stuff
         W = sqrt(
@@ -769,6 +773,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         fy_minus_half[offset + 1] = qy_minus_half[offset + 1] * qy;
         fy_minus_half[offset + 2] = qy_minus_half[offset + 2] * qy +
             0.5 * qy_minus_half[offset] * qy_minus_half[offset] / (W*W);
+        fy_minus_half[offset + 3] = qy_minus_half[offset + 3] * qy;
     }
 
 }
@@ -932,6 +937,9 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
         // Sy
         Up[((y * nx + x) * nlayers + l)*4+2] += dt * alpha * (-deltaQy);
+
+        // zeta
+        Up[((y * nx + x) * nlayers + l)*4+3] += dt * alpha * Q_d[(y * nx + x) * nlayers + l] * rho_d[l];
 
     }
 
@@ -1350,23 +1358,52 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     } else { // don't print
         for (int t = 0; t < nt; t++) {
 
+
+
             //if (t % 50 == 0) {
                 //printf("t =  %i\n", t);
             //}
             int kx_offset = 0;
             int ky_offset = 0;
 
-            for (int j = 0; j < kernels.y; j++) {
-                kx_offset = 0;
-                for (int i = 0; i < kernels.x; i++) {
-                    evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+            if (finite_volume) {
 
+                rk3_fv(kernels, threads, blocks,
+                    beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
+                    qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                    fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                    nx, ny, nlayers, ng, alpha,
+                    dx, dy, dt, Up_h, F_h, Un_h);
+
+                for (int j = 0; j < kernels.y; j++) {
+                    kx_offset = 0;
+                    for (int i = 0; i < kernels.x; i++) {
+                        evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
+                               gamma_up_d, Un_d,
+                               Up_d, U_half_d,
+                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                               sum_phs_d, rho_d, Q_d, mu,
+                               nx, ny, nlayers, alpha,
+                               dx, dy, dt, kx_offset, ky_offset);
+                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    }
+                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
                 }
-                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+
+
+            } else {
+                for (int j = 0; j < kernels.y; j++) {
+                    kx_offset = 0;
+                    for (int i = 0; i < kernels.x; i++) {
+                        evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
+                               Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                               nx, ny, nlayers, alpha,
+                               dx, dy, dt, kx_offset, ky_offset);
+                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    }
+                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                }
             }
 
             kx_offset = 0;

@@ -1,6 +1,6 @@
 nx      50
 ny      50
-nt      100
+nt      1
 nlayers 2
 ng      2
 xmin    0.0
@@ -12,5 +12,5 @@ mu      0.0
 alpha   1.0
 gamma   1.0 0.0 0.0 1.0
 periodic f
-dprint  100
+dprint  1
 outfile na

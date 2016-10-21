@@ -31,10 +31,10 @@ int main() {
             D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;
             _beta[(y * sea.nx + x) * 2] = 0.0;
             _beta[(y * sea.nx + x) * 2 + 1] = 0.0;
-            zeta0[(y * sea.nx + x) * sea.nlayers] = 0.0;
             for (int l = 0; l < sea.nlayers; l++) {
                 Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 1.0;
                 _Q[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
             }
         }
@@ -70,7 +70,7 @@ int main() {
         err[i*4+3] = sea.U_grid[i*4 + 3] - zeta0[i];
         for (int j = 0; j < 4; j++) {
             if (abs(err[i*4 + j]) > tol) {
-                cout << "Error: " << err[i*4 + j] << '\n';
+                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + 3] << " zeta0: " << zeta0[i] << '\n';
                 passed = false;
                 break;
             }
