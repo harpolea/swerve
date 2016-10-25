@@ -6,16 +6,16 @@ from mpl_toolkits.mplot3d import Axes3D
 import tables as tb
 import subprocess
 
-def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
+def quick_plot(input_filename=None, filename=None):
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
     # set defaults
     if input_filename is None:
         input_filename =  'input_file.txt'
-    if data_filename is None:
-        data_filename = '../../Documents/Work/swerve/iridis2.h5'
-    if movie_filename is None:
-        movie_filename = '../../Documents/Work/swerve/iridis.mp4'
+    if filename is None:
+        filename = '../../Documents/Work/swerve/iridis2'
+
+    data_filename = filename + '.h5'
 
     # read input file
     input_file = open(input_filename, 'r')
@@ -69,15 +69,19 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
 
     #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
 
+    location = filename.split('/')[:-1]
+    name = filename.split('/')[-1]
+
     for i in range(len(D_2d[:,0,0,0])):
-        outname = '../../Documents/Work/swerve/plotting/burning2_' + format(i, '05') + '.png'
+        outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
         ax.set_zlim(0.7,1.4)
         colour1 = zeta_2d[i,1,2:-2,2:-2].T
-        ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis(colour1), antialiased=True)
-        ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
+        ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(colour1), antialiased=True)
+        #ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
+        ax.plot_surface(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta_2d[i,0,2:-2,2:-2].T), antialiased=True)
         plt.savefig(outname)
 
     # close hdf5 file
@@ -97,4 +101,4 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename="../../Documents/Work/swerve/burning2.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")
+    quick_plot(filename="../../Documents/Work/swerve/burning4")

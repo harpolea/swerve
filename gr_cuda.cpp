@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
                 Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 _Q[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
-                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
+                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 1.0;
 
 
                 // make swirly

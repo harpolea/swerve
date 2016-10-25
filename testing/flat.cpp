@@ -34,7 +34,7 @@ int main() {
             for (int l = 0; l < sea.nlayers; l++) {
                 Sx0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 Sy0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
-                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 1.0;
+                zeta0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 _Q[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
             }
         }
@@ -56,7 +56,7 @@ int main() {
     sea.run();
 
     // test if output matches input
-    float tol = 1.0e-6; // absolute error tolerance
+    float tol = 1.0e-4; // absolute error tolerance
 
     float * err = new float[sea.nlayers*sea.nx*sea.ny*4];
 
@@ -64,13 +64,13 @@ int main() {
 
     for (int i = 0; i < sea.nlayers*sea.nx*sea.ny; i++) {
         //cout << sea.U_grid[i*4] << ' ' << D0[i] << '\n';
-        err[i*4] = sea.U_grid[i*4] - D0[i];
-        err[i*4+1] = sea.U_grid[i*4 + 1] - Sx0[i];
-        err[i*4+2] = sea.U_grid[i*4 + 2] - Sy0[i];
-        err[i*4+3] = sea.U_grid[i*4 + 3] - zeta0[i];
+        err[i*4] = (sea.U_grid[i*4] - D0[i]) / D0[i];
+        err[i*4+1] = (sea.U_grid[i*4 + 1] - Sx0[i]) / Sx0[i];
+        err[i*4+2] = (sea.U_grid[i*4 + 2] - Sy0[i]) / Sy0[i];
+        err[i*4+3] = (sea.U_grid[i*4 + 3] - zeta0[i]) / zeta0[i];
         for (int j = 0; j < 4; j++) {
             if (abs(err[i*4 + j]) > tol) {
-                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + 3] << " zeta0: " << zeta0[i] << '\n';
+                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + j] << " zeta0: " << zeta0[i] << '\n';
                 passed = false;
                 break;
             }

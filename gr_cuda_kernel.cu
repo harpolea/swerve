@@ -363,8 +363,8 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
     // in this model the scale height represents the temperature
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
-
-        Q_d[(y * nx + x) * nlayers + l] = 3.0e15 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-44.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
+        // changed to e^-25 to try and help GPU
+        Q_d[(y * nx + x) * nlayers + l] = 1.0e11 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-25.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
     }
 
 
@@ -943,7 +943,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         Up[((y * nx + x) * nlayers + l)*4+2] += dt * alpha * (-deltaQy);
 
         // zeta
-        Up[((y * nx + x) * nlayers + l)*4+3] += dt * alpha * Q_d[(y * nx + x) * nlayers + l] * rho_d[l];
+        Up[((y * nx + x) * nlayers + l)*4+3] += -dt * alpha * Q_d[(y * nx + x) * nlayers + l] * rho_d[l];
 
     }
 
