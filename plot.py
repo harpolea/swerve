@@ -53,6 +53,7 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
     D_2d = np.swapaxes(table[:,:,:,:,0], 1, 3)
+    zeta_2d = np.swapaxes(table[:,:,:,:,3], 1, 3)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
@@ -69,12 +70,13 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
     #print(np.shape(X), np.shape(Y), np.shape(D_2d[0,1,:,:].T))
 
     for i in range(len(D_2d[:,0,0,0])):
-        outname = '../../Documents/Work/swerve/plotting/swirly4_' + format(i, '05') + '.png'
+        outname = '../../Documents/Work/swerve/plotting/burning2_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
         ax.set_zlim(0.7,1.4)
-        ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis, antialiased=True)
+        colour1 = zeta_2d[i,1,2:-2,2:-2].T
+        ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis(colour1), antialiased=True)
         ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
         plt.savefig(outname)
 
@@ -95,4 +97,4 @@ def quick_plot(input_filename=None, data_filename=None, movie_filename=None):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(data_filename="../../Documents/Work/swerve/swirly4.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")
+    quick_plot(data_filename="../../Documents/Work/swerve/burning2.h5", movie_filename="../../Documents/Work/swerve/tsunami_long.mp4")

@@ -858,7 +858,11 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         }
     }
 
+    // calculate Q
+    calc_Q(Up, rho_d, Q_d, nx, ny, nlayers, kx_offset, ky_offset);
+
     float W = 1.0;
+
 
     // do source terms
     if ((x < nx) && (y < ny) && (l < nlayers)) {
