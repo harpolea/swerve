@@ -42,7 +42,7 @@ int main(int argc, char *argv[]) {
             // set D0 to be two hills of fluid
             //D0[(y * sea.nx + x) * sea.nlayers] = 1.0;// + 0.4 * exp(-(pow(sea.xs[x]-2.0, 2) + pow(sea.ys[y]-2.0, 2)) * 2.0);
             //D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;// + 0.2 * exp(-(pow(sea.xs[x]-7.0, 2) + pow(sea.ys[y]-7.0, 2)) * 2.0);
-            D0[(y * sea.nx + x) * sea.nlayers] = 1.0 + 0.2 * exp(-(pow(sea.xs[x]-5.0, 2)) * 2.0);
+            D0[(y * sea.nx + x) * sea.nlayers] = 1.5 + 0.4 * exp(-(pow(sea.xs[x]-5.0, 2)) * 2.0);
 
             //-0.1 * exp(-(0.3*pow(sea.xs[x]-5.0, 2) + pow(sea.ys[y]-5.0, 2)) * 2.0);
             D0[(y * sea.nx + x) * sea.nlayers + 1] = 0.8;

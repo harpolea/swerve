@@ -72,7 +72,10 @@ def quick_plot(input_filename=None, filename=None):
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
 
-    for i in range(len(D_2d[:,0,0,0])):
+    for i in range(13, len(D_2d[:,0,0,0])):
+        if i % 10 == 0:
+            print('Printing {}'.format(i))
+
         outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)

@@ -363,8 +363,8 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
     // in this model the scale height represents the temperature
 
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
-        // changed to e^-25 to try and help GPU
-        Q_d[(y * nx + x) * nlayers + l] = 3.0e20 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-25.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
+        // changed to e^-35 to try and help GPU
+        Q_d[(y * nx + x) * nlayers + l] = 3.0e16 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-35.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
     }
 
 
