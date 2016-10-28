@@ -14,6 +14,27 @@ When the executable is called, if it is given an argument then this shall be use
 
 int main(int argc, char *argv[]) {
 
+    // MPI variables
+
+    MPI_Comm comm;
+    MPI_Status status;
+
+    int rank, size;//, source, tag;
+
+    // Initialise MPI and compute number of processes and local rank
+    comm = MPI_COMM_WORLD;
+
+    MPI_Init(&argc, &argv);
+
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (rank == 0) {
+        printf("Running on %d process(es)\n", size);
+    }
+
+    //printf("Hello from process %d\n", rank);
+
     // make a sea
     char input_filename[200];
 
@@ -89,27 +110,12 @@ int main(int argc, char *argv[]) {
     delete[] _Q;
     delete[] _beta;
 
-    sea.print_inputs();
+    if (rank == 0) {
+        sea.print_inputs();
 
-    // MPI variables
-
-    MPI_Comm comm;
-    MPI_Status status;
-
-    int rank, size;//, source, tag;
-
-    // Initialise MPI and compute number of processes and local rank
-    comm = MPI_COMM_WORLD;
-
-    MPI_Init(NULL, NULL);
-
-    MPI_Comm_size(comm, &size);
-    MPI_Comm_rank(comm, &rank);
-
-    if (rank == 0) printf("Running on %d process(es)\n", size);
-
-    // run simulation
-    sea.run(comm, status, rank, size);
+        // run simulation
+        sea.run(comm, status, rank, size);
+    }
 
     MPI_Finalize();
 

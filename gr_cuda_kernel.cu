@@ -16,9 +16,9 @@ TODO: cuda_run is a beast, so split up into multiple functions to e.g. keep MPI 
 
 // prototypes
 
-dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *maxThreads);
+void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 *kernels);
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads);
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads);
 
 unsigned int nextPow2(unsigned int x);
 
@@ -51,7 +51,7 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *maxThreads) {
+void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels) {
     /*
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
     */
@@ -62,24 +62,41 @@ dim3 getNumKernels(int nx, int ny, int nlayers, int ng, int *maxBlocks, int *max
     //int numBlocks = 0;
     //int numThreads = 0;
 
-    dim3 kernels;
-
     // calculate number of kernels needed
 
     if (nx*ny*nlayers > *maxBlocks * *maxThreads) {
-        kernels.x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
-        kernels.y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
+        int kernels_x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
+        int kernels_y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
+
+        // easiest (but maybe not most balanced way) is to split kernels into strips
+
+        // split up in the x direction
+        int strip_width = int(floor(float(kernels_x) / float(n_processes)));
+
+
+        for (int i = 0; i < n_processes; i++) {
+            kernels[i].x = i * strip_width;
+            kernels[i].y = kernels_y;
+        }
+        // give the last one the remainders
+        kernels[n_processes-1].x += kernels_x - n_processes * strip_width;
+
+
 
     } else {
 
-        kernels.x = 1;
-        kernels.y = 1;
+        kernels[0].x = 1;
+        kernels[0].y = 1;
+
+        for (int i = 1; i < n_processes; i++) {
+            kernels[i].x = 0;
+            kernels[i].y = 0;
+        }
     }
 
-    return kernels;
 }
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, dim3 kernels, dim3 *blocks, dim3 *threads)
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads)
 {
     /*
     Returns the number of blocks and threads required for each kernel given the size of the problem and the constraints of the device.
@@ -93,7 +110,15 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
     int total = nx*ny*nlayers;
 
-    if ((kernels.x > 1) || (kernels.y > 1)) {
+    int kernels_x = 0;
+    int kernels_y = 0;
+
+    for (int i = 0; i < n_processes; i++) {
+        kernels_x += kernels[i].x;
+    }
+    kernels_y = kernels[0].y;
+
+    if ((kernels_x > 1) || (kernels_y > 1)) {
         // initialise
         threads[0].x = 0;
         threads[0].y = 0;
@@ -101,67 +126,67 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         blocks[0].y = 0;
 
 
-        for (int j = 0; j < (kernels.y-1); j++) {
-            for (int i = 0; i < (kernels.x-1); i++) {
-                threads[j*kernels.x + i].x = int(sqrt(float(maxThreads)/nlayers));
-                threads[j*kernels.x + i].y = int(sqrt(float(maxThreads)/nlayers));
-                threads[j*kernels.x + i].z = nlayers;
+        for (int j = 0; j < (kernels_y-1); j++) {
+            for (int i = 0; i < (kernels_x-1); i++) {
+                threads[j*kernels_x + i].x = int(sqrt(float(maxThreads)/nlayers));
+                threads[j*kernels_x + i].y = int(sqrt(float(maxThreads)/nlayers));
+                threads[j*kernels_x + i].z = nlayers;
 
-                blocks[j*kernels.x + i].x = int(sqrt(float(maxBlocks)));
-                blocks[j*kernels.x + i].y = int(sqrt(float(maxBlocks)));
-                blocks[j*kernels.x + i].z = 1;
+                blocks[j*kernels_x + i].x = int(sqrt(float(maxBlocks)));
+                blocks[j*kernels_x + i].y = int(sqrt(float(maxBlocks)));
+                blocks[j*kernels_x + i].z = 1;
             }
 
 
         }
-        // kernels.x-1
-        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels.x - 1);
-        for (int j = 0; j < (kernels.y-1); j++) {
+        // kernels_x-1
+        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1);
+        for (int j = 0; j < (kernels_y-1); j++) {
 
 
-            threads[j*kernels.x + kernels.x-1].y =
+            threads[j*kernels_x + kernels_x-1].y =
                 int(sqrt(float(maxThreads)/nlayers));
-            threads[j*kernels.x + kernels.x-1].z = nlayers;
+            threads[j*kernels_x + kernels_x-1].z = nlayers;
 
-            threads[j*kernels.x + kernels.x-1].x =
-                (nx_remaining < threads[j*kernels.x + kernels.x-1].y) ? nx_remaining : threads[j*kernels.x + kernels.x-1].y;
+            threads[j*kernels_x + kernels_x-1].x =
+                (nx_remaining < threads[j*kernels_x + kernels_x-1].y) ? nx_remaining : threads[j*kernels_x + kernels_x-1].y;
 
-            blocks[j*kernels.x + kernels.x-1].x = int(ceil(float(nx_remaining) /
-                float(threads[j*kernels.x + kernels.x-1].x)));
-            blocks[j*kernels.x + kernels.x-1].y = int(sqrt(float(maxBlocks)));
-            blocks[j*kernels.x + kernels.x-1].z = 1;
+            blocks[j*kernels_x + kernels_x-1].x = int(ceil(float(nx_remaining) /
+                float(threads[j*kernels_x + kernels_x-1].x)));
+            blocks[j*kernels_x + kernels_x-1].y = int(sqrt(float(maxBlocks)));
+            blocks[j*kernels_x + kernels_x-1].z = 1;
         }
 
-        // kernels.y-1
-        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels.y - 1);
-        for (int i = 0; i < (kernels.x-1); i++) {
+        // kernels_y-1
+        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1);
+        for (int i = 0; i < (kernels_x-1); i++) {
 
-            threads[(kernels.y-1)*kernels.x + i].x =
+            threads[(kernels_y-1)*kernels_x + i].x =
                 int(sqrt(float(maxThreads)/nlayers));
-            threads[(kernels.y-1)*kernels.x + i].y =
-                (ny_remaining < threads[(kernels.y-1)*kernels.x + i].x) ? ny_remaining : threads[(kernels.y-1)*kernels.x + i].x;
-            threads[(kernels.y-1)*kernels.x + i].z = nlayers;
+            threads[(kernels_y-1)*kernels_x + i].y =
+                (ny_remaining < threads[(kernels_y-1)*kernels_x + i].x) ? ny_remaining : threads[(kernels_y-1)*kernels_x + i].x;
+            threads[(kernels_y-1)*kernels_x + i].z = nlayers;
 
-            blocks[(kernels.y-1)*kernels.x + i].x = int(sqrt(float(maxBlocks)));
-            blocks[(kernels.y-1)*kernels.x + i].y = int(ceil(float(ny_remaining) /
-                float(threads[(kernels.y-1)*kernels.x + i].y)));
-            blocks[(kernels.y-1)*kernels.x + i].z = 1;
+            blocks[(kernels_y-1)*kernels_x + i].x = int(sqrt(float(maxBlocks)));
+            blocks[(kernels_y-1)*kernels_x + i].y = int(ceil(float(ny_remaining) /
+                float(threads[(kernels_y-1)*kernels_x + i].y)));
+            blocks[(kernels_y-1)*kernels_x + i].z = 1;
         }
 
-        // (kernels.x-1, kernels.y-1)
-        threads[(kernels.y-1)*kernels.x + kernels.x-1].x =
+        // (kernels_x-1, kernels_y-1)
+        threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
             (nx_remaining < int(sqrt(float(maxThreads)/nlayers))) ? nx_remaining : int(sqrt(float(maxThreads/nlayers)));
-        threads[(kernels.y-1)*kernels.x + kernels.x-1].y =
+        threads[(kernels_y-1)*kernels_x + kernels_x-1].y =
             (ny_remaining < int(sqrt(float(maxThreads)/nlayers))) ? ny_remaining : int(sqrt(float(maxThreads)/nlayers));
-        threads[(kernels.y-1)*kernels.x + kernels.x-1].z = nlayers;
+        threads[(kernels_y-1)*kernels_x + kernels_x-1].z = nlayers;
 
-        blocks[(kernels.y-1)*kernels.x + kernels.x-1].x =
+        blocks[(kernels_y-1)*kernels_x + kernels_x-1].x =
             int(ceil(float(nx_remaining) /
-            float(threads[(kernels.y-1)*kernels.x + kernels.x-1].x)));
-        blocks[(kernels.y-1)*kernels.x + kernels.x-1].y =
+            float(threads[(kernels_y-1)*kernels_x + kernels_x-1].x)));
+        blocks[(kernels_y-1)*kernels_x + kernels_x-1].y =
             int(ceil(float(ny_remaining) /
-            float(threads[(kernels.y-1)*kernels.x + kernels.x-1].y)));
-        blocks[(kernels.y-1)*kernels.x + kernels.x-1].z = 1;
+            float(threads[(kernels_y-1)*kernels_x + kernels_x-1].y)));
+        blocks[(kernels_y-1)*kernels_x + kernels_x-1].z = 1;
 
     } else {
 
@@ -1161,7 +1186,7 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers, int ng,
          int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename,
-         MPI_Comm comm, MPI_Status status, int rank, int size) {
+         MPI_Comm comm, MPI_Status status, int rank, int n_processes) {
     /*
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
     */
@@ -1176,17 +1201,27 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     int maxThreads = 256;
     int maxBlocks = 256; //64;
 
-    dim3 kernels = getNumKernels(nx, ny, nlayers, ng, &maxBlocks, &maxThreads);
+    dim3 *kernels = new dim3[n_processes];
 
-    dim3 *blocks = new dim3[kernels.x*kernels.y];
-    dim3 *threads = new dim3[kernels.x*kernels.y];
+    getNumKernels(nx, ny, nlayers, ng, n_processes, &maxBlocks, &maxThreads, kernels);
 
-    getNumBlocksAndThreads(nx, ny, nlayers, ng, maxBlocks, maxThreads, kernels, blocks, threads);
+    int kernels_x = 0;
+
+    for (int i = 0; i < n_processes; i++) {
+        kernels_x += kernels[i].x;
+    }
+
+    int kernels_y = kernels[0].y;
+
+    dim3 *blocks = new dim3[kernels_x*kernels_y];
+    dim3 *threads = new dim3[kernels_x*kernels_y];
+
+    getNumBlocksAndThreads(nx, ny, nlayers, ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
-    printf("kernels: (%i, %i)\n", kernels.x, kernels.y);
+    printf("kernels: (%i, %i)\n", kernels[rank].x, kernels[rank].y);
 
-    for (int i = 0; i < kernels.x*kernels.y; i++) {
+    for (int i = 0; i < kernels_x*kernels_y; i++) {
         printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
                blocks[i].x, blocks[i].y, blocks[i].z,
                threads[i].x, threads[i].y, threads[i].z);
@@ -1276,17 +1311,17 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             int kx_offset = 0;
             int ky_offset = 0;
 
-            rk3_fv(kernels, threads, blocks,
+            rk3_fv(kernels[rank], threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                 nx, ny, nlayers, ng, alpha,
                 dx, dy, dt, Up_h, F_h, Un_h);
 
-            for (int j = 0; j < kernels.y; j++) {
+            for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
-                for (int i = 0; i < kernels.x; i++) {
-                    evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
+                for (int i = 0; i < kernels[rank].x; i++) {
+                    evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
                            Up_d, U_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1294,25 +1329,25 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
-                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
             }
 
 
             kx_offset = 0;
             ky_offset = 0;
 
-            for (int j = 0; j < kernels.y; j++) {
+            for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
-                for (int i = 0; i < kernels.x; i++) {
-                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(gamma_up_d, Un_d,
+                for (int i = 0; i < kernels[rank].x; i++) {
+                    evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
-                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
             }
 
             cudaDeviceSynchronize();
@@ -1357,17 +1392,17 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             int kx_offset = 0;
             int ky_offset = 0;
 
-            rk3_fv(kernels, threads, blocks,
+            rk3_fv(kernels[rank], threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                 nx, ny, nlayers, ng, alpha,
                 dx, dy, dt, Up_h, F_h, Un_h);
 
-            for (int j = 0; j < kernels.y; j++) {
+            for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
-                for (int i = 0; i < kernels.x; i++) {
-                    evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
+                for (int i = 0; i < kernels[rank].x; i++) {
+                    evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
                            Up_d, U_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1375,25 +1410,25 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
-                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
             }
 
 
             kx_offset = 0;
             ky_offset = 0;
 
-            for (int j = 0; j < kernels.y; j++) {
+            for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
-                for (int i = 0; i < kernels.x; i++) {
-                    evolve2<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(gamma_up_d, Un_d,
+                for (int i = 0; i < kernels[rank].x; i++) {
+                    evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
+                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
-                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
             }
 
             cudaDeviceSynchronize();
@@ -1434,6 +1469,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     }
 
     //delete[] Un_h;
+    delete[] kernels;
     delete[] threads;
     delete[] blocks;
 
