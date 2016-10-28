@@ -6,7 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import tables as tb
 import subprocess
 
-def quick_plot(input_filename=None, filename=None):
+def quick_plot(input_filename=None, filename=None, start=0):
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
     # set defaults
@@ -72,7 +72,7 @@ def quick_plot(input_filename=None, filename=None):
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
 
-    for i in range(13, len(D_2d[:,0,0,0])):
+    for i in range(start, len(D_2d[:,0,0,0])):
         if i % 10 == 0:
             print('Printing {}'.format(i))
 
@@ -80,7 +80,7 @@ def quick_plot(input_filename=None, filename=None):
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        ax.set_zlim(0.7,1.4)
+        #ax.set_zlim(0.7,1.4)
         ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta_2d[i,1,2:-2,2:-2].T), antialiased=True)
         #ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
         ax.plot_surface(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta_2d[i,0,2:-2,2:-2].T), antialiased=True)
