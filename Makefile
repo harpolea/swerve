@@ -34,7 +34,7 @@
 ################################################################################
 
 # Location of the CUDA Toolkit
-CUDA_PATH ?= "/usr/local/cuda-7.5"
+CUDA_PATH ?= /usr/local/cuda-7.5
 
 ##############################
 # start deprecated interface #
@@ -126,8 +126,8 @@ else ifneq ($(TARGET_ARCH),$(HOST_ARCH))
         HOST_COMPILER ?= powerpc64le-linux-gnu-g++
     endif
 endif
-HOST_COMPILER ?= g++
-NVCC          := $(CUDA_PATH)/bin/nvcc -ccbin $(HOST_COMPILER)
+HOST_COMPILER ?= mpiCC #g++
+NVCC          := $(CUDA_PATH)/bin/nvcc #-ccbin $(HOST_COMPILER)
 
 # internal flags
 NVCCFLAGS   := -m${TARGET_SIZE}
@@ -174,16 +174,19 @@ ALL_CCFLAGS += $(NVCCFLAGS)
 ALL_CCFLAGS += $(EXTRA_NVCCFLAGS)
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(CCFLAGS))
 ALL_CCFLAGS += $(addprefix -Xcompiler ,$(EXTRA_CCFLAGS))
+#ALL_CCFLAGS += -I/usr/lib/openmpi/include
 
 ALL_LDFLAGS :=
 ALL_LDFLAGS += $(ALL_CCFLAGS)
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(LDFLAGS))
 ALL_LDFLAGS += $(addprefix -Xlinker ,$(EXTRA_LDFLAGS))
 ALL_LDFLAGS += -lhdf5_cpp -lhdf5
+#ALL_LDFLAGS += -L/usr/lib/openmpi/lib
 
 # Common includes and paths for CUDA
 INCLUDES  := -I$(CUDA_PATH)/samples/common/inc -I/usr/include/hdf5/serial -I/usr/include/hdf5
-LIBRARIES := -L/usr/lib/x86_64-linux-gnu/hdf5/serial
+LIBRARIES := -L/usr/lib/x86_64-linux-gnu/hdf5/serial #-lmpi
+
 
 
 ################################################################################
@@ -231,16 +234,19 @@ else
 endif
 
 gr_cuda.o:gr_cuda.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) $(ALL_CCFLAGS) -o $@ -c $<
 
 SeaCuda.o: SeaCuda.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I/usr/lib/openmpi/include -lmpi -o $@ -c $<
 
-gr_cuda_kernel.o:gr_cuda_kernel.cu
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+gr_cuda_kernel.o: gr_cuda_kernel.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/usr/lib/openmpi/include -lmpi -o $@ -dc $<
 
-gr_cuda: gr_cuda.o gr_cuda_kernel.o SeaCuda.o
-	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+link.o: gr_cuda_kernel.o
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/usr/lib/openmpi/include -lmpi -o $@ -dlink $<
+
+gr_cuda: gr_cuda.o gr_cuda_kernel.o link.o SeaCuda.o
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
 run: build
 	$(EXEC) ./reduction

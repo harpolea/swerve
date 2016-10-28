@@ -2,9 +2,17 @@
 #define _GR_CUDA_KERNEL_H_
 
 #include <stdio.h>
+#include <mpi.h>
 #include "H5Cpp.h"
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include <helper_functions.h>
 
 using namespace std;
+
+/*
+TODO: cuda_run is a beast, so split up into multiple functions to e.g. keep MPI stuff away from other stuff
+*/
 
 // prototypes
 
@@ -1152,7 +1160,8 @@ void rk3_fv(dim3 kernels, dim3 * threads, dim3 * blocks,
 
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers, int ng,
-         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename) {
+         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename,
+         MPI_Comm comm, MPI_Status status, int rank, int size) {
     /*
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
     */
@@ -1183,7 +1192,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                threads[i].x, threads[i].y, threads[i].z);
     }
 
-    // copy
+    // gpu variables
     float * beta_d;
     float * gamma_up_d;
     float * Un_d;
@@ -1213,98 +1222,83 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     float *Up_h = new float[nlayers*nx*ny*4];
     float *F_h = new float[nlayers*nx*ny*4];
 
-    if (finite_volume) {
-        cudaMalloc((void**)&qx_p_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&qx_m_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&qy_p_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&qy_m_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&fx_p_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&fx_m_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&fy_p_d, nlayers*nx*ny*4*sizeof(float));
-        cudaMalloc((void**)&fy_m_d, nlayers*nx*ny*4*sizeof(float));
-    }
+    cudaMalloc((void**)&qx_p_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&qx_m_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&qy_p_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&qy_m_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&fx_p_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&fx_m_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&fy_p_d, nlayers*nx*ny*4*sizeof(float));
+    cudaMalloc((void**)&fy_m_d, nlayers*nx*ny*4*sizeof(float));
 
     if (strcmp(filename, "na") != 0) {
+        hid_t outFile, dset, mem_space, file_space;
 
-        // create file
-        hid_t outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+        if (rank == 0) {
+            // create file
+            outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
 
-        // create dataspace
-        int ndims = 5;
-        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
-        hid_t file_space = H5Screate_simple(ndims, dims, NULL);
+            // create dataspace
+            int ndims = 5;
+            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
+            file_space = H5Screate_simple(ndims, dims, NULL);
 
-        hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(plist, H5D_CHUNKED);
-        hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
-        H5Pset_chunk(plist, ndims, chunk_dims);
+            hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+            H5Pset_layout(plist, H5D_CHUNKED);
+            hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
+            H5Pset_chunk(plist, ndims, chunk_dims);
 
-        // create dataset
-        hid_t dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+            // create dataset
+            dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
 
-        H5Pclose(plist);
+            H5Pclose(plist);
 
-        // make a memory dataspace
-        hid_t mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
+            // make a memory dataspace
+            mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
 
-        // select a hyperslab
-        //printf("hyperslab selection\n");
-        file_space = H5Dget_space(dset);
-        hsize_t start[] = {0, 0, 0, 0, 0};
-        hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
-        H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
-        //printf("writing\n");
-        // write to dataset
-        printf("Printing t = %i\n", 0);
-        H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
-        // close file dataspace
-        //printf("wrote\n");
-        H5Sclose(file_space);
+            // select a hyperslab
+            //printf("hyperslab selection\n");
+            file_space = H5Dget_space(dset);
+            hsize_t start[] = {0, 0, 0, 0, 0};
+            hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
+            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+            //printf("writing\n");
+            // write to dataset
+            printf("Printing t = %i\n", 0);
+            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+            // close file dataspace
+            //printf("wrote\n");
+            H5Sclose(file_space);
+        }
 
         for (int t = 0; t < nt; t++) {
 
             int kx_offset = 0;
             int ky_offset = 0;
 
-            if (finite_volume) {
+            rk3_fv(kernels, threads, blocks,
+                beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
+                qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                nx, ny, nlayers, ng, alpha,
+                dx, dy, dt, Up_h, F_h, Un_h);
 
-                rk3_fv(kernels, threads, blocks,
-                    beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
-                    qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                    fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                    nx, ny, nlayers, ng, alpha,
-                    dx, dy, dt, Up_h, F_h, Un_h);
-
-                for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
-                               gamma_up_d, Un_d,
-                               Up_d, U_half_d,
-                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                               sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
+                           gamma_up_d, Un_d,
+                           Up_d, U_half_d,
+                           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                           sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
                 }
-
-
-            } else {
-                for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                               Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
+
 
             kx_offset = 0;
             ky_offset = 0;
@@ -1328,21 +1322,15 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));
 
-            if (finite_volume) {
-                // boundaries
-                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-                bcs_fv(Un_h, nx, ny, nlayers, ng);
-                cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-            }
+
+            // boundaries
+            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
+            bcs_fv(Un_h, nx, ny, nlayers, ng);
+            cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
 
-            if ((t+1) % dprint == 0) {
+            if ((t+1) % dprint == 0 && rank == 0) {
                 printf("Printing t = %i\n", t+1);
-
-                if (finite_volume == false) {
-                    // copy stuff back
-                    cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-                }
 
                 // select a hyperslab
                 file_space = H5Dget_space(dset);
@@ -1355,59 +1343,43 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 H5Sclose(file_space);
             }
         }
-        H5Sclose(mem_space);
-        H5Fclose(outFile);
+
+        if (rank == 0) {
+            H5Sclose(mem_space);
+            H5Fclose(outFile);
+        }
 
     } else { // don't print
         for (int t = 0; t < nt; t++) {
-
-
-
             //if (t % 50 == 0) {
                 //printf("t =  %i\n", t);
             //}
             int kx_offset = 0;
             int ky_offset = 0;
 
-            if (finite_volume) {
+            rk3_fv(kernels, threads, blocks,
+                beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
+                qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                nx, ny, nlayers, ng, alpha,
+                dx, dy, dt, Up_h, F_h, Un_h);
 
-                rk3_fv(kernels, threads, blocks,
-                    beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
-                    qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                    fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                    nx, ny, nlayers, ng, alpha,
-                    dx, dy, dt, Up_h, F_h, Un_h);
-
-                for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
-                               gamma_up_d, Un_d,
-                               Up_d, U_half_d,
-                               qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                               fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                               sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
+            for (int j = 0; j < kernels.y; j++) {
+                kx_offset = 0;
+                for (int i = 0; i < kernels.x; i++) {
+                    evolve_fv_heating<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(
+                           gamma_up_d, Un_d,
+                           Up_d, U_half_d,
+                           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                           sum_phs_d, rho_d, Q_d, mu,
+                           nx, ny, nlayers, alpha,
+                           dx, dy, dt, kx_offset, ky_offset);
+                    kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
                 }
-
-
-            } else {
-                for (int j = 0; j < kernels.y; j++) {
-                    kx_offset = 0;
-                    for (int i = 0; i < kernels.x; i++) {
-                        evolve<<<blocks[j * kernels.x + i], threads[j * kernels.x + i]>>>(beta_d, gamma_up_d, Un_d,
-                               Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                               nx, ny, nlayers, alpha,
-                               dx, dy, dt, kx_offset, ky_offset);
-                        kx_offset += blocks[j * kernels.x + i].x * threads[j * kernels.x + i].x;
-                    }
-                    ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
-                }
+                ky_offset += blocks[j * kernels.x].y * threads[j * kernels.x].y;
             }
+
 
             kx_offset = 0;
             ky_offset = 0;
@@ -1426,17 +1398,16 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
             cudaDeviceSynchronize();
 
+            // boundaries
+            cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
+            bcs_fv(Un_h, nx, ny, nlayers, ng);
+            cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
+
             cudaError_t err = cudaGetLastError();
 
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));
 
-            if ((t+1) % dprint == 0) {
-                printf("Printing t = %i\n", t+1);
-                // copy stuff back
-                cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-
-            }
         }
     }
 

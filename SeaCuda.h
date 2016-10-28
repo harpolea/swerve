@@ -1,10 +1,12 @@
 #ifndef SEA_CUDA_H
 #define SEA_CUDA_H
 
+#include "mpi.h"
+
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
          float * rho, float * Q, float mu,
          int nx, int ny, int nlayers, int ng,
-         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename);
+         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename, MPI_Comm comm, MPI_Status status, int rank, int size);
 
 
 class SeaCuda {
@@ -26,7 +28,7 @@ public:
 
     void print_inputs();
 
-    void run();
+    void run(MPI_Comm comm, MPI_Status status, int rank, int size);
 
     void output(char * filename);
     void output_hdf5(char * filename);

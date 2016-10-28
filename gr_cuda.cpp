@@ -1,11 +1,9 @@
 #include <iostream>
 #include <string>
 #include <cmath>
-#include "cuda_runtime.h"
-#include "device_launch_parameters.h"
 #include <fstream>
-#include <helper_functions.h>
 #include <algorithm>
+#include "mpi.h"
 #include "SeaCuda.h"
 
 using namespace std;
@@ -93,7 +91,26 @@ int main(int argc, char *argv[]) {
 
     sea.print_inputs();
 
+    // MPI variables
+
+    MPI_Comm comm;
+    MPI_Status status;
+
+    int rank, size;//, source, tag;
+
+    // Initialise MPI and compute number of processes and local rank
+    comm = MPI_COMM_WORLD;
+
+    MPI_Init(NULL, NULL);
+
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (rank == 0) printf("Running on %d process(es)\n", size);
+
     // run simulation
-    sea.run();
+    sea.run(comm, status, rank, size);
+
+    MPI_Finalize();
 
 }
