@@ -221,7 +221,7 @@ endif
 # Target rules
 all: build
 
-debug: ALL_CCFLAGS += -g -G
+debug: ALL_CCFLAGS += -g #-G
 debug: build
 
 build: gr_cuda
@@ -264,7 +264,7 @@ testing/flat:testing/flat.o gr_cuda_kernel.o SeaCuda.o
 	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
 
 test: clean_test
-test: ALL_CCFLAGS += -g -G
+test: ALL_CCFLAGS += -g #-G
 test: SeaCuda.o
 test: testing/flat
 
