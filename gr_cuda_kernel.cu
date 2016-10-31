@@ -1166,8 +1166,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         for (int t = 0; t < nt; t++) {
 
-            int kx_offset = 0;
-            int ky_offset = 0;
+            int kx_offset = kernels[0].x*rank;
+            int ky_offset = kernels[0].y*rank;
 
             rk3_fv(kernels[rank], threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
@@ -1177,7 +1177,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 dx, dy, dt, Up_h, F_h, Un_h);
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
+                kx_offset = kernels[0].x*rank;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
@@ -1193,11 +1193,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             }
 
 
-            kx_offset = 0;
-            ky_offset = 0;
+            kx_offset = kernels[0].x*rank;
+            ky_offset = kernels[0].y*rank;
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
+                kx_offset = kernels[0].x*rank;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
@@ -1222,18 +1222,50 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
 
-            if ((t+1) % dprint == 0 && rank == 0) {
-                printf("Printing t = %i\n", t+1);
+            if ((t+1) % dprint == 0) {
+                if (rank == 0) {
+                    printf("Printing t = %i\n", t+1);
 
-                // select a hyperslab
-                file_space = H5Dget_space(dset);
-                hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
-                H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
-                // write to dataset
-                H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
-                // close file dataspae
-                H5Sclose(file_space);
+                    float * buf = new float[nlayers*nx*ny*4];
+                    int tag = 0;
+                    for (int source = 1; source < n_processes; source++) {
+                        printf("Receiving from rank %i\n", source);
+                        MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
+
+                        // copy data back to grid
+                        kx_offset = kernels[0].x*source;
+
+                        // cheating slightly and using the fact that are moving from  left to right to make calculations a bit easier.
+                        for (int y = 0; y < ny; y++) {
+                            for (int x = kx_offset*threads[0].x*blocks[0].x; x < nx; x++) {
+                                for (int l = 0; l < nlayers; l++) {
+                                    for (int i = 0; i < 4; i++) {
+                                        Un_h[((y * nx + x) * nlayers + l) * 4 + i] = buf[((y * nx + x) * nlayers + l) * 4 + i];
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    delete[] buf;
+
+                    // receive data from other processes and copy to grid
+
+                    // select a hyperslab
+                    file_space = H5Dget_space(dset);
+                    hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
+                    hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), hsize_t(nlayers), 4};
+                    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+                    // write to dataset
+                    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Un_h);
+                    // close file dataspae
+                    H5Sclose(file_space);
+                } else { // send data to rank 0
+                    printf("Rank %i sending\n", rank);
+                    int tag = 0;
+                    MPI_Ssend(Un_h, ny*nx*nlayers*4, MPI_FLOAT, 0, tag, comm);
+                }
+
             }
         }
 
