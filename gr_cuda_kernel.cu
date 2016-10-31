@@ -246,7 +246,6 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 }
 
 
-
 __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
     /*
     Enforce boundary conditions on section of grid.
@@ -326,6 +325,123 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
     }
 }
 
+void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes) {
+    /*
+    Enforce boundary conditions across processes.
+
+    Loops have been ordered in a way so as to try and keep memory accesses as contiguous as possible.
+
+    Need to do non-blocking send, blocking receive then wait.
+    */
+
+    // interior cells between processes
+
+    // make some buffers for sending and receiving
+    float * xsbuf = new float[nlayers*ny*ng*4];
+    float * xrbuf = new float[nlayers*ny*ng*4];
+
+    int tag = 1;
+    MPI_Request request;
+
+    // if there is another process to the right, send/receive
+    if (rank > 0 && rank < n_processes-1) {
+        // copy stuff to buffer
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        xsbuf[((y * nx + g) * nlayers + l)*4+i] = grid[((y * nx + (nx-2*ng+g)) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+        MPI_Issend(xsbuf, nlayers*ny*ng*4, MPI_FLOAT, rank+1, tag, comm, &request);
+        MPI_Recv(xrbuf, nlayers*ny*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
+        MPI_Wait(&request, &status);
+
+        // copy received data back to grid
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        grid[((y * nx + g) * nlayers + l)*4+i] = xrbuf[((y * nx + g) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+
+    } else if (rank == 0) {
+        // just send, do outflow for left boundary
+        // copy stuff to buffer
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        xsbuf[((y * nx + g) * nlayers + l)*4+i] = grid[((y * nx + (nx-2*ng+g)) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+        MPI_Issend(xsbuf, nlayers*ny*ng*4, MPI_FLOAT, rank+1, tag, comm, &request);
+        MPI_Wait(&request, &status);
+
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+
+                        grid[((y * nx + g) * nlayers + l)*4+i] = grid[((y * nx + ng) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+
+    } else {
+        // right-most process, just needs to receive
+        MPI_Recv(xrbuf, nlayers*ny*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
+
+        // copy received data back to grid
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        grid[((y * nx + g) * nlayers + l)*4+i] = xrbuf[((y * nx + g) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+
+        // outflow for right boundary
+        for (int y = 0; y < ny; y++){
+            for (int g = 0; g < ng; g++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+
+                        grid[((y * nx + (nx-1-g)) * nlayers + l)*4+i] = grid[((y * nx + (nx-1-ng)) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+    }
+
+    // outflow for y boundaries
+    for (int g = 0; g < ng; g++) {
+        for (int x = 0; x < nx; x++){
+            for (int i = 0; i < 4; i++) {
+                for (int l = 0; l < nlayers; l++) {
+
+                    grid[((g * nx + x) * nlayers + l)*4+i] = grid[((ng * nx + x) * nlayers + l)*4+i];
+
+                    grid[(((ny-1-g) * nx + x) * nlayers + l)*4+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*4+i];
+                }
+            }
+        }
+    }
+
+    delete[] xsbuf;
+    delete[] xrbuf;
+}
+
 
 __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
                        int nx, int ny, int nlayers,
@@ -348,7 +464,6 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
         // changed to e^-35 to try and help GPU
         Q_d[(y * nx + x) * nlayers + l] = 3.0e13 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-35.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
     }
-
 
 }
 
