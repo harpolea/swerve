@@ -69,18 +69,30 @@ void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *ma
         int kernels_y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nlayers) - 2.0*ng)));
 
         // easiest (but maybe not most balanced way) is to split kernels into strips
+        // not enough kernels to fill all processes. This would be inefficient if ny > nx, so need to fix this to look in the y direction if this is the case.
+        if (kernels_x < n_processes) {
+            for (int i = 0; i < kernels_x; i++) {
+                kernels[i].x = 1;
+                kernels[i].y = kernels_y;
+            }
+            // blank out the other ones
+            for (int i = kernels_x; i < n_processes; i++) {
+                kernels[i].x = 0;
+                kernels[i].y = 0;
+            }
+        } else {
 
-        // split up in the x direction
-        int strip_width = int(floor(float(kernels_x) / float(n_processes)));
+            // split up in the x direction for arbitrary reasons
+            int strip_width = int(floor(float(kernels_x) / float(n_processes)));
 
 
-        for (int i = 0; i < n_processes; i++) {
-            kernels[i].x = i * strip_width;
-            kernels[i].y = kernels_y;
+            for (int i = 0; i < n_processes; i++) {
+                kernels[i].x = strip_width;
+                kernels[i].y = kernels_y;
+            }
+            // give the last one the remainders
+            kernels[n_processes-1].x += kernels_x - n_processes * strip_width;
         }
-        // give the last one the remainders
-        kernels[n_processes-1].x += kernels_x - n_processes * strip_width;
-
 
 
     } else {
@@ -141,6 +153,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         }
         // kernels_x-1
         int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1);
+
         for (int j = 0; j < (kernels_y-1); j++) {
 
 
@@ -172,6 +185,12 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
                 float(threads[(kernels_y-1)*kernels_x + i].y)));
             blocks[(kernels_y-1)*kernels_x + i].z = 1;
         }
+
+        // recalculate
+        nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1);
+        ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1);
+
+        //printf("threads0: %i, blocks0: %i, nx_remaining: %i\n", threads[0].x, blocks[0].x, nx_remaining);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -307,76 +326,6 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
     }
 }
 
-__device__ void Jx(float * u, float * beta_d, float * gamma_up_d, float * jx, float alpha) {
-    /*
-    Calculate Jacobian in the x-direction.
-    */
-
-    float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
-                2.0 * u[1]* u[2] * gamma_up_d[1] +
-                u[2]*u[2] * gamma_up_d[3]) / (u[0]*u[0]) + 1.0);
-    //cout << "W = " << W << '\n';
-    //cout << "u = " << u[0] << ' ' << u[1] << ' ' << u[2] << '\n';
-
-    float ph = u[0] / W;
-    float vx = u[1] / (u[0] * W); // u_down
-    float vy = u[2] / (u[0] * W); // v_down
-
-    float qx = vx * gamma_up_d[0] + vy * gamma_up_d[1] - beta_d[0]/alpha;
-
-    float chi = 1.0 / (1.0 - vx*vx * W*W - vy*vy * W*W);
-
-    jx[0*3+0] = qx/chi - vx;
-    jx[0*3+1] = (1.0 + vy*vy*W*W)/W;
-    jx[0*3+2] = -W * vx * vy;
-
-    jx[1*3+0] = -2.0*pow(W,3)*vx*qx*(vx*vx + vy*vy) + ph*(1.0/W - W*vx*vx);
-    jx[1*3+1] = qx * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vx*(vy*vy*W*W-1.0);
-    jx[1*3+2] = -vy*ph*(1.0 + 0.5*W*W*vx*vx);
-
-    jx[2*3+0] = -W*vy*(2.0*W*W*qx*(vx*vx+vy*vy) + 0.5*ph*vx);
-    jx[2*3+1] = 0.5*ph*vy*(1.0+vy*vy*W*W);
-    jx[2*3+2] = qx*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vy*vy;
-
-    for (int i = 0; i < 9; i++) {
-        jx[i] *= chi;
-    }
-}
-
-__device__ void Jy(float * u, float * beta_d, float * gamma_up_d, float * jy, float alpha) {
-    /*
-    Calculate Jacobian in the y-direction.
-    */
-
-    float W = sqrt((u[1]*u[1] * gamma_up_d[0] +
-                2.0 * u[1]* u[2] * gamma_up_d[1] +
-                u[2]*u[2] * gamma_up_d[3]) / (u[0]*u[0]) + 1.0);
-
-    float ph = u[0] / W;
-    float vx = u[1] / (u[0] * W); // u_down
-    float vy = u[2] / (u[0] * W); // v_down
-
-    float qy = vy * gamma_up_d[3] + vx * gamma_up_d[1] - beta_d[1]/alpha;
-
-    float chi = 1.0 / (1.0 - vx*vx * W*W - vy*vy * W*W);
-
-    jy[0] = qy/chi - vx;
-    jy[1] = -W * vx * vy;
-    jy[2] = (1.0 + vx*vx*W*W)/W;
-
-    jy[1*3] = -W*vx*(2.0*W*W*qy*(vx*vx+vy*vy) + 0.5*ph*vy);
-    jy[1*3+1] = qy*(1.0+W*W*vx*vx+W*W*vy*vy) - 0.5*ph*W*W*vx*vx*vy;
-    jy[1*3+2] = 0.5*ph*vx*(1.0+vx*vx*W*W);
-
-    jy[2*3+0] = -2.0*pow(W,3)*vy*qy*(vx*vx + vy*vy) + ph*(1.0/W - W*vy*vy);
-    jy[2*3+1] = -vx*ph*(1.0 + 0.5*W*W*vy*vy);
-    jy[2*3+2] = qy * (1.0+W*W*vx*vx + W*W*vy*vy) + 0.5*ph*vy*(vx*vx*W*W-1.0);
-
-    for (int i = 0; i < 9; i++) {
-        jy[i] *= chi;
-    }
-
-}
 
 __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
                        int nx, int ny, int nlayers,
@@ -403,219 +352,6 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
 
 }
 
-__global__ void evolve(float * beta_d, float * gamma_up_d,
-                     float * Un_d, float * Up, float * U_half,
-                     float * sum_phs, float * rho_d, float * Q_d,
-                     float mu,
-                     int nx, int ny, int nlayers, float alpha,
-                     float dx, float dy, float dt,
-                     int kx_offset, int ky_offset) {
-    /*
-    First part of evolution through one timestep.
-    */
-    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
-    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
-    int l = threadIdx.z;
-
-    //if (x*y*l == 0) {
-    //    printf("evolving\n");
-    //}
-
-    float *u, *A, *B, *A2, *B2, *AB;
-
-    u = (float *) malloc(3*sizeof(float));
-    A = (float *) malloc(9*sizeof(float));
-    B = (float *) malloc(9*sizeof(float));
-    A2 = (float *) malloc(9*sizeof(float));
-    B2 = (float *) malloc(9*sizeof(float));
-    AB = (float *) malloc(9*sizeof(float));
-
-    //if (x*y*l == 0) {
-        //printf("evolving\n");
-    //}
-
-    float d, e, f, g, h;
-    float * beta;
-    beta = (float *) malloc(2*sizeof(float));
-
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
-
-        for (int i = 0; i < 4; i++) {
-            u[i] = Un_d[((y * nx + x) * nlayers + l)*4+i];
-        }
-        beta[0] = beta_d[(y * nx + x) * 2];
-        beta[1] = beta_d[(y * nx + x) * 2 + 1];
-
-        Jx(u, beta, gamma_up_d, A, alpha);
-        Jy(u, beta, gamma_up_d, B, alpha);
-
-        // matrix multiplication
-        for (int i = 0; i < 3; i++) {
-            for (int j = 0; j < 3; j++) {
-                A2[i*3+j] = 0;
-                B2[i*3+j] = 0;
-                AB[i*3+j] = 0;
-                for (int k = 0; k < 3; k++) {
-                    A2[i*3+j] += A[i*3+k] * A[k*3+j];
-                    B2[i*3+j] += B[i*3+k] * B[k*3+j];
-                    AB[i*3+j] += A[i*3+k] * B[k*3+j];
-                }
-            }
-        }
-
-        // going to do matrix calculations to calculate different terms
-        for (int i = 0; i < 3; i ++) {
-            d = 0;
-            e = 0;
-            f = 0;
-            g = 0;
-            h = 0;
-            for (int j = 0; j < 4; j++) {
-                d += A[i*3+j] *
-                    (Un_d[((y * nx + x+1) * nlayers + l)*4+j] -
-                    Un_d[((y * nx + x-1) * nlayers + l)*4+j]);
-
-                e += B[i*3+j] *
-                    (Un_d[(((y+1) * nx + x) * nlayers + l)*4+j] -
-                    Un_d[(((y-1) * nx + x) * nlayers + l)*4+j]);
-
-                f += A2[i*3+j] *
-                    (Un_d[((y * nx + x+1) * nlayers + l)*4+j] - 2.0 *
-                    Un_d[((y * nx + x) * nlayers + l)*4+j] +
-                    Un_d[((y * nx + x-1) * nlayers + l)*4+j]);
-
-                g += B2[i*3+j] *
-                    (Un_d[(((y+1) * nx + x) * nlayers + l)*4+j] - 2.0 *
-                    Un_d[((y * nx + x) * nlayers + l)*4+j] +
-                    Un_d[(((y-1) * nx + x) * nlayers + l)*4+j]);
-
-                h += AB[i*3+j] *
-                    (Un_d[(((y+1) * nx + x+1) * nlayers + l)*4+j] -
-                    Un_d[(((y-1) * nx + x+1) * nlayers + l)*4+j] -
-                    Un_d[(((y+1) * nx + x-1) * nlayers + l)*4+j] +
-                    Un_d[(((y-1) * nx + x-1) * nlayers + l)*4+j]);
-            }
-
-            Up[((y * nx + x) * nlayers + l) * 4 + i] = u[i] + alpha * (
-                    -0.5 * dt/dx * d -
-                    0.5 * dt/dy * e +
-                    0.5 * dt*dt/(dx*dx) * f +
-                    0.5 * dt*dt/(dy*dy) * g -
-                    0.25 * dt*dt/(dx*dy) * h);
-
-        }
-
-        //if (isnan(Up[((y * nx + x) * nlayers + l)*4])) {
-            //printf("Up is %f! ", Up[((y * nx + x) * nlayers + l)*4]);
-        //}
-
-
-    }
-
-    free(u);
-    free(A);
-    free(B);
-    free(A2);
-    free(B2);
-    free(AB);
-    free(beta);
-
-    __syncthreads();
-
-    // enforce boundary conditions
-    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
-
-    // copy to U_half
-    if ((x < nx) && (y < ny) && (l < nlayers)) {
-        for (int i = 0; i < 4; i++) {
-            U_half[((y * nx + x) * nlayers + l)*4+i] =
-                Up[((y * nx + x) * nlayers + l)*4+i];
-        }
-    }
-
-    float W = 1.0;
-
-    // do source terms
-    if ((x < nx) && (y < ny) && (l < nlayers)) {
-
-        //ph[l] = U_half[((y * nx + x) * nlayers + l)*4];
-        //Sx[l] = U_half[((y * nx + x) * nlayers + l)*4+1];
-        //Sy[l] = U_half[((y * nx + x) * nlayers + l)*4+2];
-        W = sqrt(float((U_half[((y * nx + x) * nlayers + l)*4+1] *
-            U_half[((y * nx + x) * nlayers + l)*4+1] * gamma_up_d[0] +
-            2.0 * U_half[((y * nx + x) * nlayers + l)*4+1] *
-            U_half[((y * nx + x) * nlayers + l)*4+2] *
-            gamma_up_d[1] +
-            U_half[((y * nx + x) * nlayers + l)*4+2] *
-            U_half[((y * nx + x) * nlayers + l)*4+2] *
-            gamma_up_d[3]) /
-            (U_half[((y * nx + x) * nlayers + l)*4] *
-            U_half[((y * nx + x) * nlayers + l)*4]) + 1.0));
-
-        //if (isnan(U_half[((y * nx + x) * nlayers + l)*4])) {
-            //printf("ph is %f! ", U_half[((y * nx + x) * nlayers + l)*4]);
-        //}
-        U_half[((y * nx + x) * nlayers + l)*4] /= W;
-
-    }
-
-    __syncthreads();
-
-    if ((x < nx) && (y < ny) && (l < nlayers)) {
-
-        sum_phs[(y * nx + x) * nlayers + l] = 0.0;
-
-
-        float sum_qs = 0.0;
-        float deltaQx = 0.0;
-        float deltaQy = 0.0;
-
-        if (l < (nlayers - 1)) {
-            sum_qs += (Q_d[(y * nx + x) * nlayers + l+1] - Q_d[(y * nx + x) * nlayers + l]);
-            deltaQx = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*4+1] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*4+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
-            deltaQy = (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*4+2] -
-                 U_half[((y * nx + x) * nlayers + (l+1))*4+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
-        }
-        if (l > 0) {
-            sum_qs += -rho_d[l-1] / rho_d[l] * (Q_d[(y * nx + x) * nlayers + l] - Q_d[(y * nx + x) * nlayers + l-1]);
-            deltaQx = rho_d[l-1] / rho_d[l] *
-                (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*4+1] -
-                 U_half[((y * nx + x) * nlayers + l-1)*4+1]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
-            deltaQy = rho_d[l-1] / rho_d[l] *
-                (Q_d[(y * nx + x) * nlayers + l] + mu) *
-                (U_half[((y * nx + x) * nlayers + l)*4+2] -
-                 U_half[((y * nx + x) * nlayers + l-1)*4+2]) /
-                 (W*U_half[((y * nx + x) * nlayers + l)*4]);
-        }
-
-        for (int j = 0; j < l; j++) {
-            sum_phs[(y * nx + x) * nlayers + l] += rho_d[j] / rho_d[l] *
-                U_half[((y * nx + x) * nlayers + j)*4];
-        }
-        for (int j = l+1; j < nlayers; j++) {
-            sum_phs[(y * nx + x) * nlayers + l] = sum_phs[(y * nx + x) * nlayers + l] +
-                U_half[((y * nx + x) * nlayers + j)*4];
-        }
-
-        // D
-        Up[((y * nx + x) * nlayers + l)*4] += dt * alpha * sum_qs;
-
-        // Sx
-        Up[((y * nx + x) * nlayers + l)*4+1] += dt * alpha * (-deltaQx);
-
-        // Sy
-        Up[((y * nx + x) * nlayers + l)*4+2] += dt * alpha * (-deltaQy);
-
-    }
-
-}
 
 __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      float * Un_d,
@@ -987,7 +723,7 @@ __global__ void evolve2(float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
                      float mu,
-                     int nx, int ny, int nlayers, float alpha,
+                     int nx, int ny, int nlayers, int ng, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
     /*
@@ -1023,7 +759,7 @@ __global__ void evolve2(float * gamma_up_d,
 
     __syncthreads();
 
-    bcs(Up, nx, ny, nlayers, kx_offset, ky_offset);
+    bcs_fv(Up, nx, ny, nlayers, ng-1, kx_offset, ky_offset);
 
     // copy back to grid
     if ((x < nx) && (y < ny) && (l < nlayers)) {
@@ -1219,9 +955,16 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     getNumBlocksAndThreads(nx, ny, nlayers, ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
     //int numBlocks = blocks.x * blocks.y * blocks.z;
 
+    printf("rank: %i\n", rank);
     printf("kernels: (%i, %i)\n", kernels[rank].x, kernels[rank].y);
 
-    for (int i = 0; i < kernels_x*kernels_y; i++) {
+    int x_offset = 0;
+    for (int i = 0; i < rank; i++) {
+        x_offset += kernels[i].x;
+    }
+
+    for (int i = x_offset * kernels_y;
+         i < (x_offset + kernels[rank].x) * kernels_y; i++) {
         printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
                blocks[i].x, blocks[i].y, blocks[i].z,
                threads[i].x, threads[i].y, threads[i].z);
@@ -1343,7 +1086,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
+                           nx, ny, nlayers, ng, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
                     kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
@@ -1424,7 +1167,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
+                           nx, ny, nlayers, ng, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
                     kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }

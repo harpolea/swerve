@@ -95,11 +95,9 @@ int main(int argc, char *argv[]) {
                     //zeta0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 //}
 
-
             }
         }
     }
-
 
     sea.initial_data(D0, Sx0, Sy0, zeta0, _Q, _beta);
 
@@ -112,10 +110,10 @@ int main(int argc, char *argv[]) {
 
     if (rank == 0) {
         sea.print_inputs();
-
-        // run simulation
-        sea.run(comm, status, rank, size);
     }
+
+    // run simulation
+    sea.run(comm, status, rank, size);
 
     MPI_Finalize();
 
