@@ -249,10 +249,10 @@ gr_cuda: gr_cuda.o gr_cuda_kernel.o link.o SeaCuda.o
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
 run: build
-	$(EXEC) ./reduction
+	$(EXEC) ./gr_cuda
 
 clean:
-	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o
+	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o
 clean_test:
 	rm -f testing/flat testing/flat.o SeaCuda.o
 
