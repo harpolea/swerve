@@ -121,17 +121,25 @@ def quick_plot(input_filename=None, filename=None, start=0):
                 #fig.set_size_inches(12,10)
                 #fig.set_facecolor('w')
                 ax = axes[process]
+
+                print('Set axis {}'.format(process))
                 ax.clear()
                 ax.set_xlim(0,10)
                 ax.set_ylim(0,10)
                 ax.set_zlim(0.7,1.4)
                 #print(np.shape(X), np.shape(self.D))
+                print('Plotting surface 1 on {}'.format(process))
                 ax.plot_surface(X,Y,D[:,:,1], rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta[:,:,1]), antialiased=True)
                 #ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
+                print('Plotting surface 0 on {}'.format(process))
                 ax.plot_surface(X,Y,D[:,:,0], rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta[:,:,0]), antialiased=True)
                 canvases[process].draw()
 
+                print('Saving {}'.format(outname))
+
                 plt.savefig(outname)
+
+                print('Saved {}'.format(outname))
 
                 windows[process].after(10, plot_me, q, process)
             else:
@@ -251,4 +259,4 @@ def quick_plot(input_filename=None, filename=None, start=0):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(filename="../../Documents/Work/swerve/burning5", start=109)
+    quick_plot(filename="../../Documents/Work/swerve/burning")#, start=109)

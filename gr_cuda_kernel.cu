@@ -90,16 +90,16 @@ void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *ma
             }
         } else {
 
-            // split up in the x direction for arbitrary reasons
-            int strip_width = int(floor(float(kernels_x) / float(n_processes)));
+            // split up in the y direction to keep stuff contiguous in memory
+            int strip_width = int(floor(float(kernels_y) / float(n_processes)));
 
 
             for (int i = 0; i < n_processes; i++) {
-                kernels[i].x = strip_width;
-                kernels[i].y = kernels_y;
+                kernels[i].y = strip_width;
+                kernels[i].x = kernels_x;
             }
             // give the last one the remainders
-            kernels[n_processes-1].x += kernels_x - n_processes * strip_width;
+            kernels[n_processes-1].y += kernels_y - n_processes * strip_width;
         }
 
     } else {
@@ -335,101 +335,154 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
     Loops have been ordered in a way so as to try and keep memory accesses as contiguous as possible.
 
     Need to do non-blocking send, blocking receive then wait.
+
+    NOTE: this assumes each process only has the data it works on which is not true - change this (eg by including kernel offsets)
     */
 
     // interior cells between processes
 
     // make some buffers for sending and receiving
-    float * xsbuf = new float[nlayers*ny*ng*4];
-    float * xrbuf = new float[nlayers*ny*ng*4];
+    float * ysbuf = new float[nlayers*nx*ng*4];
+    float * yrbuf = new float[nlayers*nx*ng*4];
 
     int tag = 1;
     MPI_Request request;
 
-    // if there is another process to the right, send/receive
+    // if there are process above and below, send/receive
     if ((rank > 0) && (rank < n_processes-1)) {
+        // send to below, receive from above
         // copy stuff to buffer
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int i = 0; i < 4; i++) {
                     for (int l = 0; l < nlayers; l++) {
-                        xsbuf[((y * ng + g) * nlayers + l)*4+i] = grid[((y * nx + (nx-2*ng+g)) * nlayers + l)*4+i];
+                        ysbuf[((g * nx + x) * nlayers + l)*4+i] = grid[((g * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
-        MPI_Issend(xsbuf, nlayers*ny*ng*4, MPI_FLOAT, rank+1, tag, comm, &request);
-        MPI_Recv(xrbuf, nlayers*ny*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &request);
+        MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank+1, tag, comm, &status);
         MPI_Wait(&request, &status);
 
         // copy received data back to grid
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
                     for (int i = 0; i < 4; i++) {
-                        grid[((y * nx + g) * nlayers + l)*4+i] = xrbuf[((y * ng + g) * nlayers + l)*4+i];
+                        grid[(((ny-2*ng+g) * nx + x) * nlayers + l)*4+i] = yrbuf[((g * nx + x) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+        // send to above, receive from below
+        // copy stuff to buffer
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        ysbuf[((g * nx + x) * nlayers + l)*4+i] = grid[(((ny-2*ng+g) * nx + x) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank+1, tag, comm, &request);
+        MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
+        MPI_Wait(&request, &status);
+
+        // copy received data back to grid
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
+                for (int l = 0; l < nlayers; l++) {
+                    for (int i = 0; i < 4; i++) {
+                        grid[((g * nx + x) * nlayers + l)*4+i] = yrbuf[((g * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
 
     } else if (rank == 0) {
-        // just send, do outflow for left boundary
+        // do outflow for top boundary
         // copy stuff to buffer
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int l = 0; l < nlayers; l++) {
                     for (int i = 0; i < 4; i++) {
-                        xsbuf[((y * ng + g) * nlayers + l)*4+i] = grid[((y * nx + (nx-2*ng+g)) * nlayers + l)*4+i];
+                        ysbuf[((g * nx + x) * nlayers + l)*4+i] = grid[(((ny-2*ng+g) * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
-        // Blocking as don't have a receive in the middle and Issend + wait = ssend
-        MPI_Ssend(xsbuf, nlayers*ny*ng*4, MPI_FLOAT, 1, tag, comm);
 
-        // outflow stuff on left boundary
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, 1, tag, comm);
+        MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, 1, tag, comm, &status);
+        MPI_Wait(&request, &status);
+
+        // copy received data back to grid
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
+                for (int l = 0; l < nlayers; l++) {
+                    for (int i = 0; i < 4; i++) {
+                        grid[(((ny-2*ng+g) * nx + x) * nlayers + l)*4+i] = yrbuf[((g * nx + x) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+
+        // outflow stuff on top boundary
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int i = 0; i < 4; i++) {
                     for (int l = 0; l < nlayers; l++) {
 
-                        grid[((y * nx + g) * nlayers + l)*4+i] = grid[((y * nx + ng) * nlayers + l)*4+i];
+                        grid[((g * nx + x) * nlayers + l)*4+i] = grid[((ng * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
 
     } else {
-        // right-most process, just needs to receive
-        MPI_Recv(xrbuf, nlayers*ny*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
-
-        // copy received data back to grid
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        // copy stuff to buffer
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int i = 0; i < 4; i++) {
                     for (int l = 0; l < nlayers; l++) {
-                        grid[((y * nx + g) * nlayers + l)*4+i] = xrbuf[((y * ng + g) * nlayers + l)*4+i];
+                        ysbuf[((g * nx + x) * nlayers + l)*4+i] = grid[((g * nx + x) * nlayers + l)*4+i];
+                    }
+                }
+            }
+        }
+        // bottom-most process
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm);
+        MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
+        MPI_Wait(&request, &status);
+
+        // copy received data back to grid
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
+                for (int i = 0; i < 4; i++) {
+                    for (int l = 0; l < nlayers; l++) {
+                        grid[((g * nx + x) * nlayers + l)*4+i] = yrbuf[((g * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
 
-        // outflow for right boundary
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
+        // outflow for bottom boundary
+        for (int g = 0; g < ng; g++){
+            for (int x = 0; x < nx; x++) {
                 for (int i = 0; i < 4; i++) {
                     for (int l = 0; l < nlayers; l++) {
 
-                        grid[((y * nx + (nx-1-g)) * nlayers + l)*4+i] = grid[((y * nx + (nx-1-ng)) * nlayers + l)*4+i];
+                        grid[(((ny-1-g) * nx + x) * nlayers + l)*4+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*4+i];
                     }
                 }
             }
         }
     }
 
-    delete[] xsbuf;
-    delete[] xrbuf;
+    delete[] ysbuf;
+    delete[] yrbuf;
 }
 
 
@@ -1050,7 +1103,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     printf("rank: %i\n", rank);
     printf("kernels: (%i, %i)\n", kernels[rank].x, kernels[rank].y);
 
-    int x_offset = 0;
+    int k_offset = 0;
     if (rank > 0) {
       k_offset = cumulative_kernels[rank-1];
     }
@@ -1140,8 +1193,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         // main loop
         for (int t = 0; t < nt; t++) {
             // offset by kernels in previous
-            int kx_offset = kernels[0].x*rank;
-            int ky_offset = 0;
+            int kx_offset = 0;
+            int ky_offset = kernels[0].y*rank;
 
             rk3_fv(kernels, threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
@@ -1152,7 +1205,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 comm, status, rank, n_processes);
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = kernels[0].x*rank;
+                kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
@@ -1168,11 +1221,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             }
 
 
-            kx_offset = kernels[0].x*rank;
-            ky_offset = 0;
+            kx_offset = 0;
+            ky_offset = kernels[0].y*rank;
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = kernels[0].x*rank;
+                kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
@@ -1208,11 +1261,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                         MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
 
                         // copy data back to grid
-                        kx_offset = kernels[0].x*source;
+                        ky_offset = kernels[0].y*rank;
 
                         // cheating slightly and using the fact that are moving from  left to right to make calculations a bit easier.
-                        for (int y = 0; y < ny; y++) {
-                            for (int x = kx_offset*threads[0].x*blocks[0].x; x < nx; x++) {
+                        for (int y = ky_offset*threads[0].y*blocks[0].y; y < ny; y++) {
+                            for (int x = 0; x < nx; x++) {
                                 for (int l = 0; l < nlayers; l++) {
                                     for (int i = 0; i < 4; i++) {
                                         Un_h[((y * nx + x) * nlayers + l) * 4 + i] = buf[((y * nx + x) * nlayers + l) * 4 + i];
@@ -1252,8 +1305,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     } else { // don't print
         for (int t = 0; t < nt; t++) {
 
-            int kx_offset = kernels[0].x*rank;
-            int ky_offset = 0;
+            int kx_offset = 0;
+            int ky_offset = kernels[0].y*rank;
 
             rk3_fv(kernels, threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
@@ -1264,7 +1317,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 comm, status, rank, n_processes);
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = kernels[0].x*rank;
+                kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
@@ -1280,11 +1333,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             }
 
 
-            kx_offset = kernels[0].x*rank;
-            ky_offset = 0;
+            kx_offset = 0;
+            ky_offset = kernels[0].y*rank;
 
             for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = kernels[0].x*rank;
+                kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
