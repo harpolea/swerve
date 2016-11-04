@@ -62,7 +62,7 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels, dim3 * cumulative_kernels) {
+void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels, int * cumulative_kernels) {
     /*
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
     */
@@ -78,13 +78,13 @@ void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *ma
 
         // easiest (but maybe not most balanced way) is to split kernels into strips
         // not enough kernels to fill all processes. This would be inefficient if ny > nx, so need to fix this to look in the y direction if this is the case.
-        if (kernels_x < n_processes) {
-            for (int i = 0; i < kernels_x; i++) {
-                kernels[i].x = 1;
-                kernels[i].y = kernels_y;
+        if (kernels_y < n_processes) {
+            for (int i = 0; i < kernels_y; i++) {
+                kernels[i].x = kernels_x;
+                kernels[i].y = 1;
             }
             // blank out the other ones
-            for (int i = kernels_x; i < n_processes; i++) {
+            for (int i = kernels_y; i < n_processes; i++) {
                 kernels[i].x = 0;
                 kernels[i].y = 0;
             }
@@ -132,7 +132,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
     cudaGetDevice(&device);
     cudaGetDeviceProperties(&prop, device);
 
-    int total = nx*ny*nlayers;
+    int total = (nx - 2*ng) * (ny - 2*ng) * nlayers;
 
     int kernels_x = 0;
     int kernels_y = 0;
@@ -163,10 +163,11 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
         }
         // kernels_x-1
-        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1);
+        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
+
+        //printf("nx_remaining: %i\n", nx_remaining);
 
         for (int j = 0; j < (kernels_y-1); j++) {
-
 
             threads[j*kernels_x + kernels_x-1].y =
                 int(sqrt(float(maxThreads)/nlayers));
@@ -182,7 +183,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         }
 
         // kernels_y-1
-        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1);
+        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
         for (int i = 0; i < (kernels_x-1); i++) {
 
             threads[(kernels_y-1)*kernels_x + i].x =
@@ -198,8 +199,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         }
 
         // recalculate
-        nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1);
-        ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1);
+        nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
+        ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -414,7 +415,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
             }
         }
 
-        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, 1, tag, comm);
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, 1, tag, comm, &request);
         MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, 1, tag, comm, &status);
         MPI_Wait(&request, &status);
 
@@ -453,7 +454,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
             }
         }
         // bottom-most process
-        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm);
+        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &request);
         MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &status);
         MPI_Wait(&request, &status);
 
@@ -927,11 +928,11 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta
     Solves the homogeneous part of the equation (ie the bit without source terms).
     */
 
-    int kx_offset = kernels[0].x*rank;
-    int ky_offset = 0;
+    int kx_offset = 0;
+    int ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
     for (int j = 0; j < kernels[rank].y; j++) {
-       kx_offset = kernels[0].x*rank;
+       kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
            evolve_fv<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -943,10 +944,10 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta
        ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
     }
 
-    ky_offset = 0;
+    ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
     for (int j = 0; j < kernels[rank].y; j++) {
-       kx_offset = kernels[0].x*rank;
+       kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
            evolve_fv_fluxes<<<blocks[j * kernels[rank].x + i],
                               threads[j * kernels[rank].x + i]>>>(
@@ -986,7 +987,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     //bcs_fv(F_h, nx, ny, nlayers, ng);
-    bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(F_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1000,7 +1005,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries and copy back
     //bcs_fv(Up_h, nx, ny, nlayers, ng);
-    bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(Up_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
@@ -1014,7 +1023,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     //bcs_fv(F_h, nx, ny, nlayers, ng);
-    bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(F_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1031,7 +1044,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries and copy back
     //bcs_fv(Up_h, nx, ny, nlayers, ng);
-    bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(Up_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
@@ -1045,7 +1062,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
     //bcs_fv(F_h, nx, ny, nlayers, ng);
-    bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(F_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(F_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
 
     for (int y = 0; y < ny; y++) {
         for (int x = 0; x < nx; x++) {
@@ -1062,7 +1083,11 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries
     //bcs_fv(Up_h, nx, ny, nlayers, ng);
-    bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    if (n_processes == 1) {
+        bcs_fv(F_h, nx, ny, nlayers, ng);
+    } else {
+        bcs_mpi(Up_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+    }
 
     cudaMemcpy(Up_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -1077,11 +1102,16 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
     */
 
-    bool finite_volume = true;
-
     // set up GPU stuff
     int count;
     cudaGetDeviceCount(&count);
+
+    cudaError_t err = cudaGetLastError();
+
+    if (err != cudaSuccess)
+        printf("Error: %s\n", cudaGetErrorString(err));
+
+    printf("Found %i CUDA devices\n", count);
 
     int maxThreads = 256;
     int maxBlocks = 256; //64;
@@ -1093,7 +1123,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
     int total_kernels = cumulative_kernels[n_processes-1];
 
-    int kernels_y = kernels[0].y;
+    //int kernels_y = kernels[0].y;
 
     dim3 *blocks = new dim3[total_kernels];
     dim3 *threads = new dim3[total_kernels];
@@ -1108,7 +1138,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
       k_offset = cumulative_kernels[rank-1];
     }
 
-    for (int i = k_offset; i < cumulative_kernels[i]; i++) {
+    for (int i = k_offset; i < cumulative_kernels[rank]; i++) {
         printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
                blocks[i].x, blocks[i].y, blocks[i].z,
                threads[i].x, threads[i].y, threads[i].z);
@@ -1194,7 +1224,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         for (int t = 0; t < nt; t++) {
             // offset by kernels in previous
             int kx_offset = 0;
-            int ky_offset = kernels[0].y*rank;
+            int ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
             rk3_fv(kernels, threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
@@ -1222,7 +1252,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
 
             kx_offset = 0;
-            ky_offset = kernels[0].y*rank;
+            ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
@@ -1246,7 +1276,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             // boundaries
             cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
             //bcs_fv(Un_h, nx, ny, nlayers, ng);
-            bcs_mpi(Un_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+            if (n_processes == 1) {
+                bcs_fv(Un_h, nx, ny, nlayers, ng);
+            } else {
+                bcs_mpi(Un_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+            }
             cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
 
@@ -1261,10 +1295,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                         MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
 
                         // copy data back to grid
-                        ky_offset = kernels[0].y*rank;
-
-                        // cheating slightly and using the fact that are moving from  left to right to make calculations a bit easier.
-                        for (int y = ky_offset*threads[0].y*blocks[0].y; y < ny; y++) {
+                        ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
+                        // cheating slightly and using the fact that are moving from  top to bottom to make calculations a bit easier.
+                        for (int y = ky_offset; y < ny; y++) {
                             for (int x = 0; x < nx; x++) {
                                 for (int l = 0; l < nlayers; l++) {
                                     for (int i = 0; i < 4; i++) {
@@ -1306,7 +1339,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         for (int t = 0; t < nt; t++) {
 
             int kx_offset = 0;
-            int ky_offset = kernels[0].y*rank;
+            int ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
             rk3_fv(kernels, threads, blocks,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
@@ -1334,7 +1367,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
 
             kx_offset = 0;
-            ky_offset = kernels[0].y*rank;
+            ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
 
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
@@ -1353,7 +1386,11 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             // boundaries
             cudaMemcpy(Un_h, Un_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
             //bcs_fv(Un_h, nx, ny, nlayers, ng);
-            bcs_mpi(Un_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+            if (n_processes == 1) {
+                bcs_fv(Un_h, nx, ny, nlayers, ng);
+            } else {
+                bcs_mpi(Un_h, nx, ny, nlayers, ng, comm, status, rank, n_processes);
+            }
             cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
             cudaError_t err = cudaGetLastError();
