@@ -886,7 +886,7 @@ __global__ void evolve2(float * gamma_up_d,
 
     //printf("kx_offset: %i\n", kx_offset);
 
-    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (l < nlayers)) {
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
 
         float a = dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*4] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
@@ -1118,6 +1118,19 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
         }
 
         printf("Found %i CUDA devices\n", count);
+
+    }
+
+    // if rank > number of GPUs, exit now
+    if (rank >= count) {
+        return;
+    }
+
+    // redefine - we only want to run on as many cores as we have GPUs
+    n_processes = count;
+
+    if (rank == 0) {
+        printf("Running on %i processor(s)\n", n_processes);
     }
 
     int maxThreads = 256;
@@ -1157,6 +1170,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     float * Un_d;
     float * rho_d;
     float * Q_d;
+
+    // set device
+    cudaSetDevice(rank);
 
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 2*nx*ny*sizeof(float));
@@ -1229,8 +1245,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         // main loop
         for (int t = 0; t < nt; t++) {
-
-            printf("t = %i\n", t);
+            //printf("t = %i\n", t);
             // offset by kernels in previous
             int kx_offset = 0;
             int ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
@@ -1258,7 +1273,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 }
                 ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
             }
-
 
             kx_offset = 0;
             ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
