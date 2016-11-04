@@ -884,7 +884,9 @@ __global__ void evolve2(float * gamma_up_d,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int l = threadIdx.z;
 
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+    //printf("kx_offset: %i\n", kx_offset);
+
+    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (l < nlayers)) {
 
         float a = dt * alpha *
             U_half[((y * nx + x) * nlayers + l)*4] * (0.5 / dx) * (sum_phs[(y * nx + x+1) * nlayers + l] -
@@ -1106,12 +1108,17 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     int count;
     cudaGetDeviceCount(&count);
 
-    cudaError_t err = cudaGetLastError();
+    if (rank == 0) {
+        cudaError_t err = cudaGetLastError();
+        // check that we actually have some GPUS
+        if (err != cudaSuccess) {
+            printf("Error: %s\n", cudaGetErrorString(err));
+            printf("Aborting program.\n");
+            return;
+        }
 
-    if (err != cudaSuccess)
-        printf("Error: %s\n", cudaGetErrorString(err));
-
-    printf("Found %i CUDA devices\n", count);
+        printf("Found %i CUDA devices\n", count);
+    }
 
     int maxThreads = 256;
     int maxBlocks = 256; //64;
@@ -1222,6 +1229,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         // main loop
         for (int t = 0; t < nt; t++) {
+
+            printf("t = %i\n", t);
             // offset by kernels in previous
             int kx_offset = 0;
             int ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
