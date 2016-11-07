@@ -35,6 +35,7 @@
 
 # Location of the CUDA Toolkit
 CUDA_PATH ?= /usr/local/cuda-7.5
+MPI_PATH ?= /usr/lib/openmpi
 
 ##############################
 # start deprecated interface #
@@ -237,13 +238,13 @@ gr_cuda.o:gr_cuda.cpp
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) $(ALL_CCFLAGS) -o $@ -c $<
 
 SeaCuda.o: SeaCuda.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I/usr/lib/openmpi/include -lmpi -o $@ -c $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -o $@ -c $<
 
 gr_cuda_kernel.o: gr_cuda_kernel.cu
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/usr/lib/openmpi/include -lmpi -o $@ -dc $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -o $@ -dc $<
 
 link.o: gr_cuda_kernel.o
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/usr/lib/openmpi/include -lmpi -o $@ -dlink $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/$(MPI_PATH)/include -lmpi -o $@ -dlink $<
 
 gr_cuda: gr_cuda.o gr_cuda_kernel.o link.o SeaCuda.o
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)

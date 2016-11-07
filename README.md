@@ -5,7 +5,9 @@
 
 ## Installation and running
 
-The CUDA version can be built using the Makefile and run using the parameters in the file `input_file.txt`. To run on e.g. 2 GPU's/processors, execute
+The CUDA version can be built using the Makefile and run using the parameters in the file `input_file.txt`. Before compiling, make sure that the variables `CUDA_PATH` and `MPI_PATH` at the top of the Makefile point to the correct locations of CUDA and MPI on your system. The code can then be compiled by executing `make` (or `make debug` to include debug flags). 
+
+To run on e.g. 2 GPU's/processors, execute
 
     mpirun -np 2 ./gr_cuda
 
