@@ -70,37 +70,44 @@ int main(int argc, char *argv[]) {
         zeta0[i] = sea.U_grid[i*4 + 3];
     }
 
-    sea.print_inputs();
+    if (rank == 0) {
+        sea.print_inputs();
+    }
 
     // run simulation
     sea.run(comm, status, rank, size);
 
-    // test if output matches input
-    float tol = 1.0e-4; // absolute error tolerance
-
-    float * err = new float[sea.nlayers*sea.nx*sea.ny*4];
-
     bool passed = true;
 
-    for (int i = 0; i < sea.nlayers*sea.nx*sea.ny; i++) {
-        //cout << sea.U_grid[i*4] << ' ' << D0[i] << '\n';
-        err[i*4] = (sea.U_grid[i*4] - D0[i]) / D0[i];
-        err[i*4+1] = (sea.U_grid[i*4 + 1] - Sx0[i]) / Sx0[i];
-        err[i*4+2] = (sea.U_grid[i*4 + 2] - Sy0[i]) / Sy0[i];
-        err[i*4+3] = (sea.U_grid[i*4 + 3] - zeta0[i]) / zeta0[i];
-        for (int j = 0; j < 4; j++) {
-            if (abs(err[i*4 + j]) > tol) {
-                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + j] << " D0: " << D0[i] << '\n';
-                passed = false;
-                break;
+    if (rank == 0) {
+
+        // test if output matches input
+        float tol = 1.0e-4; // absolute error tolerance
+
+        float * err = new float[sea.nlayers*sea.nx*sea.ny*4];
+
+        for (int i = 0; i < sea.nlayers*sea.nx*sea.ny; i++) {
+            //cout << sea.U_grid[i*4] << ' ' << D0[i] << '\n';
+            err[i*4] = (sea.U_grid[i*4] - D0[i]) / D0[i];
+            err[i*4+1] = (sea.U_grid[i*4 + 1] - Sx0[i]) / Sx0[i];
+            err[i*4+2] = (sea.U_grid[i*4 + 2] - Sy0[i]) / Sy0[i];
+            err[i*4+3] = (sea.U_grid[i*4 + 3] - zeta0[i]) / zeta0[i];
+            for (int j = 0; j < 4; j++) {
+                if (abs(err[i*4 + j]) > tol) {
+                    cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + j] << " D0: " << D0[i] << '\n';
+                    passed = false;
+                    break;
+                }
             }
         }
-    }
 
-    if (passed == true) {
-        cout << "Passed flat test!" << '\n';
-    } else {
-        cout << "Did not pass :(\n";
+        if (passed == true) {
+            cout << "Passed flat test!" << '\n';
+        } else {
+            cout << "Did not pass :(\n";
+        }
+
+        delete[] err;
     }
 
     // clean up
@@ -110,7 +117,7 @@ int main(int argc, char *argv[]) {
     delete[] zeta0;
     delete[] _Q;
     delete[] _beta;
-    delete[] err;
+
 
     MPI_Finalize();
 

@@ -33,7 +33,7 @@
 #
 ################################################################################
 
-# Location of the CUDA Toolkit
+# Locations of the CUDA Toolkit and MPI
 CUDA_PATH ?= /usr/local/cuda-7.5
 MPI_PATH ?= /usr/lib/openmpi
 
@@ -222,7 +222,7 @@ endif
 # Target rules
 all: build
 
-debug: ALL_CCFLAGS += -g #-G
+debug: ALL_CCFLAGS += -g
 debug: build
 
 build: gr_cuda
@@ -265,7 +265,7 @@ testing/flat:testing/flat.o gr_cuda_kernel.o link.o SeaCuda.o
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
 test: clean_test
-test: ALL_CCFLAGS += -g #-G
+test: ALL_CCFLAGS += -g
 test: SeaCuda.o
 test: testing/flat
 

@@ -101,6 +101,7 @@ int main(int argc, char *argv[]) {
 
     sea.initial_data(D0, Sx0, Sy0, zeta0, _Q, _beta);
 
+    // clean up arrays
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;

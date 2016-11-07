@@ -140,9 +140,9 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
     int kernels_y = 0;
 
     for (int i = 0; i < n_processes; i++) {
-        kernels_x += kernels[i].x;
+        kernels_y += kernels[i].y;
     }
-    kernels_y = kernels[0].y;
+    kernels_x = kernels[0].x;
 
     if ((kernels_x > 1) || (kernels_y > 1)) {
         // initialise
@@ -167,7 +167,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         // kernels_x-1
         int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
 
-        //printf("nx_remaining: %i\n", nx_remaining);
+        printf("nx_remaining: %i\n", nx_remaining);
 
         for (int j = 0; j < (kernels_y-1); j++) {
 
@@ -186,6 +186,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
         // kernels_y-1
         int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
+        printf("ny_remaining: %i\n", ny_remaining);
         for (int i = 0; i < (kernels_x-1); i++) {
 
             threads[(kernels_y-1)*kernels_x + i].x =
@@ -203,6 +204,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         // recalculate
         nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
         ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
+        printf("nx_remaining: %i\n", nx_remaining);
+        printf("ny_remaining: %i\n", ny_remaining);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =

@@ -1,5 +1,5 @@
-nx      50
-ny      50
+nx      300
+ny      200
 nt      100
 nlayers 2
 ng      2
