@@ -303,6 +303,7 @@ void SeaCuda::print_inputs() {
     cout << "alpha \t\t\t" << alpha << '\n';
     cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ")\n";
     cout << "gamma \t\t\t((" << gamma[0] << ',' << gamma[1] << "),(" << gamma[2] << ',' << gamma[3] << "))\n";
+    cout << "burning \t\t" << burning << '\n';
     cout << "outfile \t\t" << outfile << "\n\n";
 }
 
