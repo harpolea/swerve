@@ -258,10 +258,10 @@ clean_test:
 
 
 testing/flat.o:testing/flat.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -o $@ -c $<
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) $(ALL_CCFLAGS) -o $@ -c $<
 
-testing/flat:testing/flat.o gr_cuda_kernel.o SeaCuda.o
-	$(EXEC) $(NVCC) $(ALL_LDFLAGS) $(GENCODE_FLAGS) -o $@ $+ $(LIBRARIES)
+testing/flat:testing/flat.o gr_cuda_kernel.o link.o SeaCuda.o
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
 test: clean_test
 test: ALL_CCFLAGS += -g #-G

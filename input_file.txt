@@ -12,5 +12,6 @@ mu      0.0
 alpha   0.9
 gamma   1.23457 0.0 0.0 1.23457
 periodic f
+burning t
 dprint  10
 outfile ../../Documents/Work/swerve/out.h5

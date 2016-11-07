@@ -15,6 +15,8 @@ TODO: cuda_run is a beast, so split up into multiple functions to e.g. keep MPI 
 
 TODO: at the moment, every processor and every kernel has all the data. Change this so that processors only have the data they need.
 
+TODO: Change bcs etc so less copying of data to CPU - instead can use e.g. cudaMemcpyPeerAsync to copy between GPUs on the same node.
+
 NOTE: debug memory leaks using
     mpirun -np 4 valgrind --leak-check=full ./gr_cuda
 
@@ -489,24 +491,27 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
 
 __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
                        int nx, int ny, int nlayers,
-                       int kx_offset, int ky_offset) {
+                       int kx_offset, int ky_offset, bool burning) {
     /*
     Calculate heating rate using equation 64 of Spitkovsky+ 2002.
     */
-    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
-    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
-    int l = threadIdx.z;
 
-    // set some constants
-    //float kappa = 0.03; // opacity, constant
-    //float column_depth = 5.4; // y
-    float Y = 1.0; // for simplicity as they do just have eps_3alpha = 0 so that helium abundance remains constant.
+    if (burning) {
+        int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+        int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+        int l = threadIdx.z;
 
-    // in this model the scale height represents the temperature
+        // set some constants
+        //float kappa = 0.03; // opacity, constant
+        //float column_depth = 5.4; // y
+        float Y = 1.0; // for simplicity as they do just have eps_3alpha = 0 so that helium abundance remains constant.
 
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
-        // changed to e^-35 to try and help GPU
-        Q_d[(y * nx + x) * nlayers + l] = 3.0e13 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-35.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
+        // in this model the scale height represents the temperature
+
+        if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (l < nlayers)) {
+            // changed to e^-35 to try and help GPU
+            Q_d[(y * nx + x) * nlayers + l] = 3.0e13 * rho_d[l]*rho_d[l] * pow(Y, 3) * exp(-35.0/U[((y * nx + x) * nlayers + l)*4]) / pow(U[((y * nx + x) * nlayers + l)*4], 3); //- 0.4622811 * pow(U[((y * nx + x) * nlayers + l)*4], 4) / (3.0 * kappa * column_depth * column_depth);
+        }
     }
 }
 
@@ -769,6 +774,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                      float mu,
                      int nx, int ny, int nlayers, float alpha,
                      float dx, float dy, float dt,
+                     bool burning,
                      int kx_offset, int ky_offset) {
     /*
     Does the heating part of the evolution.
@@ -787,7 +793,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
     }
 
     // calculate Q
-    calc_Q(Up, rho_d, Q_d, nx, ny, nlayers, kx_offset, ky_offset);
+    calc_Q(Up, rho_d, Q_d, nx, ny, nlayers, kx_offset, ky_offset, burning);
 
     float W = 1.0;
 
@@ -1098,7 +1104,8 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers, int ng,
-         int nt, float alpha, float dx, float dy, float dt, int dprint, char * filename,
+         int nt, float alpha, float dx, float dy, float dt, bool burning,
+         int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes) {
     /*
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
@@ -1152,6 +1159,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
     printf("rank: %i\n", rank);
     printf("kernels: (%i, %i)\n", kernels[rank].x, kernels[rank].y);
+    printf("cumulative kernels: %i\n", cumulative_kernels[rank]);
 
     int k_offset = 0;
     if (rank > 0) {
@@ -1268,7 +1276,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
+                           dx, dy, dt, burning, kx_offset, ky_offset);
                     kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
                 ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
@@ -1382,7 +1390,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
+                           dx, dy, dt, burning, kx_offset, ky_offset);
                     kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x;
                 }
                 ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y;
@@ -1423,7 +1431,6 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
 
         }
     }
-
 
     // delete some stuff
     cudaFree(beta_d);

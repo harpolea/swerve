@@ -27,8 +27,8 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt, int _ng,
         float ymin, float ymax, float * _rho,
         float * _Q, float _mu,
         float _alpha, float * _beta, float * _gamma,
-        bool _periodic, int _dprint)
-        : nlayers(n_layers), nx(_nx), ny(_ny), ng(_ng), nt(_nt), mu(_mu), alpha(_alpha), periodic(_periodic), dprint(_dprint)
+        bool _periodic, bool _burning, int _dprint)
+        : nlayers(n_layers), nx(_nx), ny(_ny), ng(_ng), nt(_nt), mu(_mu), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -152,6 +152,14 @@ SeaCuda::SeaCuda(char * filename)
             } else {
                 periodic = false;
             }
+        } else if (variableName == "burning") {
+            string tf;
+            inputFile >> tf;
+            if (tf == "t" || tf == "T") {
+                burning = true;
+            } else {
+                burning = false;
+            }
         } else if (variableName == "dprint") {
             inputFile >> value;
             dprint = int(value);
@@ -202,7 +210,7 @@ SeaCuda::SeaCuda(char * filename)
 
 // copy constructor
 SeaCuda::SeaCuda(const SeaCuda &seaToCopy)
-    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), mu(seaToCopy.mu), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), dprint(seaToCopy.dprint)
+    : nlayers(seaToCopy.nlayers), nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), mu(seaToCopy.mu), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
@@ -356,7 +364,7 @@ void SeaCuda::run(MPI_Comm comm, MPI_Status status, int rank, int size) {
     cout << "Beginning evolution.\n";
 
     cuda_run(beta, gamma_up, U_grid, rho, Q, mu, nx, ny, nlayers, ng, nt,
-             alpha, dx, dy, dt, dprint, outfile, comm, status, rank, size);
+             alpha, dx, dy, dt, burning, dprint, outfile, comm, status, rank, size);
 }
 
 // NOTE: this will not work now we don't store everything in U_grid

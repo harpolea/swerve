@@ -3,6 +3,7 @@
 #include <cmath>
 #include <fstream>
 #include <algorithm>
+#include "mpi.h"
 #include "../SeaCuda.h"
 
 using namespace std;
@@ -11,7 +12,26 @@ using namespace std;
 This test takes two initially flat layers in flat space and evolves for a few timesteps. It then compares the evolved data against the initial data to check that the system has remained stable and not changed to within a given tolerance.
 */
 
-int main() {
+int main(int argc, char *argv[]) {
+
+    // MPI variables
+
+    MPI_Comm comm;
+    MPI_Status status;
+
+    int rank, size;//, source, tag;
+
+    // Initialise MPI and compute number of processes and local rank
+    comm = MPI_COMM_WORLD;
+
+    MPI_Init(&argc, &argv);
+
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (rank == 0) {
+        printf("Running on %d process(es)\n", size);
+    }
 
     // make a sea
     char input_filename[] = "flat.txt";
@@ -53,7 +73,7 @@ int main() {
     sea.print_inputs();
 
     // run simulation
-    sea.run();
+    sea.run(comm, status, rank, size);
 
     // test if output matches input
     float tol = 1.0e-4; // absolute error tolerance
@@ -70,7 +90,7 @@ int main() {
         err[i*4+3] = (sea.U_grid[i*4 + 3] - zeta0[i]) / zeta0[i];
         for (int j = 0; j < 4; j++) {
             if (abs(err[i*4 + j]) > tol) {
-                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + j] << " zeta0: " << zeta0[i] << '\n';
+                cout << "Error for component " << i << ' ' << j << ": " << err[i*4 + j] << " sea.U_grid: " << sea.U_grid[i*4 + j] << " D0: " << D0[i] << '\n';
                 passed = false;
                 break;
             }
@@ -91,6 +111,8 @@ int main() {
     delete[] _Q;
     delete[] _beta;
     delete[] err;
+
+    MPI_Finalize();
 
     return int(passed);
 
