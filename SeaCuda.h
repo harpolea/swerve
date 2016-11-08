@@ -14,6 +14,8 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
 
 void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes);
 
+void check_mpi_error(int mpi_err);
+
 void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,

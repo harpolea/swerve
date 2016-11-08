@@ -72,15 +72,15 @@ def quick_plot(input_filename=None, filename=None, start=0):
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
 
-    for i in range(start, len(D_2d[:,0,0,0])):
-        if i % 10 == 0:
-            print('Printing {}'.format(i))
+    for i in range(start, 5):#len(D_2d[:,0,0,0])):
+        #if i % 10 == 0:
+        print('Printing {}'.format(i))
 
         outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        #ax.set_zlim(0.7,1.4)
+        ax.set_zlim(0.7,1.9)
         ax.plot_surface(X,Y,D_2d[i,1,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta_2d[i,1,2:-2,2:-2].T), antialiased=True)
         #ax.plot_wireframe(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=2, cstride=2, lw=0.1, cmap=cm.viridis, antialiased=True)
         ax.plot_surface(X,Y,D_2d[i,0,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, facecolors=cm.viridis_r(zeta_2d[i,0,2:-2,2:-2].T), antialiased=True)

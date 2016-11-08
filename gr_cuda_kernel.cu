@@ -36,6 +36,30 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
+void check_mpi_error(int mpi_err) {
+    /*
+    Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
+    */
+
+    int errclass, resultlen;
+    char err_buffer[MPI_MAX_ERROR_STRING];
+
+    if (mpi_err != MPI_SUCCESS) {
+        MPI_Error_class(mpi_err, &errclass);
+        if (errclass == MPI_ERR_RANK) {
+            fprintf(stderr,"Invalid rank used in MPI send call\n");
+            MPI_Error_string(mpi_err,err_buffer,&resultlen);
+            fprintf(stderr,err_buffer);
+            MPI_Finalize();
+        } else {
+            fprintf(stderr, "Other MPI error\n");
+            MPI_Error_string(mpi_err,err_buffer,&resultlen);
+            fprintf(stderr,err_buffer);
+            MPI_Finalize();
+        }
+    }
+}
+
 void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels, int * cumulative_kernels) {
     /*
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
@@ -81,7 +105,6 @@ void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *ma
 
             // split up in the y direction to keep stuff contiguous in memory
             int strip_width = int(floor(float(kernels_y) / float(n_processes)));
-
 
             for (int i = 0; i < n_processes; i++) {
                 kernels[i].y = strip_width;
@@ -254,7 +277,6 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
     }
 }
 
-
 __device__ void bcs(float * grid, int nx, int ny, int nlayers, int kx_offset, int ky_offset) {
     /*
     Enforce boundary conditions on section of grid.
@@ -364,6 +386,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
     float * yrbuf = new float[nlayers*nx*ng*4];
 
     int tag = 1;
+    int mpi_err;
     MPI_Request request;
 
     // if there are process above and below, send/receive
@@ -379,8 +402,10 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
                 }
             }
         }
-        MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &request);
-        MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank+1, tag, comm, &status);
+        mpi_err = MPI_Issend(ysbuf, nlayers*nx*ng*4, MPI_FLOAT, rank-1, tag, comm, &request);
+        check_mpi_error(mpi_err);
+        mpi_err = MPI_Recv(yrbuf, nlayers*nx*ng*4, MPI_FLOAT, rank+1, tag, comm, &status);
+        check_mpi_error(mpi_err);
         MPI_Wait(&request, &status);
 
         // copy received data back to grid
@@ -502,7 +527,6 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
     delete[] ysbuf;
     delete[] yrbuf;
 }
-
 
 __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
                        int nx, int ny, int nlayers,
@@ -986,7 +1010,6 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
     }
 }
 
-
 __global__ void evolve2(float * gamma_up_d,
                      float * Un_d, float * Up, float * U_half,
                      float * sum_phs, float * rho_d, float * Q_d,
@@ -1309,7 +1332,6 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
 }
 
-
 void cuda_run(float * beta, float * gamma_up, float * Un_h,
          float * rho, float * Q, float mu, int nx, int ny, int nlayers, int ng,
          int nt, float alpha, float dx, float dy, float dt, bool burning,
@@ -1379,7 +1401,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     }
 
     // redefine - we only want to run on as many cores as we have GPUs
-    n_processes = count;
+    if (n_processes > count) {
+        n_processes = count;
+    }
 
     if (rank == 0) {
         printf("Running on %i processor(s)\n", n_processes);
@@ -1559,6 +1583,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             }
             cudaMemcpy(Un_d, Un_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
+            int mpi_err;
 
             if ((t+1) % dprint == 0) {
                 if (rank == 0) {
@@ -1568,11 +1593,13 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                     int tag = 0;
                     for (int source = 1; source < n_processes; source++) {
                         //printf("Receiving from rank %i\n", source);
-                        MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
+                        mpi_err = MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
+
+                        check_mpi_error(mpi_err);
 
                         // copy data back to grid
-                        ky_offset = kernels[0].y * rank * blocks[0].y * threads[0].y;
-                        // cheating slightly and using the fact that are moving from  top to bottom to make calculations a bit easier.
+                        ky_offset = kernels[0].y * source * blocks[0].y * threads[0].y;
+                        // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
                         for (int y = ky_offset; y < ny; y++) {
                             for (int x = 0; x < nx; x++) {
                                 for (int l = 0; l < nlayers; l++) {
@@ -1600,7 +1627,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 } else { // send data to rank 0
                     //printf("Rank %i sending\n", rank);
                     int tag = 0;
-                    MPI_Ssend(Un_h, ny*nx*nlayers*4, MPI_FLOAT, 0, tag, comm);
+                    mpi_err = MPI_Ssend(Un_h, ny*nx*nlayers*4, MPI_FLOAT, 0, tag, comm);
+                    check_mpi_error(mpi_err);
                 }
 
             }
@@ -1700,10 +1728,8 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
     delete[] cumulative_kernels;
     delete[] threads;
     delete[] blocks;
-
     delete[] Up_h;
     delete[] F_h;
 }
-
 
 #endif

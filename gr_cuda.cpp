@@ -14,7 +14,6 @@ When the executable is called, if it is given an argument then this shall be use
 
 int main(int argc, char *argv[]) {
     // MPI variables
-
     MPI_Comm comm;
     MPI_Status status;
 
