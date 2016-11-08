@@ -1,7 +1,34 @@
 #ifndef SEA_CUDA_H
 #define SEA_CUDA_H
 
+#include "cuda_runtime.h"
 #include "mpi.h"
+
+void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 *kernels, int *cumulative_kernels);
+
+void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads);
+
+unsigned int nextPow2(unsigned int x);
+
+void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
+
+void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes);
+
+void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
+       float * Un_d, float * F_d,
+       float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+       float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+       int nx, int ny, int nlayers, float alpha,
+       float dx, float dy, float dt, int rank);
+
+void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+      float * beta_d, float * gamma_up_d, float * Un_d,
+      float * F_d, float * Up_d,
+      float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+      float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+      int nx, int ny, int nlayers, int ng, float alpha,
+      float dx, float dy, float dt,
+      float * Up_h, float * F_h, float * Un_h);
 
 void cuda_run(float * beta, float * gamma_up, float * U_grid,
          float * rho, float * Q, float mu,

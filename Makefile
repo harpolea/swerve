@@ -235,7 +235,7 @@ else
 endif
 
 gr_cuda.o:gr_cuda.cpp
-	$(EXEC) $(HOST_COMPILER) $(INCLUDES) $(ALL_CCFLAGS) -o $@ -c $<
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) $(ALL_CCFLAGS) -I$(CUDA_PATH)/include -o $@ -c $<
 
 SeaCuda.o: SeaCuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -o $@ -c $<

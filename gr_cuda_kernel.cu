@@ -25,34 +25,6 @@ NOTE: run using
 
 */
 
-// prototypes
-
-void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 *kernels, int *cumulative_kernels);
-
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads);
-
-unsigned int nextPow2(unsigned int x);
-
-void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
-
-void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes);
-
-void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
-       float * Un_d, float * F_d,
-       float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
-       float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
-       int nx, int ny, int nlayers, float alpha,
-       float dx, float dy, float dt, int rank);
-
-void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
-      float * beta_d, float * gamma_up_d, float * Un_d,
-      float * F_d, float * Up_d,
-      float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
-      float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
-      int nx, int ny, int nlayers, int ng, float alpha,
-      float dx, float dy, float dt,
-      float * Up_h, float * F_h, float * Un_h);
-
 unsigned int nextPow2(unsigned int x)
 {
     --x;
@@ -67,6 +39,21 @@ unsigned int nextPow2(unsigned int x)
 void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels, int * cumulative_kernels) {
     /*
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
+
+    Parameters
+    ----------
+    nx, ny, nlayers : int
+        dimensions of problem
+    ng : int
+        number of ghost cells
+    maxBlocks, maxThreads : int
+        maximum number of blocks and threads possible for device(s)
+    n_processes : int
+        number of MPI processes
+    kernels : dim3 *
+        number of kernels per process
+    cumulative_kernels : int *
+        cumulative total of kernels per process
     */
     // won't actually use maxThreads - fix to account for the fact we want something square
     *maxThreads = nlayers * int(sqrt(float(*maxThreads)/nlayers)) * int(sqrt(*maxThreads/nlayers));
@@ -126,6 +113,19 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 {
     /*
     Returns the number of blocks and threads required for each kernel given the size of the problem and the constraints of the device.
+
+    Parameters
+    ----------
+    nx, ny, nlayers : int
+        dimensions of problem
+    ng : int
+        number of ghost cells
+    maxBlocks, maxThreads : int
+        maximum number of blocks and threads possible for device(s)
+    n_processes : int
+        number of MPI processes
+    kernels, blocks, threads : dim3 *
+        number of kernels, blocks and threads per process / kernel
     */
 
     //get device capability, to avoid block/grid size exceed the upper bound
@@ -167,7 +167,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         // kernels_x-1
         int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
 
-        printf("nx_remaining: %i\n", nx_remaining);
+        //printf("nx_remaining: %i\n", nx_remaining);
 
         for (int j = 0; j < (kernels_y-1); j++) {
 
@@ -186,7 +186,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
         // kernels_y-1
         int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
-        printf("ny_remaining: %i\n", ny_remaining);
+        //printf("ny_remaining: %i\n", ny_remaining);
         for (int i = 0; i < (kernels_x-1); i++) {
 
             threads[(kernels_y-1)*kernels_x + i].x =
@@ -204,8 +204,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         // recalculate
         nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
         ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
-        printf("nx_remaining: %i\n", nx_remaining);
-        printf("ny_remaining: %i\n", ny_remaining);
+        //printf("nx_remaining: %i\n", nx_remaining);
+        //printf("ny_remaining: %i\n", ny_remaining);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -237,13 +237,11 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
         total_blocks = blocks[0].x * blocks[0].y;
 
-        if ((float)total_threads*total_blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock)
-        {
+        if ((float)total_threads*total_blocks > (float)prop.maxGridSize[0] * prop.maxThreadsPerBlock) {
             printf("n is too large, please choose a smaller number!\n");
         }
 
-        if (total_blocks > prop.maxGridSize[0])
-        {
+        if (total_blocks > prop.maxGridSize[0]) {
             printf("Grid size <%d> exceeds the device capability <%d>, set block size as %d (original %d)\n",
                    total_blocks, prop.maxGridSize[0], total_threads*2, total_threads);
 
@@ -329,7 +327,6 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng) {
                     grid[(((ny-1-g) * nx + x) * nlayers + l)*4+i] = grid[(((ny-1-ng) * nx + x) * nlayers + l)*4+i];
                 }
             }
-
         }
     }
 }
@@ -343,6 +340,21 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
     Need to do non-blocking send, blocking receive then wait.
 
     NOTE: this assumes each process only has the data it works on which is not true - change this (eg by including kernel offsets)
+
+    Parameters
+    ----------
+    grid : float *
+        grid of data
+    nx, ny, nlayers : int
+        dimensions of grid
+    ng : int
+        number of ghost cells
+    comm : MPI_Comm
+        MPI communicator
+    status : MPI_Status
+        status of MPI processes
+    rank, n_processes : int
+        rank of MPI process and total number of MPI processes
     */
 
     // interior cells between processes
@@ -497,6 +509,21 @@ __device__ void calc_Q(float * U, float * rho_d, float * Q_d,
                        int kx_offset, int ky_offset, bool burning) {
     /*
     Calculate heating rate using equation 64 of Spitkovsky+ 2002.
+
+    Parameters
+    ----------
+    U : float *
+        grid of state vectors
+    rho_d : float *
+        list of densities for different layers
+    Q_d : float *
+        grid of heating rate for each point in each layer
+    nx, ny, nlayers : int
+        dimensions of grids
+    kx_offset, ky_offset : int
+        x, y offset for current kernel
+    burning: bool
+        Do we have burning? If false, do nothing.
     */
 
     if (burning) {
@@ -534,6 +561,29 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
     and calculates fluxes there.
 
     NOTE: we assume that beta is smooth so can get value at cell boundaries with simple averaging
+
+    Parameters
+    ----------
+    beta_d : float *
+        shift vector at each grid point.
+    gamma_up_d : float *
+        gamma matrix at each grid point
+    Un_d : float *
+        state vector at each grid point in each layer
+    qx_plus_half, qx_minus_half : float *
+        state vector reconstructed at right and left boundaries
+    qy_plus_half, qy_minus_half : float *
+        state vector reconstructed at top and bottom boundaries
+    fx_plus_half, fx_minus_half : float *
+        flux vector at right and left boundaries
+    fy_plus_half, fy_minus_half : float *
+        flux vector at top and bottom boundaries
+    nx, ny, nlayers : int
+        dimensions of grid
+    alpha : float
+        lapse function
+    kx_offset, ky_offset : int
+        x, y offset for current kernel
     */
 
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
@@ -724,6 +774,27 @@ __global__ void evolve_fv_fluxes(float * F,
     /*
     Calculates fluxes in finite volume evolution by solving the Riemann
     problem at the cell boundaries.
+
+    Parameters
+    ----------
+    F : float *
+        flux vector at each point in grid and each layer
+    qx_plus_half, qx_minus_half : float *
+        state vector reconstructed at right and left boundaries
+    qy_plus_half, qy_minus_half : float *
+        state vector reconstructed at top and bottom boundaries
+    fx_plus_half, fx_minus_half : float *
+        flux vector at right and left boundaries
+    fy_plus_half, fy_minus_half : float *
+        flux vector at top and bottom boundaries
+    nx, ny, nlayers : int
+        dimensions of grid
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    kx_offset, ky_offset : int
+        x, y offset for current kernel
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -781,6 +852,43 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                      int kx_offset, int ky_offset) {
     /*
     Does the heating part of the evolution.
+
+    Parameters
+    ----------
+    gamma_up_d : float *
+        gamma matrix at each grid point
+    Un_d : float *
+        state vector at each grid point in each layer at current timestep
+    Up : float *
+        state vector at next timestep
+    U_half : float *
+        state vector at half timestep
+    qx_plus_half, qx_minus_half : float *
+        state vector reconstructed at right and left boundaries
+    qy_plus_half, qy_minus_half : float *
+        state vector reconstructed at top and bottom boundaries
+    fx_plus_half, fx_minus_half : float *
+        flux vector at right and left boundaries
+    fy_plus_half, fy_minus_half : float *
+        flux vector at top and bottom boundaries
+    sum_phs : float *
+        sum of Phi in different layers
+    rho_d : float *
+        list of densities in different layers
+    Q_d : float *
+        heating rate at each grid point in each layer
+    mu : float
+        friction
+    nx, ny, nlayers : int
+        dimensions of grid
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    burning : bool
+        is burning present in this system?
+    kx_offset, ky_offset : int
+        x, y offset for current kernel
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -888,6 +996,35 @@ __global__ void evolve2(float * gamma_up_d,
                      int kx_offset, int ky_offset) {
     /*
     Adds buoyancy terms.
+
+    Parameters
+    ----------
+    gamma_up_d : float *
+        gamma matrix at each grid point
+    Un_d : float *
+        state vector at each grid point in each layer at current timestep
+    Up : float *
+        state vector at next timestep
+    U_half : float *
+        state vector at half timestep
+    sum_phs : float *
+        sum of Phi in different layers
+    rho_d : float *
+        list of densities in different layers
+    Q_d : float *
+        heating rate at each grid point in each layer
+    mu : float
+        friction
+    nx, ny, nlayers : int
+        dimensions of grid
+    ng : int
+        number of ghost cells
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    kx_offset, ky_offset : int
+        x, y offset for current kernel
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -937,6 +1074,35 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta
        float dx, float dy, float dt, int rank) {
     /*
     Solves the homogeneous part of the equation (ie the bit without source terms).
+
+    Parameters
+    ----------
+    kernels, threads, blocks : dim3 *
+        number of kernels, threads and blocks for each process/kernel
+    beta_d : float *
+        shift vector at each grid point
+    gamma_up_d : float *
+        gamma matrix at each grid point
+    Un_d : float *
+        state vector at each grid point in each layer at current timestep
+    F_d : float *
+        flux vector
+    qx_p_d, qx_m_d : float *
+        state vector reconstructed at right and left boundaries
+    qy_p_d, qy_m_d : float *
+        state vector reconstructed at top and bottom boundaries
+    fx_p_d, fx_m_d : float *
+        flux vector at right and left boundaries
+    fy_p_d, fy_m_d : float *
+        flux vector at top and bottom boundaries
+    nx, ny, nlayers : int
+        dimensions of grid
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    rank : int
+        rank of MPI process
     */
 
     int kx_offset = 0;
@@ -985,6 +1151,45 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes) {
     /*
     Integrates the homogeneous part of the ODE in time using RK3.
+
+    Parameters
+    ----------
+    kernels, threads, blocks : dim3 *
+        number of kernels, threads and blocks for each process/kernel
+    beta_d : float *
+        shift vector at each grid point
+    gamma_up_d : float *
+        gamma matrix at each grid point
+    Un_d : float *
+        state vector at each grid point in each layer at current timestep on device
+    F_d : float *
+        flux vector on device
+    Up_d : float *
+        state vector at next timestep on device
+    qx_p_d, qx_m_d : float *
+        state vector reconstructed at right and left boundaries
+    qy_p_d, qy_m_d : float *
+        state vector reconstructed at top and bottom boundaries
+    fx_p_d, fx_m_d : float *
+        flux vector at right and left boundaries
+    fy_p_d, fy_m_d : float *
+        flux vector at top and bottom boundaries
+    nx, ny, nlayers : int
+        dimensions of grid
+    ng : int
+        number of ghost cells
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    Up_h, F_h, Un_h : float *
+        state vector at next timestep, flux vector and state vector at current timestep on host
+    comm : MPI_Comm
+        MPI communicator
+    status: MPI_Status
+        status of MPI processes
+    rank, n_processes : int
+        rank of current MPI process and total number of MPI processes
     */
 
     // u1 = un + dt * F(un)
@@ -1112,6 +1317,43 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes) {
     /*
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
+
+    Parameters
+    ----------
+    beta : float *
+        shift vector at each grid point
+    gamma_up : float *
+        gamma matrix at each grid point
+    Un_h : float *
+        state vector at each grid point in each layer at current timestep on host
+    rho : float *
+        densities in each layer
+    Q : float *
+        heating rate at each point and in each layer
+    mu : float
+        friction
+    nx, ny, nlayers : int
+        dimensions of grid
+    ng : int
+        number of ghost cells
+    nt : int
+        total number of timesteps
+    alpha : float
+        lapse function
+    dx, dy, dt : float
+        gridpoint spacing and timestep spacing
+    burning : bool
+        is burning included in this system?
+    dprint : int
+        number of timesteps between each printout
+    filename : char *
+        name of file to which output is printed
+    comm : MPI_Comm
+        MPI communicator
+    status: MPI_Status
+        status of MPI processes
+    rank, n_processes : int
+        rank of current MPI process and total number of MPI processes
     */
 
     // set up GPU stuff
@@ -1325,7 +1567,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                     float * buf = new float[nlayers*nx*ny*4];
                     int tag = 0;
                     for (int source = 1; source < n_processes; source++) {
-                        printf("Receiving from rank %i\n", source);
+                        //printf("Receiving from rank %i\n", source);
                         MPI_Recv(buf, nlayers*nx*ny*4, MPI_FLOAT, source, tag, comm, &status);
 
                         // copy data back to grid
@@ -1356,7 +1598,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                     // close file dataspae
                     H5Sclose(file_space);
                 } else { // send data to rank 0
-                    printf("Rank %i sending\n", rank);
+                    //printf("Rank %i sending\n", rank);
                     int tag = 0;
                     MPI_Ssend(Un_h, ny*nx*nlayers*4, MPI_FLOAT, 0, tag, comm);
                 }

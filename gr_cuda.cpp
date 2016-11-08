@@ -13,7 +13,6 @@ When the executable is called, if it is given an argument then this shall be use
 */
 
 int main(int argc, char *argv[]) {
-
     // MPI variables
 
     MPI_Comm comm;
@@ -32,8 +31,6 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         printf("Running on %d process(es)\n", size);
     }
-
-    //printf("Hello from process %d\n", rank);
 
     // make a sea
     char input_filename[200];
@@ -94,7 +91,6 @@ int main(int argc, char *argv[]) {
                 //} else {
                     //zeta0[(y * sea.nx + x) * sea.nlayers + l] = 0.0;
                 //}
-
             }
         }
     }
@@ -117,5 +113,4 @@ int main(int argc, char *argv[]) {
     sea.run(comm, status, rank, size);
 
     MPI_Finalize();
-
 }

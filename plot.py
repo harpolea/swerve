@@ -103,4 +103,4 @@ def quick_plot(input_filename=None, filename=None, start=0):
 
 if __name__ == '__main__':
     #plotme()
-    quick_plot(filename="../../Documents/Work/swerve/burning5")
+    quick_plot(filename="../../Documents/Work/swerve/mpi")
