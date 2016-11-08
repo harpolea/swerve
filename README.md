@@ -15,7 +15,7 @@ or to use the custom input file `custom_input.txt`,
 
     mpirun -np 2 ./gr_cuda custom_input.txt
 
-This code outputs into an HDF5 file which can be viewed using the notebook `Plotting.ipynb` or using the python script `plot.py`.
+This code outputs into an HDF5 file which can be viewed using the notebook `Plotting.ipynb` (inadvisable except for very small files) or using the python script `plot.py`.
 
 ## Testing
 

@@ -12,15 +12,16 @@ unsigned int nextPow2(unsigned int x);
 
 void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
 
-void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes);
+void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
 
 void check_mpi_error(int mpi_err);
 
-void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
+void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+       float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
-       int nx, int ny, int nlayers, float alpha,
+       int nx, int ny, int nlayers, int ng, float alpha,
        float dx, float dy, float dt, int rank);
 
 void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
@@ -58,7 +59,7 @@ public:
 
     void print_inputs();
 
-    void run(MPI_Comm comm, MPI_Status status, int rank, int size);
+    void run(MPI_Comm comm, MPI_Status * status, int rank, int size);
 
     void output(char * filename);
     void output_hdf5(char * filename);

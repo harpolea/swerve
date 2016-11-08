@@ -357,7 +357,7 @@ void SeaCuda::bcs(float * grid, int vec_dim) {
 }
 
 
-void SeaCuda::run(MPI_Comm comm, MPI_Status status, int rank, int size) {
+void SeaCuda::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     Wrapper for cuda_run function.
     */
@@ -365,7 +365,7 @@ void SeaCuda::run(MPI_Comm comm, MPI_Status status, int rank, int size) {
     cout << "Beginning evolution.\n";
 
     cuda_run(beta, gamma_up, U_grid, rho, Q, mu, nx, ny, nlayers, ng, nt,
-             alpha, dx, dy, dt, burning, dprint, outfile, comm, status, rank, size);
+             alpha, dx, dy, dt, burning, dprint, outfile, comm, *status, rank, size);
 }
 
 // NOTE: this will not work now we don't store everything in U_grid

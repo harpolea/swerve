@@ -7,6 +7,7 @@ import tables as tb
 import subprocess
 
 def quick_plot(input_filename=None, filename=None, start=0):
+
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
     # set defaults
@@ -72,7 +73,7 @@ def quick_plot(input_filename=None, filename=None, start=0):
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
 
-    for i in range(start, 5):#len(D_2d[:,0,0,0])):
+    for i in range(start, len(D_2d[:,0,0,0])):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
 
