@@ -186,7 +186,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
             }
         }
         // kernels_x-1
-        int nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
+        int nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
 
         //printf("nx_remaining: %i\n", nx_remaining);
 
@@ -206,7 +206,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         }
 
         // kernels_y-1
-        int ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
+        int ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
         //printf("ny_remaining: %i\n", ny_remaining);
         for (int i = 0; i < (kernels_x-1); i++) {
 
@@ -223,8 +223,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
         }
 
         // recalculate
-        nx_remaining = nx - threads[0].x * blocks[0].x * (kernels_x - 1) + 2 * ng;
-        ny_remaining = ny - threads[0].y * blocks[0].y * (kernels_y - 1) + 2 * ng;
+        nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
+        ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
         //printf("nx_remaining: %i\n", nx_remaining);
         //printf("ny_remaining: %i\n", ny_remaining);
 
@@ -1098,7 +1098,8 @@ __global__ void evolve2(float * gamma_up_d,
     }
 }
 
-void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta_d, float * gamma_up_d,
+void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+       int * cumulative_kernels, float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -1140,17 +1141,22 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta
     int kx_offset = 0;
     int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
+    int k_offset = 0;
+    if (rank > 0) {
+        k_offset = cumulative_kernels[rank - 1];
+    }
+
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           evolve_fv<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d,
+           evolve_fv<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nlayers, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
-          kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+          kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
-       ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+       ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
 
     ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
@@ -1158,21 +1164,22 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks, float * beta
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           evolve_fv_fluxes<<<blocks[j * kernels[rank].x + i],
-                              threads[j * kernels[rank].x + i]>>>(
+           evolve_fv_fluxes<<<blocks[k_offset + j * kernels[rank].x + i],
+                              threads[k_offset + j * kernels[rank].x + i]>>>(
                   F_d,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nlayers, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
 
-           kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+           kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
-       ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+       ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
 }
 
 void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+       int * cumulative_kernels,
        float * beta_d, float * gamma_up_d, float * Un_d,
        float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
@@ -1225,7 +1232,7 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     */
 
     // u1 = un + dt * F(un)
-    homogeneuous_fv(kernels, threads, blocks,
+    homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1263,7 +1270,7 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
-    homogeneuous_fv(kernels, threads, blocks,
+    homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1304,7 +1311,7 @@ void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     cudaMemcpy(Un_d, Up_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
-    homogeneuous_fv(kernels, threads, blocks,
+    homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1540,8 +1547,12 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             // offset by kernels in previous
             int kx_offset = 0;
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+            int k_offset = 0;
+            if (rank > 0) {
+                k_offset = cumulative_kernels[rank - 1];
+            }
 
-            rk3_fv(kernels, threads, blocks,
+            rk3_fv(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1552,7 +1563,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
+                    evolve_fv_heating<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
                            Up_d, U_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1560,9 +1571,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, burning, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
-                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
             }
 
             kx_offset = 0;
@@ -1571,13 +1582,13 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
+                    evolve2<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, ng, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
-                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
             }
 
             cudaDeviceSynchronize();
@@ -1660,7 +1671,7 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             int kx_offset = 0;
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
-            rk3_fv(kernels, threads, blocks,
+            rk3_fv(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Un_d, U_half_d, Up_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1668,10 +1679,14 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                 dx, dy, dt, Up_h, F_h, Un_h,
                 comm, status, rank, n_processes);
 
+            int k_offset = 0;
+            if (rank > 0) {
+                k_offset = cumulative_kernels[rank-1];
+            }
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve_fv_heating<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(
+                    evolve_fv_heating<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
                            gamma_up_d, Un_d,
                            Up_d, U_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1679,9 +1694,9 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
                            sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, alpha,
                            dx, dy, dt, burning, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
-                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
             }
 
 
@@ -1691,13 +1706,13 @@ void cuda_run(float * beta, float * gamma_up, float * Un_h,
             for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve2<<<blocks[j * kernels[rank].x + i], threads[j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
+                    evolve2<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
                            Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
                            nx, ny, nlayers, ng, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[j * kernels[rank].x + i].x * threads[j * kernels[rank].x + i].x - 2*ng;
+                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
-                ky_offset += blocks[j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
+                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
             }
 
             cudaDeviceSynchronize();

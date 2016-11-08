@@ -17,6 +17,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, M
 void check_mpi_error(int mpi_err);
 
 void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+       int * cumulative_kernels,
        float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
@@ -25,6 +26,7 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float dx, float dy, float dt, int rank);
 
 void rk3_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
+      int * cumulative_kernels,
       float * beta_d, float * gamma_up_d, float * Un_d,
       float * F_d, float * Up_d,
       float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
