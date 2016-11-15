@@ -19,6 +19,20 @@
 #include "H5Cpp.h"
 using namespace std;
 
+/*
+Compile with
+
+g++ mesh_refinement.cpp -I/usr/include/hdf5/serial -I/usr/include/hdf5 -lhdf5_cpp -lhdf5 -L/usr/lib/x86_64-linux-gnu/hdf5/serial -o mesh
+
+*/
+
+bool nan_check(float a) {
+    if (a != a) {
+        return true;
+    } else {
+        return false;
+    }
+}
 
 float zbrent(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
     /*
@@ -31,6 +45,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
     float a = x1, b = x2, c = x2, d, e, fa = func(a, D, Sx, Sy, tau, gamma, gamma_up), fb = func(b, D, Sx, Sy, tau, gamma, gamma_up), fc, p, q, r, s, tol1, xm;
 
     if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0)) {
+        cout << "Root must be bracketed in zbrent.\n";
         throw("Root must be bracketed in zbrent.");
     }
 
@@ -40,7 +55,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
         if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
             c = a;
             fc = fa;
-            e = d = b-a;
+            e = d = b - a;
         }
 
         if (abs(fc) < abs(fb)) {
@@ -61,7 +76,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
 
         if (abs(e) >= tol1 && abs(fa) > abs(fb)) {
             s = fb / fa;
-            if(a == c) {
+            if (a == c) {
                 p = 2.0 * xm * s;
                 q = 1.0 - s;
             } else {
@@ -101,6 +116,109 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
             fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
         }
     }
+    cout << "Maximum number of iterations exceeded in zbrent.\n";
+    throw("Maximum number of iterations exceeded in zbrent.");
+}
+
+
+float zbrent2(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
+    /*
+    Using Brent's method, return the root of a function or functor func known to lie between x1 and x2. The root will be regined until its accuracy is tol.
+    */
+
+    const int ITMAX = 100;
+
+    float a = x1, b = x2;
+    float c, d=0.0, e=0.0;
+    float fa = func(a, D, Sx, Sy, tau, gamma, gamma_up);
+    float fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
+    float fc=0.0, fs, s;
+
+    if (fa * fb >= 0.0) {
+        cout << "Root must be bracketed in zbrent.\n";
+        throw("Root must be bracketed in zbrent.");
+    }
+
+    if (abs(fa) < abs(fb)) {
+        // swap a, b
+        d = a;
+        a = b;
+        b = d;
+    }
+
+    c = a;
+
+    bool mflag = true;
+
+    for (int i = 0; i < ITMAX; i++) {
+        if (fa != fc && fb != fc) {
+            s = a*fb*fc / ((fa-fb) * (fa-fc)) + b*fa*fc / ((fb-fa)*(fb-fc)) + c*fa*fb / ((fc-fa)*(fc-fb));
+        } else {
+            s = b - fb * (b-a) / (fb-fa);
+        }
+
+        // list of conditions
+        bool con1 = false;
+        if (0.25*(3.0 * a + b) < b) {
+            if (s < 0.25*(3.0 * a + b) || s > b) {
+                con1 = true;
+            }
+        } else if (s < b || s > 0.25*(3.0 * a + b)) {
+            con1 = true;
+        }
+        bool con2 = false;
+        if (mflag && abs(s-b) >= 0.5*abs(b-c)) {
+            con2 = true;
+        }
+        bool con3 = false;
+        if (!(mflag) && abs(s-b) >= 0.5 * (c-d)) {
+            con3 = true;
+        }
+        bool con4 = false;
+        if (mflag && abs(b-c) < tol) {
+            con4 = true;
+        }
+        bool con5 = false;
+        if (!(mflag) && abs(c-d) < tol) {
+            con5 = true;
+        }
+
+        if (con1 || con2 || con3 || con4 || con5) {
+            s = 0.5 * (a+b);
+            mflag = true;
+        } else {
+            mflag = false;
+        }
+
+        fs = func(s, D, Sx, Sy, tau, gamma, gamma_up);
+
+        d = c;
+        c = b;
+
+        if (fa * fs < 0.0) {
+            b = s;
+        } else {
+            a = s;
+        }
+
+        if (abs(fa) < abs(fb)) {
+            e = a;
+            a = b;
+            b = e;
+        }
+
+        // test for convegence
+        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
+            return b;
+        }
+
+        if (nan_check(abs(b-a))) {
+            cout << "abs(b-a): " <<  abs(b-a) << '\n';
+        }
+
+
+    }
+    cout << "Maximum number of iterations exceeded in zbrent.\n";
     throw("Maximum number of iterations exceeded in zbrent.");
 }
 
@@ -144,15 +262,15 @@ Sea::Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
     // find inverse of gamma
     float det = gamma_down[0] * gamma_down[1*2+1] - gamma_down[0*2+1] * gamma_down[1*2+0];
     gamma_up[0] = gamma_down[1*2+1] / det;
-    gamma_down[0*2+1] = -gamma_down[0*2+1]/det;
-    gamma_down[1*2+0] = -gamma_down[1*2+0]/det;
+    gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
+    gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
     gamma_up[1*2+1] = gamma_down[0*2+0]/det;
 
     nxf = int(r * df * nx);
     nyf = int(r * df * ny);
 
     // D, Sx, Sy, zeta
-    U_coarse = new float[nx*ny*4];
+    U_coarse = new float[nx*ny*3];
     U_fine = new float[nxf * nyf * 4];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
@@ -199,6 +317,8 @@ Sea::Sea(char * filename)
         } else if (variableName == "r") {
             inputFile >> value;
             r = int(value);
+        } else if (variableName == "df") {
+            inputFile >> df;
         } else if (variableName == "xmin") {
             inputFile >> xmin;
         } else if (variableName == "xmax") {
@@ -275,17 +395,27 @@ Sea::Sea(char * filename)
     // find inverse of gamma
     float det = gamma_down[0] * gamma_down[1*2+1] - gamma_down[0*2+1] * gamma_down[1*2+0];
     gamma_up[0] = gamma_down[1*2+1] / det;
-    gamma_down[0*2+1] = -gamma_down[0*2+1]/det;
-    gamma_down[1*2+0] = -gamma_down[1*2+0]/det;
+    gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
+    gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
     gamma_up[1*2+1] = gamma_down[0*2+0]/det;
 
+    cout << "gamma_up: " << gamma_up[0] << ',' << gamma_up[1] << ',' << gamma_up[2] << ',' << gamma_up[3] << '\n';
+
     try {
-        U_coarse = new float[int(nx*ny*4)];
-        U_fine = new float[nxf*nyf*4];
-        beta = new float[int(2*nx*ny)];
+        U_coarse = new float[int(nx*ny*3)];
+        U_fine = new float[int(nxf*nyf*4)];
+        //beta = new float[int(2*nx*ny)];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
         exit(1);
+    }
+
+    // initialise arrays
+    for (int i = 0; i < nx*ny*3; i++) {
+        U_coarse[i] = 0.0;
+    }
+    for (int i = 0; i < nxf*nyf*4; i++) {
+        U_fine[i] = 0.0;
     }
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
@@ -299,7 +429,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
@@ -312,7 +442,7 @@ Sea::Sea(const Sea &seaToCopy)
         ys[i] = seaToCopy.ys[i];
     }
 
-    beta = new float[2*nx*ny];
+    //beta = new float[2*nx*ny];
 
     rho = seaToCopy.rho;
 
@@ -322,7 +452,7 @@ Sea::Sea(const Sea &seaToCopy)
         beta[i] = seaToCopy.beta[i];
     }
 
-    U_coarse = new float[int(nx*ny*4)];
+    U_coarse = new float[int(nx*ny*3)];
     U_fine = new float[nxf*nyf*4];
 
     for (int i = 0; i < nx*ny*4;i++) {
@@ -350,7 +480,7 @@ Sea::Sea(const Sea &seaToCopy)
 Sea::~Sea() {
     delete[] xs;
     delete[] ys;
-    delete[] beta;
+    //delete[] beta;
 
     delete[] U_coarse;
     delete[] U_fine;
@@ -358,22 +488,17 @@ Sea::~Sea() {
 
 
 // set the initial data
-void Sea::initial_data(float * D0, float * Sx0, float * Sy0, float * zeta0, float * _Q, float * _beta) {
+void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     /*
     Initialise D, Sx, Sy and Q.
     */
     for (int i = 0; i < nx*ny; i++) {
-        U_coarse[i*4] = D0[i];
-        U_coarse[i*4+1] = Sx0[i];
-        U_coarse[i*4+2] = Sy0[i];
-        U_coarse[i*4+3] = zeta0[i];
+        U_coarse[i*3] = D0[i];
+        U_coarse[i*3+1] = Sx0[i];
+        U_coarse[i*3+2] = Sy0[i];
     }
 
-    for (int i = 0; i < 2*nx*ny; i++) {
-        beta[i] = _beta[i];
-    }
-
-    bcs(U_coarse, nx, ny, 4);
+    bcs(U_coarse, nx, ny, 3);
 
     cout << "Set initial data.\n";
 }
@@ -425,7 +550,7 @@ void Sea::bcs(float * grid, int n_x, int n_y, int vec_dim) {
         }
     } else { // outflow
         for (int l = 0; l < vec_dim; l++) {
-            for (int y = 0; y < ny; y++){
+            for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {
                     grid[(y * n_x + g) * vec_dim + l] = grid[(y * n_x + ng) * vec_dim + l];
 
@@ -534,12 +659,12 @@ void compressible_fluxes(float * q, float * f, bool x_dir, int nxf, int nyf, flo
 
 void Sea::prolong_grid(float * q_c, float * q_f) {
     // coarse to fine
-    float * qc_comp = new float[nx*ny*4];
-    float * Sx = new float[nx*ny*4];
-    float * Sy = new float[nx*ny*4];
-    float * p = new float[nx*ny];
+    float * qc_comp = new float[int(nx*ny*4)];
+    float * Sx = new float[int(nx*ny*4)];
+    float * Sy = new float[int(nx*ny*4)];
+    float * p = new float[int(nx*ny)];
 
-    p_from_swe(p, q_c);
+    p_from_swe(q_c, p);
 
     for (int i = 0; i < nx*ny; i++) {
         float rhoh = rhoh_from_p(p[i]);
@@ -647,10 +772,32 @@ void Sea::restrict_grid(float * q_c, float * q_f) {
     delete[] qf_sw;
 }
 
+void Sea::p_from_swe(float * q, float * p) {
+    // only use on coarse grid
+    for (int i = 0; i < nx*ny; i++) {
+        float W = sqrt((q[i*3+1]*q[i*3+1] * gamma_up[0] + 2.0 * q[i*3+1] * q[i*3+2] * gamma_up[1] + q[i*3+2] * q[i*3+2] * gamma_up[3]) / (q[i*3]*q[i*3]) + 1.0);
+
+        float ph = q[i*3] / W;
+
+        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) / (gamma - 1.0)) / gamma - 1.0);
+    }
+
+}
+
 float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
+
     float vx = Sx / (tau + p);
     float vy = Sy / (tau + p);
     float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
+
+    if (nan_check(W)) W = 1.0e6;
+
+    cout << "W: " << W << '\n';
+
+    //if (nan_check(W)) {
+    //    cout << "W is nan! vx, vy: " << vx << ',' << vy << '\n';
+    //    cout << "D, Sx, Sy, tau: " << D << ',' << Sx << ',' << Sy << ',' << tau << '\n';
+    //}
     float rho = D / W;
     float eps = (tau - D * W + p * (1.0 - W*W)) / (D * W);
 
@@ -658,7 +805,7 @@ float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float
 }
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float gamma, float * gamma_up) {
-    const float TOL = 1.e-6;
+    const float TOL = 1.e-5;
     // only done on fine grid
     for (int i = 0; i < nxf*nyf; i++) {
         float D = q_cons[i*4];
@@ -670,17 +817,32 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
         float pmax = (gamma - 1.0) * tau;
 
         if (pmin < 0.0) {
-            pmin = 0.0;
+            pmin = 1.0e-9;
         }
-        if (pmax < 0.0 || pmax < pmin) {
+        if (pmax < 0.0 || pmax < pmin || pmax > 1.0) {
             pmax = 1.0;
         }
+
         // check sign change
         if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up)*f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
-            pmin = -1.0e6;
+            pmin = 1.0e-9;
+            pmax = 1.0;
         }
 
-        float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, tau, gamma, gamma_up);
+        // nan check inputs
+        if (nan_check(pmin)) cout << "pmin is nan!\n";
+        if (nan_check(pmax)) cout << "pmax is nan!\n";
+        if (nan_check(D)) cout << "D is nan!\n";
+        if (nan_check(Sx)) cout << "Sx is nan!\n";
+        if (nan_check(Sy)) cout << "Sy is nan!\n";
+        if (nan_check(tau)) cout << "tau is nan!\n";
+
+        float p;
+        try {
+            p = zbrent2((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, tau, gamma, gamma_up);
+        } catch (char const*){
+            p = Sx*Sx + Sy*Sy - tau - D;
+        }
 
         float vx = Sx / (tau + p);
         float vy = Sy / (tau + p);
@@ -835,8 +997,9 @@ void Sea::run() {
 
     for (int t = 0; t < nt; t++) {
         // prolong to find grid
+        cout << "Prolonging\n";
         prolong_grid(U_coarse, U_fine);
-
+        cout << "Evolving\n";
         // evolve fine grid through two subcycles
         for (int i = 0; i < r; i++) {
             rk3(U_fine, nxf, nyf, 4, F_f, (flux_func_ptr)compressible_fluxes, dx/r, dy/r, dt/r);
@@ -896,6 +1059,45 @@ void Sea::output_hdf5(char * filename) {
 void Sea::output() {
     // open file
     output_hdf5(outfile);
+}
+
+int main(int argc, char *argv[]) {
+
+    char input_filename[200];
+
+    if (argc == 1) {
+        // no input arguments - default input file.
+        string fname = "mesh_input.txt";
+        strcpy(input_filename, fname.c_str());
+    } else {
+        strcpy(input_filename, argv[1]);
+    }
+
+    Sea sea(input_filename);
+
+    float * D0 = new float[sea.nx*sea.ny];
+    float * Sx0 = new float[sea.nx*sea.ny];
+    float * Sy0 = new float[sea.nx*sea.ny];
+
+    // set initial data
+    for (int x = 0; x < sea.nx; x++) {
+        for (int y = 0; y < sea.ny; y++) {
+            D0[y * sea.nx + x] = 1.0 + 0.4 * exp(-(pow(sea.xs[x]-5.0, 2)) * 2.0);
+
+            Sx0[y * sea.nx + x] = 0.0;
+            Sy0[y * sea.nx + x] = 0.0;
+        }
+    }
+
+    sea.initial_data(D0, Sx0, Sy0);
+
+    // clean up arrays
+    delete[] D0;
+    delete[] Sx0;
+    delete[] Sy0;
+
+    sea.run();
+
 }
 
 #endif

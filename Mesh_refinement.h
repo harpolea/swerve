@@ -7,6 +7,8 @@ typedef float (* flux_func_ptr)(float * q, float * f, bool x_dir, int nx, int ny
 
 float zbrent(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
 
+float zbrent2(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
+
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
 float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
@@ -29,7 +31,7 @@ public:
 
     Sea(const Sea &); // copy constructor
 
-    void initial_data(float * D0, float * Sx0, float * Sy0, float * zeta0, float * _Q, float * _beta);
+    void initial_data(float * D0, float * Sx0, float * Sy0);
 
     void bcs(float * grid, int n_x, int n_y, int vec_dim);
 
@@ -87,7 +89,7 @@ private:
     float gamma;
 
     float alpha;
-    float *beta;
+    float beta[2];
     float gamma_down[2*2];
     float gamma_up[2*2];
 

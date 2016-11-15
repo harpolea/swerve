@@ -66,8 +66,8 @@ SeaCuda::SeaCuda(int n_layers, int _nx, int _ny, int _nt, int _ng,
     // find inverse of gamma
     float det = gamma[0] * gamma[1*2+1] - gamma[0*2+1] * gamma[1*2+0];
     gamma_up[0] = gamma[1*2+1] / det;
-    gamma[0*2+1] = -gamma[0*2+1]/det;
-    gamma[1*2+0] = -gamma[1*2+0]/det;
+    gamma_up[0*2+1] = -gamma[0*2+1]/det;
+    gamma_up[1*2+0] = -gamma[1*2+0]/det;
     gamma_up[1*2+1] = gamma[0*2+0]/det;
 
     // D, Sx, Sy, zeta
