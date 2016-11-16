@@ -48,7 +48,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
     float fc=0.0, fs, s;
 
     if (fa * fb >= 0.0) {
-        cout << "Root must be bracketed in zbrent.\n";
+        //cout << "Root must be bracketed in zbrent.\n";
         throw("Root must be bracketed in zbrent.");
     }
 
@@ -143,7 +143,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
 
 
     }
-    cout << "Maximum number of iterations exceeded in zbrent.\n";
+    //cout << "Maximum number of iterations exceeded in zbrent.\n";
     throw("Maximum number of iterations exceeded in zbrent.");
 }
 
@@ -719,13 +719,13 @@ void Sea::restrict_grid(float * q_c, float * q_f) {
         qf_sw[i*3+2] = phi * W * W * v;
     }
 
-    for (int j = 1; j < int(nyf/r)-1; j++) {
-        for (int i = 1; i < int(nxf/r)-1; i++) {
+    for (int j = 1; j < matching_indices[3] - matching_indices[2]; j++) {
+        for (int i = 1; i < matching_indices[1] - matching_indices[0]; i++) {
             for (int n = 0; n < 3; n++) {
-                q_c[((j+matching_indices[2]) * nx + i+matching_indices[0]) * 3+n] = 0.25 * (qf_sw[(j*2 * nx + i*2) * 3 + n] +
-                               qf_sw[(j*2 * nx + i*2+1) * 3 + n] +
-                               qf_sw[((j*2+1) * nx + i*2) * 3 + n] +
-                               qf_sw[((j*2+1) * nx + i*2+1) * 3 + n]);
+                q_c[((j+matching_indices[2]) * nx + i+matching_indices[0]) * 3+n] = 0.25 * (qf_sw[(j*2 * nxf + i*2) * 3 + n] +
+                               qf_sw[(j*2 * nxf + i*2+1) * 3 + n] +
+                               qf_sw[((j*2+1) * nxf + i*2) * 3 + n] +
+                               qf_sw[((j*2+1) * nxf + i*2+1) * 3 + n]);
             }
         }
     }
@@ -990,6 +990,8 @@ void Sea::rk3(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_ptr
     for (int i = 0; i < grid_size; i++) {
         q[i] = (q[i] + 2.0 * q_temp[i] + 2.0 * _dt * F[i]) / 3.0;
     }
+
+    delete[] q_temp;
 
 }
 
