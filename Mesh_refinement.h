@@ -7,8 +7,6 @@ typedef float (* flux_func_ptr)(float * q, float * f, bool x_dir, int nx, int ny
 
 float zbrent(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
 
-float zbrent2(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
-
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
 float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);

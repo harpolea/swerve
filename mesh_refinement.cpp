@@ -39,94 +39,7 @@ float zbrent(fptr func, const float x1, const float x2, const float tol, float D
     Using Brent's method, return the root of a function or functor func known to lie between x1 and x2. The root will be regined until its accuracy is tol.
     */
 
-    const int ITMAX = 100;
-    const float EPS = numeric_limits<float>::epsilon();
-
-    float a = x1, b = x2, c = x2, d, e, fa = func(a, D, Sx, Sy, tau, gamma, gamma_up), fb = func(b, D, Sx, Sy, tau, gamma, gamma_up), fc, p, q, r, s, tol1, xm;
-
-    if ((fa > 0.0 && fb > 0.0) || (fa < 0.0 && fb < 0.0)) {
-        cout << "Root must be bracketed in zbrent.\n";
-        throw("Root must be bracketed in zbrent.");
-    }
-
-    fc = fb;
-
-    for (int i = 0; i < ITMAX; i++) {
-        if ((fb > 0.0 && fc > 0.0) || (fb < 0.0 && fc < 0.0)) {
-            c = a;
-            fc = fa;
-            e = d = b - a;
-        }
-
-        if (abs(fc) < abs(fb)) {
-            a = b;
-            b = c;
-            c = a;
-            fa = fb;
-            fb = fc;
-            fc = fa;
-        }
-
-        tol1 = 2.0 * EPS * abs(b) + 0.5 * tol;
-        xm = 0.5 * (c - b);
-
-        if (abs(xm) <= tol1 || fb == 0.0) {
-            return b;
-        }
-
-        if (abs(e) >= tol1 && abs(fa) > abs(fb)) {
-            s = fb / fa;
-            if (a == c) {
-                p = 2.0 * xm * s;
-                q = 1.0 - s;
-            } else {
-                q = fa / fc;
-                r = fb / fc;
-                p = s * (2.0 * xm * q * (q - r) - (b - a) * (r - 1.0));
-                q = (q - 1.0) * (r - 1.0) * (s - 1.0);
-            }
-
-            if (p > 0.0) {
-                q = -q;
-            }
-            p = abs(p);
-
-            float min1 = 3.0 * xm * q - abs(tol1 * q);
-            float min2 = abs(e * q);
-
-            if (2.0 * p < (min1 < min2 ? min1 : min2)) {
-                e = d;
-                d = p / q;
-            } else {
-                d = xm;
-                e = d;
-            }
-        } else {
-            d = xm;
-            e = d;
-        }
-
-        a = b;
-        fa = fb;
-
-        if (abs(d) > tol1) {
-            b += d;
-        } else {
-            b += copysign(tol1, xm);
-            fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
-        }
-    }
-    cout << "Maximum number of iterations exceeded in zbrent.\n";
-    throw("Maximum number of iterations exceeded in zbrent.");
-}
-
-
-float zbrent2(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
-    /*
-    Using Brent's method, return the root of a function or functor func known to lie between x1 and x2. The root will be regined until its accuracy is tol.
-    */
-
-    const int ITMAX = 100;
+    const int ITMAX = 300;
 
     float a = x1, b = x2;
     float c, d=0.0, e=0.0;
@@ -144,9 +57,14 @@ float zbrent2(fptr func, const float x1, const float x2, const float tol, float 
         d = a;
         a = b;
         b = d;
+
+        d = fa;
+        fa = fb;
+        fb = d;
     }
 
     c = a;
+    fc = fa;
 
     bool mflag = true;
 
@@ -171,7 +89,7 @@ float zbrent2(fptr func, const float x1, const float x2, const float tol, float 
             con2 = true;
         }
         bool con3 = false;
-        if (!(mflag) && abs(s-b) >= 0.5 * (c-d)) {
+        if (!(mflag) && abs(s-b) >= 0.5 * abs(c-d)) {
             con3 = true;
         }
         bool con4 = false;
@@ -194,17 +112,24 @@ float zbrent2(fptr func, const float x1, const float x2, const float tol, float 
 
         d = c;
         c = b;
+        fc = fb;
 
         if (fa * fs < 0.0) {
             b = s;
+            fb = fs;
         } else {
             a = s;
+            fa = fs;
         }
 
         if (abs(fa) < abs(fb)) {
             e = a;
             a = b;
             b = e;
+
+            e = fa;
+            fa = fb;
+            fb = e;
         }
 
         // test for convegence
@@ -212,9 +137,9 @@ float zbrent2(fptr func, const float x1, const float x2, const float tol, float 
             return b;
         }
 
-        if (nan_check(abs(b-a))) {
-            cout << "abs(b-a): " <<  abs(b-a) << '\n';
-        }
+        //if (nan_check(abs(b-a))) {
+            //cout << "abs(b-a): " <<  abs(b-a) << '\n';
+        //}
 
 
     }
@@ -271,7 +196,7 @@ Sea::Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
 
     // D, Sx, Sy, zeta
     U_coarse = new float[nx*ny*3];
-    U_fine = new float[nxf * nyf * 4];
+    U_fine = new float[nxf*nyf*4];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
@@ -423,6 +348,7 @@ Sea::Sea(char * filename)
     matching_indices[2] = int(ceil(ny*0.5*(1-df)));
     matching_indices[3] = int(ceil(ny*0.5*(1+df)));
 
+    cout << "matching_indices vs nxf: " << matching_indices[1] - matching_indices[0] << ',' << nxf << '\n';
     cout << "Made a Sea.\n";
 
 }
@@ -455,7 +381,7 @@ Sea::Sea(const Sea &seaToCopy)
     U_coarse = new float[int(nx*ny*3)];
     U_fine = new float[nxf*nyf*4];
 
-    for (int i = 0; i < nx*ny*4;i++) {
+    for (int i = 0; i < nx*ny*3;i++) {
         U_coarse[i] = seaToCopy.U_coarse[i];
     }
 
@@ -631,7 +557,25 @@ void compressible_fluxes(float * q, float * f, bool x_dir, int nxf, int nyf, flo
     // this is worked out on the fine grid
     float * q_prim = new float[nxf*nyf*4];
 
+    /*cout << "conserved variables: \n";
+    for (int j = 0; j < nyf; j++) {
+        for (int i = 0; i < nxf; i++) {
+            cout << q[(j*nxf + i)*4] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';*/
+
     cons_to_prim_comp(q, q_prim, nxf, nyf, gamma, gamma_up);
+
+    /*cout << "primitive variables: \n";
+    for (int j = 0; j < nyf; j++) {
+        for (int i = 0; i < nxf; i++) {
+            cout << q_prim[(j*nxf + i)*4] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';*/
 
     for (int i = 0; i < nxf * nyf; i++) {
         float p = p_from_rho_eps(q_prim[i*4], q_prim[i*4+3], gamma);
@@ -654,6 +598,15 @@ void compressible_fluxes(float * q, float * f, bool x_dir, int nxf, int nyf, flo
         }
     }
 
+    /*cout << "f: \n";
+    for (int j = 0; j < nyf; j++) {
+        for (int i = 0; i < nxf; i++) {
+            cout << f[(j*nxf + i)*4] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';*/
+
     delete[] q_prim;
 }
 
@@ -673,18 +626,28 @@ void Sea::prolong_grid(float * q_c, float * q_f) {
         qc_comp[i*4] = rho * W;
         qc_comp[i*4+1] = rhoh * W * q_c[i*3+1] / q_c[i*3];
         qc_comp[i*4+2] = rhoh * W * q_c[i*3+2] / q_c[i*3];
-        qc_comp[i+4+3] = rhoh * W*W - p[i];
+        qc_comp[i*4+3] = rhoh * W*W - p[i];
 
     }
 
+    /*cout << "compressible coarse grid: \n";
+    for (int j = 0; j < ny; j++) {
+        for(int i = 0; i < nx; i++) {
+            //cout << p[j*nx + i] <<' ';
+            cout << qc_comp[(j*nx + i)*4] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';*/
+
     // do some slope limiting
-    for (int j = matching_indices[2]; j < matching_indices[3]; j++) {
-        for (int i = matching_indices[0]; j < matching_indices[1]; j++) {
+    for (int j = matching_indices[2]; j < matching_indices[3]+1; j++) {
+        for (int i = matching_indices[0]; i < matching_indices[1]+1; i++) {
             for (int n = 0; n < 4; n++) {
 
                 // x-dir
-                float S_upwind = (qc_comp[(j * nx + i+1) * 4 + n] - qc_comp[(j * nxf + i) * 4 + n]) / dx;
-                float S_downwind = (qc_comp[(j * nx + i) * 4 + n] - qc_comp[(j * nxf + i-1) * 4 + n]) / dx;
+                float S_upwind = (qc_comp[(j * nx + i+1) * 4 + n] - qc_comp[(j * nx + i) * 4 + n]) / dx;
+                float S_downwind = (qc_comp[(j * nx + i) * 4 + n] - qc_comp[(j * nx + i-1) * 4 + n]) / dx;
 
                 Sx[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
 
@@ -696,8 +659,8 @@ void Sea::prolong_grid(float * q_c, float * q_f) {
                 Sx[(j * nx + i) * 4 + n] *= phi(r);
 
                 // y-dir
-                S_upwind = (qc_comp[((j+1) * nx + i) * 4 + n] - qc_comp[(j * nxf + i) * 4 + n]) / dy;
-                S_downwind = (qc_comp[(j * nx + i) * 4 + n] - qc_comp[((j-1) * nxf + i) * 4 + n]) / dy;
+                S_upwind = (qc_comp[((j+1) * nx + i) * 4 + n] - qc_comp[(j * nx + i) * 4 + n]) / dy;
+                S_downwind = (qc_comp[(j * nx + i) * 4 + n] - qc_comp[((j-1) * nx + i) * 4 + n]) / dy;
 
                 Sy[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
 
@@ -712,18 +675,18 @@ void Sea::prolong_grid(float * q_c, float * q_f) {
         }
     }
 
-    for (int j = 0; j < nyf; j+=2) {
-        for (int i = 0; j < nxf; j+=2) {
+    for (int j = 0; j < matching_indices[3] - matching_indices[2]+1; j++) {
+        for (int i = 0; i < matching_indices[1] - matching_indices[0]+1; i++) {
             for (int n = 0; n < 4; n++) {
                 int coarse_index = ((j + matching_indices[2]) * nx + i + matching_indices[0]) * 4 + n;
 
-                q_f[(j * nxf + i) * 4 + n] = qc_comp[coarse_index] - 0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
+                q_f[(2*j * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] - 0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
 
-                q_f[(j * nxf + i+1) * 4 + n] = qc_comp[coarse_index] + 0.25 * (dx * Sx[coarse_index] - dy * Sy[coarse_index]);
+                q_f[(2*j * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] + 0.25 * (dx * Sx[coarse_index] - dy * Sy[coarse_index]);
 
-                q_f[((j+1) * nxf + i) * 4 + n] = qc_comp[coarse_index] + 0.25 * (-dx * Sx[coarse_index] + dy * Sy[coarse_index]);
+                q_f[((2*j+1) * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] + 0.25 * (-dx * Sx[coarse_index] + dy * Sy[coarse_index]);
 
-                q_f[((j+1) * nxf + i+1) * 4 + n] = qc_comp[coarse_index] + 0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
+                q_f[((2*j+1) * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] + 0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
             }
         }
     }
@@ -759,10 +722,10 @@ void Sea::restrict_grid(float * q_c, float * q_f) {
     for (int j = 1; j < int(nyf/r)-1; j++) {
         for (int i = 1; i < int(nxf/r)-1; i++) {
             for (int n = 0; n < 3; n++) {
-                q_c[((j+matching_indices[2]) * nx + i+matching_indices[0]) * 4+n] = 0.25 * (qf_sw[(j*2 * nx + i*2) * 4 + n] +
-                               qf_sw[(j*2 * nx + i*2+1) * 4 + n] +
-                               qf_sw[((j*2+1) * nx + i*2) * 4 + n] +
-                               qf_sw[((j*2+1) * nx + i*2+1) * 4 + n]);
+                q_c[((j+matching_indices[2]) * nx + i+matching_indices[0]) * 3+n] = 0.25 * (qf_sw[(j*2 * nx + i*2) * 3 + n] +
+                               qf_sw[(j*2 * nx + i*2+1) * 3 + n] +
+                               qf_sw[((j*2+1) * nx + i*2) * 3 + n] +
+                               qf_sw[((j*2+1) * nx + i*2+1) * 3 + n]);
             }
         }
     }
@@ -786,38 +749,53 @@ void Sea::p_from_swe(float * q, float * p) {
 
 float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
 
-    float vx = Sx / (tau + p);
-    float vy = Sy / (tau + p);
-    float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
+    //float vx = Sx / (tau + p);
+    //float vy = Sy / (tau + p);
+    //float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
 
-    if (nan_check(W)) W = 1.0e6;
+    //if (nan_check(W)) W = 1.0e6;
 
-    cout << "W: " << W << '\n';
+    //cout << "W: " << W << '\n';
 
     //if (nan_check(W)) {
     //    cout << "W is nan! vx, vy: " << vx << ',' << vy << '\n';
     //    cout << "D, Sx, Sy, tau: " << D << ',' << Sx << ',' << Sy << ',' << tau << '\n';
     //}
-    float rho = D / W;
-    float eps = (tau - D * W + p * (1.0 - W*W)) / (D * W);
+    //float rho = D / W;
+    //float eps = (tau - D * W + p * (1.0 - W*W)) / (D * W);
+
+    float sq = sqrt(pow(tau + p + D, 2) - Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - Sy*Sy*gamma_up[3]);
+
+    //if (nan_check(sq)) cout << "sq is nan :(\n";
+
+    float rho = D * sq / (tau + p + D);
+    float eps = (sq - p * (tau + p + D) / sq - D) / D;
 
     return (gamma - 1.0) * rho * eps - p;
 }
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float gamma, float * gamma_up) {
     const float TOL = 1.e-5;
-    // only done on fine grid
     for (int i = 0; i < nxf*nyf; i++) {
         float D = q_cons[i*4];
         float Sx = q_cons[i*4+1];
         float Sy = q_cons[i*4+2];
         float tau = q_cons[i*4+3];
 
-        float pmin = Sx*Sx + Sy*Sy - tau - D;
-        float pmax = (gamma - 1.0) * tau;
+        // NOTE: This is a hack?
+        if (tau < 0.0) tau = 0.0;//abs(tau);
+        if (D < 0.0) D = 0.0;//abs(tau);
 
-        if (pmin < 0.0) {
-            pmin = 1.0e-9;
+        // S^2
+        float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] + Sy*Sy*gamma_up[3];
+
+        float pmin = (1.0 - Ssq) * (1.0 - Ssq) * tau * (gamma - 1.0);//tau + D - (Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] + Sy*Sy*gamma_up[3]);
+        float pmax = (gamma - 1.0) * (tau + D) / (2.0 - gamma);//(gamma - 1.0) * tau;
+
+        //cout << pmin << ',' << pmax <<'\n';
+
+        if (pmin < 0.0 || pmin > 1.0) {
+            pmin = 0.0;//1.0e-9;
         }
         if (pmax < 0.0 || pmax < pmin || pmax > 1.0) {
             pmax = 1.0;
@@ -825,33 +803,40 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
 
         // check sign change
         if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up)*f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
-            pmin = 1.0e-9;
-            pmax = 1.0;
+            pmin *= 0.01;
+            pmax *= 100.;
         }
 
         // nan check inputs
-        if (nan_check(pmin)) cout << "pmin is nan!\n";
-        if (nan_check(pmax)) cout << "pmax is nan!\n";
-        if (nan_check(D)) cout << "D is nan!\n";
-        if (nan_check(Sx)) cout << "Sx is nan!\n";
-        if (nan_check(Sy)) cout << "Sy is nan!\n";
-        if (nan_check(tau)) cout << "tau is nan!\n";
+        //if (nan_check(pmin)) cout << "pmin is nan!\n";
+        //if (nan_check(pmax)) cout << "pmax is nan!\n";
+        //if (nan_check(D)) cout << "D is nan!\n";
+        //if (nan_check(Sx)) cout << "Sx is nan!\n";
+        //if (nan_check(Sy)) cout << "Sy is nan!\n";
+        //if (nan_check(tau)) cout << "tau is nan!\n";
 
+        //if (tau < 0.0) cout << "tau < 0.0\n";
+        //if (D < 0.0) cout << "D < 0.0\n";
         float p;
         try {
-            p = zbrent2((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, tau, gamma, gamma_up);
+            p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, tau, gamma, gamma_up);
         } catch (char const*){
-            p = Sx*Sx + Sy*Sy - tau - D;
+            p = abs((1.0 - Ssq) * (1.0 - Ssq) * tau * (gamma - 1.0));
         }
 
-        float vx = Sx / (tau + p);
-        float vy = Sy / (tau + p);
-        float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
+        //float vx = Sx / (tau + p);
+        //float vy = Sy / (tau + p);
+        //float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
 
-        q_prim[i*4] = D / W;
-        q_prim[i*4+1] = vx;
-        q_prim[i*4+2] = vy;
-        q_prim[i*4+3] = (tau - D * W + p * (1.0 - W*W)) / (D * W);
+        float sq = sqrt(pow(tau + p + D, 2) - Ssq);
+        float eps = (sq - p * (tau + p + D)/sq - D) / D;
+        float h = 1.0 + gamma * eps;
+        float W = sqrt(1.0 + Ssq / (D*D*h*h));
+
+        q_prim[i*4] = D * sq / (tau + p + D);//D / W;
+        q_prim[i*4+1] = Sx / (W*W * h * q_prim[i*4]);
+        q_prim[i*4+2] = Sy / (W*W * h * q_prim[i*4]);
+        q_prim[i*4+3] = eps;//(tau - D * W + p * (1.0 - W*W)) / (D * W);
     }
 }
 
@@ -867,8 +852,8 @@ void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_
     float * fy_p = new float[grid_size];
     float * fy_m = new float[grid_size];
 
-    for (int j = 1; j < n_y-2; j++) {
-        for (int i = 1; i < n_x-2; i++) {
+    for (int j = 1; j < n_y-1; j++) {
+        for (int i = 1; i < n_x-1; i++) {
             for (int n = 0; n < vec_dim; n++) {
                 // x-dir
                 float S_upwind = (q[(j * n_x + i+1) * vec_dim + n] -
@@ -903,18 +888,27 @@ void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_
         }
     }
 
+    bcs(qx_p, n_x, n_y, vec_dim);
+    bcs(qx_m, n_x, n_y, vec_dim);
+    bcs(qy_p, n_x, n_y, vec_dim);
+    bcs(qy_m, n_x, n_y, vec_dim);
+
+    //cout << "calculating fluxes at cell boundaries: \n\n";
+
     // calculate fluxes at cell boundaries
     flux_func(qx_p, fx_p, true, n_x, n_y, gamma_up, alpha, beta, gamma);
     flux_func(qx_m, fx_m, true, n_x, n_y, gamma_up, alpha, beta, gamma);
     flux_func(qy_p, fy_p, false, n_x, n_y, gamma_up, alpha, beta, gamma);
     flux_func(qy_m, fy_m, false, n_x, n_y, gamma_up, alpha, beta, gamma);
 
-    float a = 0.2 * min(d_x, d_y) / dt;
+    //cout << "Lax-Friedrichs flux: \n\n";
+
+    float a = 0.1 * min(d_x, d_y) / dt;
 
     // Lax-Friedrichs flux
 
-    for (int j = 2; j < n_y-4; j++) {
-        for (int i = 2; i < n_x-4; i++) {
+    for (int j = 2; j < n_y-2; j++) {
+        for (int i = 2; i < n_x-2; i++) {
             for (int n = 0; n < vec_dim; n++) {
                 float Fx_m = 0.5 * (
                     fx_p[(j * n_x + i-1) * vec_dim + n] +
@@ -948,6 +942,15 @@ void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_
 
     bcs(F, n_x, n_y, vec_dim);
 
+    /*cout << "F: \n";
+    for (int j = 0; j < n_y; j++) {
+        for (int i = 0; i < n_x; i++) {
+            cout << F[(j*n_x + i)*4+3] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';*/
+
     delete[] qx_p;
     delete[] qx_m;
     delete[] qy_p;
@@ -964,17 +967,23 @@ void Sea::rk3(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_ptr
 
     float * q_temp = new float[grid_size];
 
+    //cout << "First rk3 step:\n";
+
     evolve(q, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
 
     for (int i = 0; i < grid_size; i++) {
         q_temp[i] = q[i] + _dt * F[i];
     }
 
+    //cout << "Second rk3 step: \n";
+
     evolve(q_temp, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
 
     for (int i = 0; i < grid_size; i++) {
         q_temp[i] = 0.25 * (3.0 * q[i] + q_temp[i] + _dt * F[i]);
     }
+
+    //cout << "Third rk3 step: \n";
 
     evolve(q_temp, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
 
@@ -995,6 +1004,26 @@ void Sea::run() {
     float * F_f = new float[nxf*nyf*4];
     float * F_c = new float[nx*ny*3];
 
+    prolong_grid(U_coarse, U_fine);
+
+    cout << "fine grid: \n";
+    for (int j = 0; j < nyf; j++) {
+        for (int i = 0; i < nxf; i++) {
+            cout << U_fine[(j*nxf + i)*4] << ' ';
+        }
+        cout << '\n';
+    }
+    cout << '\n';
+    cout << "coarse grid: \n";
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            cout << U_coarse[(j*nx+i)*3] << ' ';
+        }
+        cout << '\n';
+    }
+
+
+
     for (int t = 0; t < nt; t++) {
         // prolong to find grid
         cout << "Prolonging\n";
@@ -1005,8 +1034,27 @@ void Sea::run() {
             rk3(U_fine, nxf, nyf, 4, F_f, (flux_func_ptr)compressible_fluxes, dx/r, dy/r, dt/r);
         }
 
+        /*cout << "After fine evolution: \n";
+        cout << "fine grid: \n";
+        for (int j = 0; j < nyf; j++) {
+            for (int i = 0; i < nxf; i++) {
+                cout << U_fine[(j*nxf + i)*4] << ' ';
+            }
+            cout << '\n';
+        }
+        cout << '\n';*/
+
         // restrict to coarse grid
         restrict_grid(U_coarse, U_fine);
+
+        /*cout << "After restricting to coarse grid: \n";
+        cout << "coarse grid: \n";
+        for (int j = 0; j < ny; j++) {
+            for (int i = 0; i < nx; i++) {
+                cout << U_coarse[(j*nx+i)*3] << ' ';
+            }
+            cout << '\n';
+        }*/
 
         // evolve coarse grid
         rk3(U_coarse, nx, ny, 3, F_c, (flux_func_ptr)shallow_water_fluxes, dx, dy, dt);
@@ -1015,6 +1063,15 @@ void Sea::run() {
 
     delete[] F_f;
     delete[] F_c;
+
+    cout << "After evolving coarse grid: \n";
+    cout << "coarse grid: \n";
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            cout << U_coarse[(j*nx+i)*3] << ' ';
+        }
+        cout << '\n';
+    }
 
 
 }
@@ -1082,7 +1139,7 @@ int main(int argc, char *argv[]) {
     // set initial data
     for (int x = 0; x < sea.nx; x++) {
         for (int y = 0; y < sea.ny; y++) {
-            D0[y * sea.nx + x] = 1.0 + 0.4 * exp(-(pow(sea.xs[x]-5.0, 2)) * 2.0);
+            D0[y * sea.nx + x] = 1.0 + 0.4 * exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
 
             Sx0[y * sea.nx + x] = 0.0;
             Sy0[y * sea.nx + x] = 0.0;
