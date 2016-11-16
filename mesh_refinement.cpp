@@ -1001,6 +1001,41 @@ void Sea::run() {
     run code
     */
 
+    // set up output file stuff
+    hid_t outFile, dset, mem_space, file_space;
+
+    // create file
+    outFile = H5Fcreate(outfile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+
+    // create dataspace
+    int ndims = 4;
+    hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), 3};
+    file_space = H5Screate_simple(ndims, dims, NULL);
+
+    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+    H5Pset_layout(plist, H5D_CHUNKED);
+    hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), 3};
+    H5Pset_chunk(plist, ndims, chunk_dims);
+
+    // create dataset
+    dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+
+    H5Pclose(plist);
+
+    // make a memory dataspace
+    mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
+
+    // select a hyperslab
+    file_space = H5Dget_space(dset);
+    hsize_t start[] = {0, 0, 0, 0};
+    hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), 3};
+    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+    // write to dataset
+    printf("Printing t = %i\n", 0);
+    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, U_coarse);
+    // close file dataspace
+    H5Sclose(file_space);
+
     cout << "Beginning evolution.\n";
 
     float * F_f = new float[nxf*nyf*4];
@@ -1008,72 +1043,45 @@ void Sea::run() {
 
     prolong_grid(U_coarse, U_fine);
 
-    cout << "fine grid: \n";
-    for (int j = 0; j < nyf; j++) {
-        for (int i = 0; i < nxf; i++) {
-            cout << U_fine[(j*nxf + i)*4] << ' ';
-        }
-        cout << '\n';
-    }
-    cout << '\n';
-    cout << "coarse grid: \n";
-    for (int j = 0; j < ny; j++) {
-        for (int i = 0; i < nx; i++) {
-            cout << U_coarse[(j*nx+i)*3] << ' ';
-        }
-        cout << '\n';
-    }
-
-
-
     for (int t = 0; t < nt; t++) {
+
+        if ((t+1)%dprint == 0) {
+            cout << "t = " << t+1 << '\n';
+        }
         // prolong to find grid
-        cout << "Prolonging\n";
         prolong_grid(U_coarse, U_fine);
-        cout << "Evolving\n";
+
         // evolve fine grid through two subcycles
         for (int i = 0; i < r; i++) {
             rk3(U_fine, nxf, nyf, 4, F_f, (flux_func_ptr)compressible_fluxes, dx/r, dy/r, dt/r);
         }
 
-        /*cout << "After fine evolution: \n";
-        cout << "fine grid: \n";
-        for (int j = 0; j < nyf; j++) {
-            for (int i = 0; i < nxf; i++) {
-                cout << U_fine[(j*nxf + i)*4] << ' ';
-            }
-            cout << '\n';
-        }
-        cout << '\n';*/
-
         // restrict to coarse grid
         restrict_grid(U_coarse, U_fine);
 
-        /*cout << "After restricting to coarse grid: \n";
-        cout << "coarse grid: \n";
-        for (int j = 0; j < ny; j++) {
-            for (int i = 0; i < nx; i++) {
-                cout << U_coarse[(j*nx+i)*3] << ' ';
-            }
-            cout << '\n';
-        }*/
-
         // evolve coarse grid
         rk3(U_coarse, nx, ny, 3, F_c, (flux_func_ptr)shallow_water_fluxes, dx, dy, dt);
+
+        // output to file
+        if ((t+1) % dprint == 0) {
+            // select a hyperslab
+            file_space = H5Dget_space(dset);
+            hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0};
+            hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), 3};
+            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
+            // write to dataset
+            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, U_coarse);
+            // close file dataspae
+            H5Sclose(file_space);
+        }
 
     }
 
     delete[] F_f;
     delete[] F_c;
 
-    cout << "After evolving coarse grid: \n";
-    cout << "coarse grid: \n";
-    for (int j = 0; j < ny; j++) {
-        for (int i = 0; i < nx; i++) {
-            cout << U_coarse[(j*nx+i)*3] << ' ';
-        }
-        cout << '\n';
-    }
+    H5Sclose(mem_space);
+    H5Fclose(outFile);
 
 
 }
