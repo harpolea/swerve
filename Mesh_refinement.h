@@ -1,20 +1,34 @@
 #ifndef MESH_REFINEMENT_H
 #define MESH_REFINEMENT_H
 
-typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
+typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
+                       float gamma, float * gamma_up);
 
-typedef float (* flux_func_ptr)(float * q, float * f, bool x_dir, int nx, int ny, float * gamma_up, float alpha, float * beta, float gamma);
+typedef float (* flux_func_ptr)(float * q, float * f, bool x_dir,
+                                int nx, int ny, float * gamma_up,
+                                float alpha, float * beta, float gamma);
 
-float zbrent(fptr func, const float x1, const float x2, const float tol, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
+float zbrent(fptr func, const float x1, const float x2, const float tol,
+             float D, float Sx, float Sy, float tau, float gamma,
+             float * gamma_up);
 
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
-float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up);
-void shallow_water_fluxes(float * q, float * f, bool x_dir, int nx, int ny, float * gamma_up, float alpha, float * beta, float gamma);
-void compressible_fluxes(float * q, float * f, bool x_dir, int nx, int ny, float * gamma_up, float alpha, float * beta, float gamma);
+float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma,
+             float * gamma_up);
+
+void shallow_water_fluxes(float * q, float * f, bool x_dir, int nx, int ny,
+                          float * gamma_up, float alpha, float * beta,
+                          float gamma);
+
+void compressible_fluxes(float * q, float * f, bool x_dir, int nx, int ny,
+                         float * gamma_up, float alpha, float * beta,
+                         float gamma);
+                         
 float p_from_rho_eps(float rho, float eps, float gamma);
 
-void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny, float gamma, float * gamma_up);
+void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
+                       float gamma, float * gamma_up);
 
 class Sea {
 public:
@@ -37,19 +51,17 @@ public:
 
     void run();
 
-    void output(char * filename);
-    void output_hdf5(char * filename);
-    void output();
-
     float phi(float r); // MC limiter
 
     void prolong_grid(float * q_c, float * q_f);
     void restrict_grid(float * q_c, float * q_f);
     void p_from_swe(float * q, float * p);
 
-    void evolve(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_ptr flux_func, float d_x, float d_y);
+    void evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
+                flux_func_ptr flux_func, float d_x, float d_y);
 
-    void rk3(float * q, int n_x, int n_y, int vec_dim, float * F, flux_func_ptr flux_func, float d_x, float d_y, float _dt);
+    void rk3(float * q, int n_x, int n_y, int vec_dim, float * F,
+             flux_func_ptr flux_func, float d_x, float d_y, float _dt);
 
     float rhoh_from_p(float p);
     float p_from_rhoh(float rhoh);
