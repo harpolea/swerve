@@ -626,7 +626,10 @@ void Sea::prolong_grid(float * q_c, float * q_f) {
         qc_comp[i*4] = rho * W;
         qc_comp[i*4+1] = rhoh * W * q_c[i*3+1] / q_c[i*3];
         qc_comp[i*4+2] = rhoh * W * q_c[i*3+2] / q_c[i*3];
-        qc_comp[i*4+3] = rhoh * W*W - p[i];
+        qc_comp[i*4+3] = rhoh*W*W - p[i] - qc_comp[i*4];
+
+        // NOTE: hack?
+        if (qc_comp[i*4+3] < 0.0) qc_comp[i*4+3] = 0.0;
 
     }
 
@@ -742,27 +745,12 @@ void Sea::p_from_swe(float * q, float * p) {
 
         float ph = q[i*3] / W;
 
-        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) / (gamma - 1.0)) / gamma - 1.0);
+        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) / (gamma - 1.0)) - 1.0) / gamma;
     }
 
 }
 
 float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma, float * gamma_up) {
-
-    //float vx = Sx / (tau + p);
-    //float vy = Sy / (tau + p);
-    //float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
-
-    //if (nan_check(W)) W = 1.0e6;
-
-    //cout << "W: " << W << '\n';
-
-    //if (nan_check(W)) {
-    //    cout << "W is nan! vx, vy: " << vx << ',' << vy << '\n';
-    //    cout << "D, Sx, Sy, tau: " << D << ',' << Sx << ',' << Sy << ',' << tau << '\n';
-    //}
-    //float rho = D / W;
-    //float eps = (tau - D * W + p * (1.0 - W*W)) / (D * W);
 
     float sq = sqrt(pow(tau + p + D, 2) - Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - Sy*Sy*gamma_up[3]);
 
@@ -783,8 +771,8 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
         float tau = q_cons[i*4+3];
 
         // NOTE: This is a hack?
-        if (tau < 0.0) tau = 0.0;//abs(tau);
-        if (D < 0.0) D = 0.0;//abs(tau);
+        //if (tau < 0.0) tau = abs(tau);
+        //if (D < 0.0) D = abs(D);
 
         // S^2
         float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] + Sy*Sy*gamma_up[3];
@@ -794,17 +782,18 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
 
         //cout << pmin << ',' << pmax <<'\n';
 
-        if (pmin < 0.0 || pmin > 1.0) {
+        if (pmin < 0.0) {
             pmin = 0.0;//1.0e-9;
         }
-        if (pmax < 0.0 || pmax < pmin || pmax > 1.0) {
+        if (pmax < 0.0 || pmax < pmin) {
             pmax = 1.0;
         }
 
         // check sign change
         if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up)*f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
-            pmin *= 0.01;
-            pmax *= 100.;
+            pmin = 0.0;
+            //pmin *= 0.01;
+            //pmax *= 100.;
         }
 
         // nan check inputs
@@ -821,12 +810,8 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
         try {
             p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, tau, gamma, gamma_up);
         } catch (char const*){
-            p = abs((1.0 - Ssq) * (1.0 - Ssq) * tau * (gamma - 1.0));
+            p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0: abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
         }
-
-        //float vx = Sx / (tau + p);
-        //float vy = Sy / (tau + p);
-        //float W = 1.0 / sqrt(1.0 - vx*vx*gamma_up[0] - 2.0 * vx*vy*gamma_up[1] - vy*vy*gamma_up[3]);
 
         float sq = sqrt(pow(tau + p + D, 2) - Ssq);
         float eps = (sq - p * (tau + p + D)/sq - D) / D;
@@ -836,7 +821,7 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, float g
         q_prim[i*4] = D * sq / (tau + p + D);//D / W;
         q_prim[i*4+1] = Sx / (W*W * h * q_prim[i*4]);
         q_prim[i*4+2] = Sy / (W*W * h * q_prim[i*4]);
-        q_prim[i*4+3] = eps;//(tau - D * W + p * (1.0 - W*W)) / (D * W);
+        q_prim[i*4+3] = eps;
     }
 }
 
@@ -1000,6 +985,51 @@ void Sea::run() {
     /*
     run code
     */
+
+
+    /*cout << "Prolong\n";
+    prolong_grid(U_coarse, U_fine);
+
+    cout << "Coarse grid: \n";
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            cout << U_coarse[(j*nx + i)*3] << ' ';
+        }
+        cout << '\n';
+    }
+
+    float * q_prim = new float[nxf*nyf*4];
+
+    cons_to_prim_comp(U_fine, q_prim, nxf, nyf, gamma, gamma_up);
+
+    cout << "\nFine grid: \n";
+    for (int j = 0; j < nyf; j++) {
+        for (int i = 0; i < nxf; i++) {
+            float u = q_prim[(j*nxf + i)*4 + 1];
+            float v = q_prim[(j*nxf + i)*4 + 2];
+            float h = 1.0 + gamma * q_prim[(j*nxf + i)*4 + 3];
+            float p = (gamma - 1.0) * q_prim[(j*nxf + i)*4] * q_prim[(j*nxf + i)*4+3];
+            float W = 1.0 / sqrt(1.0 - u*u*gamma_up[0] - 2.0*u*v*gamma_up[1] - v*v*gamma_up[3]);
+            cout << '(' << U_fine[(j*nxf + i)*4+3] << ',' << q_prim[(j*nxf + i)*4] * h * W * W - p - q_prim[(j*nxf + i)*4] * W << ") ";
+        }
+        cout << '\n';
+    }
+
+
+    cout << "Restrict\n";
+
+    restrict_grid(U_coarse, U_fine);
+
+    cout << "Coarse grid: \n";
+    for (int j = 0; j < ny; j++) {
+        for (int i = 0; i < nx; i++) {
+            cout << U_coarse[(j*nx + i)*3] << ' ';
+        }
+        cout << '\n';
+    }
+
+    delete[] q_prim;*/
+
 
     // set up output file stuff
     hid_t outFile, dset, mem_space, file_space;

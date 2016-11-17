@@ -102,6 +102,88 @@ def quick_plot(input_filename=None, filename=None, start=0):
     output, error = process.communicate()"""
 
 
+def mesh_plot(input_filename=None, filename=None, start=0):
+
+    # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
+
+    # set defaults
+    if input_filename is None:
+        input_filename =  'mesh_input.txt'
+    if filename is None:
+        filename = '../../Documents/Work/swerve/iridis2'
+
+    data_filename = filename + '.h5'
+
+    # read input file
+    input_file = open(input_filename, 'r')
+    inputs = input_file.readlines()
+
+    for line in inputs:
+        name, *dat = line.split()
+
+        if name == 'nx':
+            nx = int(dat[0])
+        elif name == 'ny':
+            ny = int(dat[0])
+        elif name == 'nt':
+            nt = int(dat[0])
+        elif name == 'xmin':
+            xmin = float(dat[0])
+        elif name == 'xmax':
+            xmax = float(dat[0])
+        elif name == 'ymin':
+            ymin = float(dat[0])
+        elif name == 'ymax':
+            ymax = float(dat[0])
+        elif name == 'dprint':
+            dprint = int(dat[0])
+
+
+    dx = (xmax - xmin) / (nx-2)
+    dy = (ymax - ymin) / (ny-2)
+    dt = 0.1 * min(dx, dy)
+    input_file.close()
+
+    # read data
+    f = tb.open_file(data_filename, 'r')
+    table = f.root.SwerveOutput
+    D_2d = table[:,:,:,0]
+    #D_2d[D_2d > 1.e3] = 0.
+        #D_2d = D_2d[::dprint,:,:,:]
+    #print(D_2d[:,:,2:-2,2:-2])
+
+
+    x = np.linspace(0, xmax, num=nx-4, endpoint=False)
+    y = np.linspace(0, ymax, num=ny-4, endpoint=False)
+
+    X, Y = np.meshgrid(x,y)
+
+    fig = plt.figure(figsize=(12,10), facecolor='w', dpi=100)
+    ax = fig.gca(projection='3d')
+
+    location = '/'.join(filename.split('/')[:-1])
+    name = filename.split('/')[-1]
+
+    #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
+
+    for i in range(start, len(D_2d[:,0,0])):
+        #if i % 10 == 0:
+        print('Printing {}'.format(i))
+
+        outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
+        ax.clear()
+        ax.set_xlim(0,10)
+        ax.set_ylim(0,10)
+        ax.set_zlim(0.7,1.9)
+        ax.plot_surface(X,Y,D_2d[i,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
+        plt.savefig(outname)
+
+    # close hdf5 file
+    f.close()
+
+
 if __name__ == '__main__':
     #plotme()
-    quick_plot(filename="../../Documents/Work/swerve/mpi")
+    #quick_plot(filename="../../Documents/Work/swerve/mpi")
+
+    mesh_plot(filename="../../Documents/Work/swerve/mesh")
