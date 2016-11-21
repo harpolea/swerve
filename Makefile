@@ -270,3 +270,15 @@ test: SeaCuda.o
 test: testing/flat
 
 clobber: clean
+
+mesh_cuda.o: mesh_cuda.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -o $@ -c $<
+
+mesh_cuda_kernel.o: mesh_cuda_kernel.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -o $@ -dc $<
+
+mesh_link.o: mesh_cuda_kernel.o
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/$(MPI_PATH)/include -lmpi -o $@ -dlink $<
+
+mesh: mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)

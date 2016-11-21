@@ -1,14 +1,14 @@
-#ifndef _MESH_REFINEMENT_H_
-#define _MESH_REFINEMENT_H_
-
 #include <stdio.h>
 #include <cmath>
 #include <limits>
-#include "Mesh_refinement.h"
+#include "Mesh_cuda.h"
 #include <iostream>
 #include <string.h>
 #include <fstream>
 #include <algorithm>
+#include "mpi.h"
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
 
 #ifndef H5_NO_NAMESPACE
 #ifndef H5_NO_STD
@@ -22,7 +22,7 @@ using namespace std;
 /*
 Compile with
 
-g++ mesh_refinement.cpp -I/usr/include/hdf5/serial -I/usr/include/hdf5 -lhdf5_cpp -lhdf5 -L/usr/lib/x86_64-linux-gnu/hdf5/serial -o mesh
+g++ mesh_cuda.cpp -I/usr/include/hdf5/serial -I/usr/include/hdf5 -lhdf5_cpp -lhdf5 -L/usr/lib/x86_64-linux-gnu/hdf5/serial -o mesh
 
 */
 
@@ -35,117 +35,7 @@ bool nan_check(float a) {
     }
 }
 
-float zbrent(fptr func, const float x1, const float x2, const float tol,
-             float D, float Sx, float Sy, float tau, float gamma,
-             float * gamma_up) {
-    /*
-    Using Brent's method, return the root of a function or functor func known
-    to lie between x1 and x2. The root will be regined until its accuracy is
-    tol.
-    */
 
-    const int ITMAX = 300;
-
-    float a = x1, b = x2;
-    float c, d=0.0, e=0.0;
-    float fa = func(a, D, Sx, Sy, tau, gamma, gamma_up);
-    float fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
-    float fc=0.0, fs, s;
-
-    if (fa * fb >= 0.0) {
-        //cout << "Root must be bracketed in zbrent.\n";
-        throw("Root must be bracketed in zbrent.");
-    }
-
-    if (abs(fa) < abs(fb)) {
-        // swap a, b
-        d = a;
-        a = b;
-        b = d;
-
-        d = fa;
-        fa = fb;
-        fb = d;
-    }
-
-    c = a;
-    fc = fa;
-
-    bool mflag = true;
-
-    for (int i = 0; i < ITMAX; i++) {
-        if (fa != fc && fb != fc) {
-            s = a*fb*fc / ((fa-fb) * (fa-fc)) + b*fa*fc / ((fb-fa)*(fb-fc)) +
-                c*fa*fb / ((fc-fa)*(fc-fb));
-        } else {
-            s = b - fb * (b-a) / (fb-fa);
-        }
-
-        // list of conditions
-        bool con1 = false;
-        if (0.25*(3.0 * a + b) < b) {
-            if (s < 0.25*(3.0 * a + b) || s > b) {
-                con1 = true;
-            }
-        } else if (s < b || s > 0.25*(3.0 * a + b)) {
-            con1 = true;
-        }
-        bool con2 = false;
-        if (mflag && abs(s-b) >= 0.5*abs(b-c)) {
-            con2 = true;
-        }
-        bool con3 = false;
-        if (!(mflag) && abs(s-b) >= 0.5 * abs(c-d)) {
-            con3 = true;
-        }
-        bool con4 = false;
-        if (mflag && abs(b-c) < tol) {
-            con4 = true;
-        }
-        bool con5 = false;
-        if (!(mflag) && abs(c-d) < tol) {
-            con5 = true;
-        }
-
-        if (con1 || con2 || con3 || con4 || con5) {
-            s = 0.5 * (a+b);
-            mflag = true;
-        } else {
-            mflag = false;
-        }
-
-        fs = func(s, D, Sx, Sy, tau, gamma, gamma_up);
-
-        d = c;
-        c = b;
-        fc = fb;
-
-        if (fa * fs < 0.0) {
-            b = s;
-            fb = fs;
-        } else {
-            a = s;
-            fa = fs;
-        }
-
-        if (abs(fa) < abs(fb)) {
-            e = a;
-            a = b;
-            b = e;
-
-            e = fa;
-            fa = fb;
-            fb = e;
-        }
-
-        // test for convegence
-        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
-            return b;
-        }
-    }
-    //cout << "Maximum number of iterations exceeded in zbrent.\n";
-    throw("Maximum number of iterations exceeded in zbrent.");
-}
 
 /*
 Implement Sea class
@@ -516,94 +406,11 @@ float Sea::p_from_rhoh(float rhoh) {
     return (rhoh - rho) * (gamma - 1.0) / gamma;
 }
 
-float p_from_rho_eps(float rho, float eps, float gamma) {
-    // calculate p using rho and epsilon for gamma law equation of state
-    return (gamma - 1.0) * rho * eps;
-}
-
 float Sea::phi_from_p(float p) {
     // calculate the metric potential Phi given p for gamma law equation of
     // state
     return 1.0 + (gamma - 1.0) / gamma *
         log(1.0 + gamma * p / ((gamma - 1.0) * rho));
-}
-
-void shallow_water_fluxes(float * q, float * f, bool x_dir, int nx, int ny,
-                          float * gamma_up, float alpha, float * beta,
-                          float gamma) {
-    // calculate the flux vector of the shallow water equations
-
-    // this is worked out on the coarse grid
-    float * W = new float[nx * ny];
-    float * u = new float[nx * ny];
-    float * v = new float[nx * ny];
-
-    for (int i = 0; i < nx * ny; i++) {
-        W[i] = sqrt((q[i*3+1] * q[i*3+1] * gamma_up[0] +
-                2.0 * q[i*3+1] * q[i*3+2] * gamma_up[1] +
-                q[i*3+2] * q[i*3+2] * gamma_up[3]) / (q[i*3] * q[i*3]) + 1.0);
-
-        u[i] = q[i*3+1] / (q[i*3] * W[i]);
-        v[i] = q[i*3+2] / (q[i*3] * W[i]);
-    }
-
-    if (x_dir) {
-        for (int i = 0; i < nx * ny; i++) {
-            float qx = u[i] * gamma_up[0] + v[i] * gamma_up[1] -
-                beta[0] / alpha;
-
-            f[i*3] = q[i*3] * qx;
-            f[i*3+1] = q[i*3+1] * qx + 0.5 * q[i*3] * q[i*3] / (W[i] * W[i]);
-            f[i*3+2] = q[i*3+2] * qx;
-        }
-    } else {
-        for (int i = 0; i < nx * ny; i++) {
-            float qy = v[i] * gamma_up[3] + u[i] * gamma_up[1] -
-                beta[1] / alpha;
-
-            f[i*3] = q[i*3] * qy;
-            f[i*3+1] = q[i*3+1] * qy;
-            f[i*3+2] = q[i*3+2] * qy + 0.5 * q[i*3] * q[i*3] / (W[i] * W[i]);
-        }
-    }
-
-    delete[] W;
-    delete[] u;
-    delete[] v;
-}
-
-void compressible_fluxes(float * q, float * f, bool x_dir, int nxf, int nyf,
-                         float * gamma_up, float alpha, float * beta,
-                         float gamma) {
-    // calculate the flux vector of the compressible GR hydrodynamics equations
-
-    // this is worked out on the fine grid
-    float * q_prim = new float[nxf*nyf*4];
-
-    cons_to_prim_comp(q, q_prim, nxf, nyf, gamma, gamma_up);
-
-    for (int i = 0; i < nxf * nyf; i++) {
-        float p = p_from_rho_eps(q_prim[i*4], q_prim[i*4+3], gamma);
-        float u = q_prim[i*4+1];
-        float v = q_prim[i*4+2];
-        if (x_dir) {
-            float qx = u * gamma_up[0] + v * gamma_up[1] - beta[0] / alpha;
-
-            f[i*4] = q[i*4] * qx;
-            f[i*4+1] = q[i*4+1] * qx + p;
-            f[i*4+2] = q[i*4+2] * qx;
-            f[i*4+3] = q[i*4+3] * qx + p * u;
-        } else {
-            float qy = v * gamma_up[3] + u * gamma_up[1] - beta[1] / alpha;
-
-            f[i*4] = q[i*4] * qy;
-            f[i*4+1] = q[i*4+1] * qy;
-            f[i*4+2] = q[i*4+2] * qy + p;
-            f[i*4+3] = q[i*4+3] * qy + p * v;
-        }
-    }
-
-    delete[] q_prim;
 }
 
 void Sea::prolong_grid(float * q_c, float * q_f) {
@@ -765,84 +572,8 @@ void Sea::p_from_swe(float * q, float * p) {
         p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) /
             (gamma - 1.0)) - 1.0) / gamma;
     }
-
 }
 
-float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma,
-             float * gamma_up) {
-    // function of p whose root is to be found when doing conserved to
-    // primitive variable conversion
-
-    float sq = sqrt(pow(tau + p + D, 2) -
-        Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - Sy*Sy*gamma_up[3]);
-
-    //if (nan_check(sq)) cout << "sq is nan :(\n";
-
-    float rho = D * sq / (tau + p + D);
-    float eps = (sq - p * (tau + p + D) / sq - D) / D;
-
-    return (gamma - 1.0) * rho * eps - p;
-}
-
-void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
-                       float gamma, float * gamma_up) {
-    // convert compressible conserved variables to primitive variables
-
-    const float TOL = 1.e-5;
-    for (int i = 0; i < nxf*nyf; i++) {
-        float D = q_cons[i*4];
-        float Sx = q_cons[i*4+1];
-        float Sy = q_cons[i*4+2];
-        float tau = q_cons[i*4+3];
-
-        // S^2
-        float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
-            Sy*Sy*gamma_up[3];
-
-        float pmin = (1.0 - Ssq) * (1.0 - Ssq) * tau * (gamma - 1.0);
-        float pmax = (gamma - 1.0) * (tau + D) / (2.0 - gamma);
-
-        if (pmin < 0.0) {
-            pmin = 0.0;//1.0e-9;
-        }
-        if (pmax < 0.0 || pmax < pmin) {
-            pmax = 1.0;
-        }
-
-        // check sign change
-        if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up) *
-            f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
-            pmin = 0.0;
-        }
-
-        // nan check inputs
-        //if (nan_check(pmin)) cout << "pmin is nan!\n";
-        //if (nan_check(pmax)) cout << "pmax is nan!\n";
-        //if (nan_check(D)) cout << "D is nan!\n";
-        //if (nan_check(Sx)) cout << "Sx is nan!\n";
-        //if (nan_check(Sy)) cout << "Sy is nan!\n";
-        //if (nan_check(tau)) cout << "tau is nan!\n";
-
-        float p;
-        try {
-            p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy,
-                        tau, gamma, gamma_up);
-        } catch (char const*){
-            p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
-                abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
-        }
-
-        float sq = sqrt(pow(tau + p + D, 2) - Ssq);
-        float eps = (sq - p * (tau + p + D)/sq - D) / D;
-        float h = 1.0 + gamma * eps;
-        float W = sqrt(1.0 + Ssq / (D*D*h*h));
-
-        q_prim[i*4] = D * sq / (tau + p + D);//D / W;
-        q_prim[i*4+1] = Sx / (W*W * h * q_prim[i*4]);
-        q_prim[i*4+2] = Sy / (W*W * h * q_prim[i*4]);
-        q_prim[i*4+3] = eps;
-    }
-}
 
 void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
                  flux_func_ptr flux_func, float d_x, float d_y) {
@@ -989,101 +720,35 @@ void Sea::rk3(float * q, int n_x, int n_y, int vec_dim, float * F,
 
 }
 
-void Sea::run() {
+void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     run code
     */
 
-    // set up output file stuff
-    hid_t outFile, dset, mem_space, file_space;
-
-    // create file
-    outFile = H5Fcreate(outfile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
-
-    // create dataspace
-    int ndims = 4;
-    hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(ny), hsize_t(nx), 3};
-    file_space = H5Screate_simple(ndims, dims, NULL);
-
-    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-    H5Pset_layout(plist, H5D_CHUNKED);
-    hsize_t chunk_dims[] = {1, hsize_t(ny), hsize_t(nx), 3};
-    H5Pset_chunk(plist, ndims, chunk_dims);
-
-    // create dataset
-    dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT, file_space,
-                    H5P_DEFAULT, plist, H5P_DEFAULT);
-
-    H5Pclose(plist);
-
-    // make a memory dataspace
-    mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
-
-    // select a hyperslab
-    file_space = H5Dget_space(dset);
-    hsize_t start[] = {0, 0, 0, 0};
-    hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), 3};
-    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
-    // write to dataset
-    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT,
-             U_coarse);
-    // close file dataspace
-    H5Sclose(file_space);
-
-    cout << "Beginning evolution.\n";
-
-    float * F_f = new float[nxf*nyf*4];
-    float * F_c = new float[nx*ny*3];
-    //float * F_c = new float[nx*ny*3];
-
-    prolong_grid(U_coarse, U_fine);
-
-    for (int t = 0; t < nt; t++) {
-
-        if ((t+1)%dprint == 0) {
-            cout << "t = " << t+1 << '\n';
-        }
-        // prolong to find grid
-        prolong_grid(U_coarse, U_fine);
-
-        // evolve fine grid through two subcycles
-        for (int i = 0; i < r; i++) {
-            rk3(U_fine, nxf, nyf, 4, F_f, (flux_func_ptr)compressible_fluxes,
-                dx/r, dy/r, dt/r);
-        }
-
-        // restrict to coarse grid
-        restrict_grid(U_coarse, U_fine);
-
-        // evolve coarse grid
-        rk3(U_coarse, nx, ny, 3, F_c, (flux_func_ptr)shallow_water_fluxes,
-            dx, dy, dt);
-
-        // output to file
-        if ((t+1) % dprint == 0) {
-            // select a hyperslab
-            file_space = H5Dget_space(dset);
-            hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0};
-            hsize_t hcount[] = {1, hsize_t(ny), hsize_t(nx), 3};
-            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL,
-                                hcount, NULL);
-            // write to dataset
-            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                     H5P_DEFAULT, U_coarse);
-            // close file dataspae
-            H5Sclose(file_space);
-        }
-
-    }
-
-    delete[] F_f;
-    delete[] F_c;
-
-    H5Sclose(mem_space);
-    H5Fclose(outFile);
+    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, mu,
+             nx, ny, nxf, nyf, ng, nt,
+             alpha, gamma, dx, dy, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 }
 
 int main(int argc, char *argv[]) {
+
+    // MPI variables
+    MPI_Comm comm;
+    MPI_Status status;
+
+    int rank, size;//, source, tag;
+
+    // Initialise MPI and compute number of processes and local rank
+    comm = MPI_COMM_WORLD;
+
+    MPI_Init(&argc, &argv);
+
+    MPI_Comm_size(comm, &size);
+    MPI_Comm_rank(comm, &rank);
+
+    if (rank == 0) {
+        printf("Running on %d process(es)\n", size);
+    }
 
     char input_filename[200];
 
@@ -1114,14 +779,16 @@ int main(int argc, char *argv[]) {
 
     sea.initial_data(D0, Sx0, Sy0);
 
-    sea.print_inputs();
+    if (rank == 0) {
+        sea.print_inputs();
+    }
 
     // clean up arrays
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;
 
-    sea.run();
-}
+    sea.run(comm, &status, rank, size);
 
-#endif
+    MPI_Finalize();
+}

@@ -186,4 +186,4 @@ if __name__ == '__main__':
     #plotme()
     #quick_plot(filename="../../Documents/Work/swerve/mpi")
 
-    mesh_plot(filename="../../Documents/Work/swerve/mesh")
+    mesh_plot(filename="../../Documents/Work/swerve/compressible")
