@@ -863,9 +863,9 @@ void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
             for (int n = 0; n < vec_dim; n++) {
                 // x-dir
                 float S_upwind = (q[(j * n_x + i+1) * vec_dim + n] -
-                    q[(j * n_x + i) * vec_dim + n]);
+                    q[(j * n_x + i) * vec_dim + n]) / d_x;
                 float S_downwind = (q[(j * n_x + i) * vec_dim + n] -
-                    q[(j * n_x + i-1) * vec_dim + n]);
+                    q[(j * n_x + i-1) * vec_dim + n]) / d_x;
                 float r = 1.0e6;
                 if (S_downwind > 1.0e-7) {
                     r = S_upwind / S_downwind;
@@ -880,9 +880,9 @@ void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
 
                 // y-dir
                 S_upwind = (q[((j+1) * n_x + i) * vec_dim + n] -
-                    q[(j * n_x + i) * vec_dim + n]);
+                    q[(j * n_x + i) * vec_dim + n]) / d_y;
                 S_downwind = (q[(j * n_x + i) * vec_dim + n] -
-                    q[((j-1) * n_x + i) * vec_dim + n]);
+                    q[((j-1) * n_x + i) * vec_dim + n]) / d_y;
                 r = 1.0e6;
                 if (S_downwind > 1.0e-7) {
                     r = S_upwind / S_downwind;

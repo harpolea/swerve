@@ -16,8 +16,8 @@ void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
 
 void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
 
-typedef float (* flux_func_ptr)(float * q, float * f, bool x_dir,
-                                int nx, int ny, float * gamma_up,
+typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
+                                float * gamma_up,
                                 float alpha, float * beta, float gamma);
 
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
@@ -36,6 +36,15 @@ float p_from_rho_eps(float rho, float eps, float gamma);
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
                        float gamma, float * gamma_up);
+
+void prolong_grid(float * q_c, float * q_f,
+                      int nx, int ny, int nxf, int nyf, float dx, float dy,
+                      float * gamma_up, float rho, float gamma,
+                      int * matching_indices);
+void restrict_grid(float * q_c, float * q_f,
+                       int nx, int ny, int nxf, int nyf,
+                       int * matching_indices,
+                       float rho, float gamma, float * gamma_up);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float rho, float mu, int nx, int ny,

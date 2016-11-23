@@ -20,9 +20,7 @@
 using namespace std;
 
 /*
-Compile with
-
-g++ mesh_cuda.cpp -I/usr/include/hdf5/serial -I/usr/include/hdf5 -lhdf5_cpp -lhdf5 -L/usr/lib/x86_64-linux-gnu/hdf5/serial -o mesh
+Compile with 'make mesh'
 
 */
 
@@ -34,8 +32,6 @@ bool nan_check(float a) {
         return false;
     }
 }
-
-
 
 /*
 Implement Sea class
@@ -209,17 +205,20 @@ Sea::Sea(char * filename)
     gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
     gamma_up[1*2+1] = gamma_down[0*2+0]/det;
 
-    cout << "gamma_up: " << gamma_up[0] << ',' << gamma_up[1] << ',' <<
-        gamma_up[2] << ',' << gamma_up[3] << '\n';
+    //cout << "gamma_up: " << gamma_up[0] << ',' << gamma_up[1] << ',' <<
+    //    gamma_up[2] << ',' << gamma_up[3] << '\n';
 
-    try {
+    U_coarse = new float[nx*ny*3];
+    U_fine = new float[nxf*nyf*4];
+
+    /*try {
         U_coarse = new float[int(nx*ny*3)];
         U_fine = new float[int(nxf*nyf*4)];
         //beta = new float[int(2*nx*ny)];
     } catch (bad_alloc&) {
         cerr << "Could not allocate U_grid - try smaller problem size.\n";
         exit(1);
-    }
+    }*/
 
     // initialise arrays
     for (int i = 0; i < nx*ny*3; i++) {
@@ -233,6 +232,7 @@ Sea::Sea(char * filename)
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
     matching_indices[2] = int(ceil(ny*0.5*(1-df)));
     matching_indices[3] = int(ceil(ny*0.5*(1+df)));
+
 
     cout << "matching_indices vs nxf: " <<
         matching_indices[1] - matching_indices[0] << ',' << nxf << '\n';
@@ -297,7 +297,6 @@ Sea::~Sea() {
     delete[] U_fine;
 }
 
-
 // set the initial data
 void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     /*
@@ -322,6 +321,7 @@ void Sea::print_inputs() {
     cout << "\nINPUT DATA\n" << "----------\n";
     cout << "(nx, ny, ng) \t\t(" << nx << ',' << ny << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
+    cout << "(nxf, nyf, r, df) \t(" << nxf << ',' << nyf << ',' << r << ',' << df << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dt) \t\t(" << dx << ',' << dy << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho << "\n";
@@ -724,7 +724,7 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     run code
     */
-
+    //cout << "Size of U_fine: " << sizeof(U_fine) / sizeof(U_fine[0]) << '\n';
     cuda_run(beta, gamma_up, U_coarse, U_fine, rho, mu,
              nx, ny, nxf, nyf, ng, nt,
              alpha, gamma, dx, dy, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
