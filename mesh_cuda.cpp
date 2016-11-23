@@ -24,15 +24,6 @@ Compile with 'make mesh'
 
 */
 
-bool nan_check(float a) {
-    // check to see whether float a is a nan
-    if (a != a) {
-        return true;
-    } else {
-        return false;
-    }
-}
-
 /*
 Implement Sea class
 */
@@ -87,6 +78,8 @@ Sea::Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
     matching_indices[2] = int(ceil(ny*0.5*(1-df)));
     matching_indices[3] = int(ceil(ny*0.5*(1+df)));
+
+    cout << "Matching indices: " << matching_indices[0] << ',' << matching_indices[1] << ',' << matching_indices[2] << ',' << matching_indices[3] << '\n';
 
 
     cout << "Made a Sea.\n";
@@ -229,9 +222,11 @@ Sea::Sea(char * filename)
     }
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
-    matching_indices[1] = int(ceil(nx*0.5*(1+df)));
+    matching_indices[1] = int(floor(nx*0.5*(1+df)));
     matching_indices[2] = int(ceil(ny*0.5*(1-df)));
-    matching_indices[3] = int(ceil(ny*0.5*(1+df)));
+    matching_indices[3] = int(floor(ny*0.5*(1+df)));
+
+    cout << "Matching indices: " << matching_indices[0] << ',' << matching_indices[1] << ',' << matching_indices[2] << ',' << matching_indices[3] << '\n';
 
 
     cout << "matching_indices vs nxf: " <<
@@ -575,150 +570,6 @@ void Sea::p_from_swe(float * q, float * p) {
 }
 
 
-void Sea::evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
-                 flux_func_ptr flux_func, float d_x, float d_y) {
-    // find Lax-Friedrichs flux using finite volume methods
-
-    int grid_size = n_x * n_y * vec_dim;
-    float * qx_p = new float[grid_size];
-    float * qx_m = new float[grid_size];
-    float * qy_p = new float[grid_size];
-    float * qy_m = new float[grid_size];
-    float * fx_p = new float[grid_size];
-    float * fx_m = new float[grid_size];
-    float * fy_p = new float[grid_size];
-    float * fy_m = new float[grid_size];
-
-    for (int j = 1; j < n_y-1; j++) {
-        for (int i = 1; i < n_x-1; i++) {
-            for (int n = 0; n < vec_dim; n++) {
-                // x-dir
-                float S_upwind = (q[(j * n_x + i+1) * vec_dim + n] -
-                    q[(j * n_x + i) * vec_dim + n]);
-                float S_downwind = (q[(j * n_x + i) * vec_dim + n] -
-                    q[(j * n_x + i-1) * vec_dim + n]);
-                float r = 1.0e6;
-                if (S_downwind > 1.0e-7) {
-                    r = S_upwind / S_downwind;
-                }
-                float S = 0.5 * (S_upwind + S_downwind);
-                S *= phi(r);
-
-                qx_p[(j * n_x + i) * vec_dim + n] =
-                    q[(j * n_x + i) * vec_dim + n] + S * 0.5 * d_x;
-                qx_m[(j * n_x + i) * vec_dim + n] =
-                    q[(j * n_x + i) * vec_dim + n] - S * 0.5 * d_x;
-
-                // y-dir
-                S_upwind = (q[((j+1) * n_x + i) * vec_dim + n] -
-                    q[(j * n_x + i) * vec_dim + n]);
-                S_downwind = (q[(j * n_x + i) * vec_dim + n] -
-                    q[((j-1) * n_x + i) * vec_dim + n]);
-                r = 1.0e6;
-                if (S_downwind > 1.0e-7) {
-                    r = S_upwind / S_downwind;
-                }
-                S = 0.5 * (S_upwind + S_downwind);
-                S *= phi(r);
-
-                qy_p[(j * n_x + i) * vec_dim + n] =
-                    q[(j * n_x + i) * vec_dim + n] + S * 0.5 * d_y;
-                qy_m[(j * n_x + i) * vec_dim + n] =
-                    q[(j * n_x + i) * vec_dim + n] - S * 0.5 * d_y;
-            }
-        }
-    }
-
-    bcs(qx_p, n_x, n_y, vec_dim);
-    bcs(qx_m, n_x, n_y, vec_dim);
-    bcs(qy_p, n_x, n_y, vec_dim);
-    bcs(qy_m, n_x, n_y, vec_dim);
-
-    // calculate fluxes at cell boundaries
-    flux_func(qx_p, fx_p, true, n_x, n_y, gamma_up, alpha, beta, gamma);
-    flux_func(qx_m, fx_m, true, n_x, n_y, gamma_up, alpha, beta, gamma);
-    flux_func(qy_p, fy_p, false, n_x, n_y, gamma_up, alpha, beta, gamma);
-    flux_func(qy_m, fy_m, false, n_x, n_y, gamma_up, alpha, beta, gamma);
-
-    float a = 0.1 * min(d_x, d_y) / dt;
-
-    // Lax-Friedrichs flux
-
-    for (int j = 2; j < n_y-2; j++) {
-        for (int i = 2; i < n_x-2; i++) {
-            for (int n = 0; n < vec_dim; n++) {
-                float Fx_m = 0.5 * (
-                    fx_p[(j * n_x + i-1) * vec_dim + n] +
-                    fx_m[(j * n_x + i) * vec_dim + n] + a *
-                    (qx_p[(j * n_x + i-1) * vec_dim + n] -
-                    qx_m[(j * n_x + i) * vec_dim + n]));
-
-                float Fx_p = 0.5 * (
-                    fx_p[(j * n_x + i) * vec_dim + n] +
-                    fx_m[(j * n_x + i+1) * vec_dim + n] + a *
-                    (qx_p[(j * n_x + i) * vec_dim + n] -
-                    qx_m[(j * n_x + i+1) * vec_dim + n]));
-
-                float Fy_m = 0.5 * (
-                    fy_p[((j-1) * n_x + i) * vec_dim + n] +
-                    fy_m[(j * n_x + i) * vec_dim + n] + a *
-                    (qy_p[((j-1) * n_x + i) * vec_dim + n] -
-                    qy_m[(j * n_x + i) * vec_dim + n]));
-
-                float Fy_p = 0.5 * (
-                    fy_p[(j * n_x + i) * vec_dim + n] +
-                    fy_m[((j+1) * n_x + i) * vec_dim + n] + a *
-                    (qy_p[(j * n_x + i) * vec_dim + n] -
-                    qy_m[((j+1) * n_x + i) * vec_dim + n]));
-
-                F[(j * n_x + i) * vec_dim + n] = -a * alpha * (
-                    (Fx_p - Fx_m) / d_x + (Fy_p - Fy_m) / d_y);
-            }
-        }
-    }
-
-    bcs(F, n_x, n_y, vec_dim);
-
-    delete[] qx_p;
-    delete[] qx_m;
-    delete[] qy_p;
-    delete[] qy_m;
-    delete[] fx_p;
-    delete[] fx_m;
-    delete[] fy_p;
-    delete[] fy_m;
-}
-
-void Sea::rk3(float * q, int n_x, int n_y, int vec_dim, float * F,
-              flux_func_ptr flux_func, float d_x, float d_y, float _dt) {
-    // implement third-order Runge-Kutta algorithm to evolve through single
-    // timestep
-
-    int grid_size = n_x * n_y * vec_dim;
-
-    float * q_temp = new float[grid_size];
-
-    evolve(q, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
-
-    for (int i = 0; i < grid_size; i++) {
-        q_temp[i] = q[i] + _dt * F[i];
-    }
-
-    evolve(q_temp, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
-
-    for (int i = 0; i < grid_size; i++) {
-        q_temp[i] = 0.25 * (3.0 * q[i] + q_temp[i] + _dt * F[i]);
-    }
-
-    evolve(q_temp, n_x, n_y, vec_dim, F, flux_func, d_x, d_y);
-
-    for (int i = 0; i < grid_size; i++) {
-        q[i] = (q[i] + 2.0 * q_temp[i] + 2.0 * _dt * F[i]) / 3.0;
-    }
-
-    delete[] q_temp;
-
-}
 
 void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*

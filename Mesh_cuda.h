@@ -23,9 +23,9 @@ typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
                        float gamma, float * gamma_up);
 
-float zbrent(fptr func, const float x1, const float x2, const float tol,
-             float D, float Sx, float Sy, float tau, float gamma,
-             float * gamma_up);
+//float zbrent(fptr func, const float x1, const float x2, const float tol,
+//             float D, float Sx, float Sy, float tau, float gamma,
+//             float * gamma_up);
 
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
@@ -80,12 +80,6 @@ public:
     void prolong_grid(float * q_c, float * q_f);
     void restrict_grid(float * q_c, float * q_f);
     void p_from_swe(float * q, float * p);
-
-    void evolve(float * q, int n_x, int n_y, int vec_dim, float * F,
-                flux_func_ptr flux_func, float d_x, float d_y);
-
-    void rk3(float * q, int n_x, int n_y, int vec_dim, float * F,
-             flux_func_ptr flux_func, float d_x, float d_y, float _dt);
 
     float rhoh_from_p(float p);
     float p_from_rhoh(float rhoh);

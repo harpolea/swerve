@@ -22,7 +22,7 @@ unsigned int nextPow2(unsigned int x)
     return ++x;
 }
 
-__device__ bool nan_check_d(float a) {
+__host__ __device__ bool nan_check(float a) {
     // check to see whether float a is a nan
     if (a != a) {
         return true;
@@ -31,7 +31,8 @@ __device__ bool nan_check_d(float a) {
     }
 }
 
-float zbrent(fptr func, const float x1, const float x2, const float tol,
+__host__ __device__ float zbrent(fptr func, const float x1, const float x2,
+             const float tol,
              float D, float Sx, float Sy, float tau, float gamma,
              float * gamma_up) {
     /*
@@ -50,7 +51,8 @@ float zbrent(fptr func, const float x1, const float x2, const float tol,
 
     if (fa * fb >= 0.0) {
         //cout << "Root must be bracketed in zbrent.\n";
-        throw("Root must be bracketed in zbrent.");
+        //printf("Root must be bracketed in zbrent.\n");
+        return x1;
     }
 
     if (abs(fa) < abs(fb)) {
@@ -140,122 +142,8 @@ float zbrent(fptr func, const float x1, const float x2, const float tol,
         }
     }
     //cout << "Maximum number of iterations exceeded in zbrent.\n";
-    throw("Maximum number of iterations exceeded in zbrent.");
-    //return 0;
-}
-
-
-__device__ float zbrent_d(fptr func, const float x1, const float x2, const float tol,
-             float D, float Sx, float Sy, float tau, float gamma,
-             float * gamma_up) {
-    /*
-    Using Brent's method, return the root of a function or functor func known
-    to lie between x1 and x2. The root will be regined until its accuracy is
-    tol.
-    */
-
-    const int ITMAX = 300;
-
-    float a = x1, b = x2;
-    float c, d=0.0, e=0.0;
-    float fa = func(a, D, Sx, Sy, tau, gamma, gamma_up);
-    float fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
-    float fc=0.0, fs, s;
-
-    if (fa * fb >= 0.0) {
-        //cout << "Root must be bracketed in zbrent.\n";
-        printf("Root must be bracketed in zbrent.");
-    }
-
-    if (abs(fa) < abs(fb)) {
-        // swap a, b
-        d = a;
-        a = b;
-        b = d;
-
-        d = fa;
-        fa = fb;
-        fb = d;
-    }
-
-    c = a;
-    fc = fa;
-
-    bool mflag = true;
-
-    for (int i = 0; i < ITMAX; i++) {
-        if (fa != fc && fb != fc) {
-            s = a*fb*fc / ((fa-fb) * (fa-fc)) + b*fa*fc / ((fb-fa)*(fb-fc)) +
-                c*fa*fb / ((fc-fa)*(fc-fb));
-        } else {
-            s = b - fb * (b-a) / (fb-fa);
-        }
-
-        // list of conditions
-        bool con1 = false;
-        if (0.25*(3.0 * a + b) < b) {
-            if (s < 0.25*(3.0 * a + b) || s > b) {
-                con1 = true;
-            }
-        } else if (s < b || s > 0.25*(3.0 * a + b)) {
-            con1 = true;
-        }
-        bool con2 = false;
-        if (mflag && abs(s-b) >= 0.5*abs(b-c)) {
-            con2 = true;
-        }
-        bool con3 = false;
-        if (!(mflag) && abs(s-b) >= 0.5 * abs(c-d)) {
-            con3 = true;
-        }
-        bool con4 = false;
-        if (mflag && abs(b-c) < tol) {
-            con4 = true;
-        }
-        bool con5 = false;
-        if (!(mflag) && abs(c-d) < tol) {
-            con5 = true;
-        }
-
-        if (con1 || con2 || con3 || con4 || con5) {
-            s = 0.5 * (a+b);
-            mflag = true;
-        } else {
-            mflag = false;
-        }
-
-        fs = func(s, D, Sx, Sy, tau, gamma, gamma_up);
-
-        d = c;
-        c = b;
-        fc = fb;
-
-        if (fa * fs < 0.0) {
-            b = s;
-            fb = fs;
-        } else {
-            a = s;
-            fa = fs;
-        }
-
-        if (abs(fa) < abs(fb)) {
-            e = a;
-            a = b;
-            b = e;
-
-            e = fa;
-            fa = fb;
-            fb = e;
-        }
-
-        // test for convegence
-        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
-            return b;
-        }
-    }
-    //cout << "Maximum number of iterations exceeded in zbrent.\n";
-    printf("Maximum number of iterations exceeded in zbrent.");
-    return 0;
+    //printf("Maximum number of iterations exceeded in zbrent.\n");
+    return x1;
 }
 
 
@@ -680,20 +568,8 @@ void bcs_mpi(float * grid, int nx, int ny, int vec_dim, int ng, MPI_Comm comm, M
     delete[] yrbuf;
 }
 
-float phi(float r) {
-    // calculate superbee slope limiter Phi(r)
-    float ph = 0.0;
-    if (r >= 1.0) {
-        ph = min(float(2.0), min(r, float(2.0 / (1.0 + r))));
-    } else if (r >= 0.5) {
-        ph = 1.0;
-    } else if (r > 0.0) {
-        ph = 2.0 * r;
-    }
-    return ph;
-}
 
-__device__ float phi_d(float r) {
+__host__ __device__ float phi(float r) {
     // calculate superbee slope limiter Phi(r)
     float ph = 0.0;
     if (r >= 1.0) {
@@ -797,9 +673,9 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
         pmin = 0.0;
     }
 
-    float p = zbrent_d((fptr)f_of_p_d, pmin, pmax, TOL, D, Sx, Sy,
+    float p = zbrent((fptr)f_of_p_d, pmin, pmax, TOL, D, Sx, Sy,
                     tau, gamma, gamma_up);
-    if (nan_check_d(p)){
+    if (nan_check(p)){
         //printf("NAN ALERT\n");
         p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
             abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
@@ -996,6 +872,8 @@ void prolong_grid(float * q_c, float * q_f,
         if (qc_comp[i*4+3] < 0.0) qc_comp[i*4+3] = 0.0;
     }
 
+    // NOTE: qc_comp seems ok
+
     // do some slope limiting
     for (int j = matching_indices[2]; j < matching_indices[3]+1; j++) {
         for (int i = matching_indices[0]; i < matching_indices[1]+1; i++) {
@@ -1034,9 +912,13 @@ void prolong_grid(float * q_c, float * q_f,
         }
     }
 
+    // Sx, Sy seem ok
+
     // reconstruct values at fine grid cell centres
-    for (int j = 0; j < matching_indices[3] - matching_indices[2]+1; j++) {
-        for (int i = 0; i < matching_indices[1] - matching_indices[0]+1; i++) {
+    //for (int j = 0; j < matching_indices[3] - matching_indices[2]; j++) {
+    for (int j = 0; j < int(nyf*0.5); j++) {
+        //for (int i = 0; i < matching_indices[1] - matching_indices[0]; i++) {
+        for (int i = 0; i < int(nxf*0.5); i++) {
             for (int n = 0; n < 4; n++) {
                 int coarse_index = ((j + matching_indices[2]) * nx + i +
                     matching_indices[0]) * 4 + n;
@@ -1052,9 +934,21 @@ void prolong_grid(float * q_c, float * q_f,
 
                 q_f[((2*j+1) * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] +
                     0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
+
+                //cout << "q_f indices: " << (2*j * nxf + 2*i) * 4 + n << ','
+                //    << (2*j * nxf + 2*i+1) * 4 + n << ',' <<
+                //    ((2*j+1) * nxf + 2*i) * 4 + n << ',' <<
+                //    ((2*j+1) * nxf + 2*i+1) * 4 + n << '\n';
             }
         }
     }
+
+    /*cout << "q_f: \n";
+    for (int y = 0; y < nyf; y++) {
+        for (int x = 0; x < nxf; x++) {
+            cout << '(' << x << ',' << y << "): " << q_f[((y*nxf)+x)*4+3] << '\n';
+        }
+    }*/
 
     delete[] qc_comp;
     delete[] Sx;
@@ -1076,15 +970,15 @@ void restrict_grid(float * q_c, float * q_f,
         q_prim[i] = 0.0;
     }
 
+    // find primitive variables
+    cons_to_prim_comp(q_f, q_prim, nxf, nyf, gamma, gamma_up);
+
     /*cout << "Restricting grid\n";
     for (int y = 0; y < nyf; y++) {
         for (int x = 0; x < nxf; x++) {
-            cout << '(' << x << ',' << y << "): " << q_f[((y*nxf)+x)*4+3] << '\n';
+            cout << '(' << x << ',' << y << "): " << q_prim[((y*nxf)+x)*4+3] << '\n';
         }
     }*/
-
-    // find primitive variables
-    cons_to_prim_comp(q_f, q_prim, nxf, nyf, gamma, gamma_up);
 
     // calculate SWE conserved variables on fine grid
     for (int i = 0; i < nxf*nyf; i++) {
@@ -1188,7 +1082,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                 r = S_upwind / S_downwind;
             }
 
-            S *= phi_d(r);
+            S *= phi(r);
 
             q_p[i] = Un_d[offset + i] + S * 0.5 * dx;
             q_m[i] = Un_d[offset + i] - S * 0.5 * dx;
@@ -1201,15 +1095,21 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         flux_func(q_p, f, true, gamma_up_d, alpha, beta_d, gamma);
 
+        //printf("q_p, f: %f, %f\n", q_p[0], f[0]);
+
         //printf("Called flux func?\n");
 
         for (int i = 0; i < vec_dim; i++) {
+            qx_plus_half[offset + i] = q_p[i];
             fx_plus_half[offset + i] = f[i];
         }
+
+        //printf("fx_p_d (%i, %i): %f\n", x, y, fx_plus_half[offset]);
 
         flux_func(q_m, f, true, gamma_up_d, alpha, beta_d, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
+            qx_minus_half[offset + i] = q_m[i];
             fx_minus_half[offset + i] = f[i];
         }
 
@@ -1228,7 +1128,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                 r = S_upwind / S_downwind;
             }
 
-            S *= phi_d(r);
+            S *= phi(r);
 
             q_p[i] = Un_d[offset + i] + S * 0.5 * dy;
             q_m[i] = Un_d[offset + i] - S * 0.5 * dy;
@@ -1239,16 +1139,20 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         flux_func(q_p, f, false, gamma_up_d, alpha, beta_d, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
+            qy_plus_half[offset + i] = q_p[i];
             fy_plus_half[offset + i] = f[i];
         }
 
         flux_func(q_m, f, false, gamma_up_d, alpha, beta_d, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
+            qy_minus_half[offset + i] = q_m[i];
             fy_minus_half[offset + i] = f[i];
         }
 
         //printf("evolve_fv (%i, %i): %f\n", x, y, fx_plus_half[offset + vec_dim-1]);
+
+        //printf("fy_p_d (%i, %i): %f\n", x, y, fy_plus_half[offset]);
     }
 
     free(q_p);
@@ -1294,6 +1198,7 @@ __global__ void evolve_fv_fluxes(float * F,
 
     // do fluxes
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1))) {
+        //printf("qy_p_d (%i, %i): %f\n", x, y, qy_plus_half[(y * nx + x) * vec_dim]);
         for (int i = 0; i < vec_dim; i++) {
             // x-boundary
             // from i-1
@@ -1490,12 +1395,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         }
     }
 
-    for (int y = 0; y < ny; y++) {
-        for (int x = 0; x < nx; x++) {
-            cout << '(' << x << ',' << y << "): " << F_h[((y*nx)+x)*vec_dim+vec_dim-1] << '\n';
-        }
-    }
-
     // enforce boundaries and copy back
     if (n_processes == 1) {
         bcs_fv(Up_h, nx, ny, ng, vec_dim);
@@ -1503,6 +1402,14 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, vec_dim, ng, comm, status, rank, n_processes, y_size);
     }
+
+    /*cout << "Printing Up_h\n";
+    for (int y = 0; y < ny; y++) {
+        for (int x = 0; x < nx; x++) {
+            cout << '(' << x << ',' << y << "): " << Up_h[((y*nx)+x)*vec_dim + vec_dim-1] << '\n';
+        }
+    }*/
+
     cudaMemcpy(Un_d, Up_h, nx*ny*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
@@ -1837,6 +1744,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             prolong_grid(Uc_h, Uf_h, nx, ny, nxf, nyf, dx, dy, gamma_up,
                          rho, gamma, matching_indices);
 
+            /*cout << "Fine grid\n";
+            for (int y = 0; y < nyf; y++) {
+                for (int x = 0; x < nxf; x++) {
+                    cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
+                }
+            }*/
+
 
             // enforce boundaries
             //bcs_fv(Up_h, nx, ny, nlayers, ng);
@@ -1847,20 +1761,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uf_h, nxf, nyf, 4, ng, comm, status, rank, n_processes, y_size);
             }
 
-            /*for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                    cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
-                }
-            }*/
-
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*4*sizeof(float), cudaMemcpyHostToDevice);
 
             // evolve fine grid through two subcycles
             for (int i = 0; i < 2; i++) {
 
-                /*for (int y = 0; y < nyf; y++) {
+                /*cout << "\ni = " << i << "\n\n";
+                for (int y = 0; y < nyf; y++) {
                     for (int x = 0; x < nxf; x++) {
-                        cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
+                        if (nan_check(Uf_h[((y*nxf)+x)*4+3])) {
+                            cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
+                        }
                     }
                 }*/
                 rk3(kernels, threads, blocks, cumulative_kernels,
@@ -1871,6 +1782,15 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         dx*0.5, dy*0.5, dt*0.5, Upf_h, Ff_h, Uf_h,
                         comm, status, rank, n_processes,
                         h_compressible_fluxes);
+
+                /*cout << "\nAfter rk3\n\n";
+                for (int y = 0; y < nyf; y++) {
+                    for (int x = 0; x < nxf; x++) {
+                        if (nan_check(Uf_h[((y*nxf)+x)*4+3])) {
+                            cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
+                        }
+                    }
+                }*/
 
                 cudaDeviceSynchronize();
 
@@ -1886,7 +1806,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             /*for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
-                    cout << '(' << x << ',' << y << "): " << Upf_h[((y*nxf)+x)*4+3] << '\n';
+                    cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4] << '\n';
                 }
             }*/
 
