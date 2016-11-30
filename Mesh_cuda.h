@@ -12,9 +12,9 @@ void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, 
 
 unsigned int nextPow2(unsigned int x);
 
-void bcs_fv(float * grid, int nx, int ny, int nlayers, int ng);
+void bcs_fv(float * grid, int nx, int ny, int ng, int vec_dim);
 
-void bcs_mpi(float * grid, int nx, int ny, int nlayers, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
+void bcs_mpi(float * grid, int nx, int ny, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
 
 typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
                                 float * gamma_up,
@@ -36,11 +36,15 @@ float p_from_rho_eps(float rho, float eps, float gamma);
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
                        float gamma, float * gamma_up);
-
-void prolong_grid(float * q_c, float * q_f,
-                      int nx, int ny, int nxf, int nyf, float dx, float dy,
-                      float * gamma_up, float rho, float gamma,
-                      int * matching_indices);
+void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                  int * cumulative_kernels, float * q_cd, float * q_fd,
+                  int nx, int ny, int nxf, int nyf, float dx, float dy,
+                  float * gamma_up_d, float rho, float gamma,
+                  int * matching_indices_d, int ng, int rank, float * qc_comp);
+//void prolong_grid(float * q_c, float * q_f,
+//                      int nx, int ny, int nxf, int nyf, float dx, float dy,
+//                      float * gamma_up, float rho, float gamma,
+//                      int * matching_indices);
 void restrict_grid(float * q_c, float * q_f,
                        int nx, int ny, int nxf, int nyf,
                        int * matching_indices,
