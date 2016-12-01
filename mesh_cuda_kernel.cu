@@ -197,8 +197,8 @@ void getNumKernels(int nx, int ny, int ng, int n_processes, int *maxBlocks, int 
     // calculate number of kernels needed
 
     if (nx*ny > *maxBlocks * *maxThreads) {
-        int kernels_x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)) - 2.0*ng)));
-        int kernels_y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)) - 2.0*ng)));
+        int kernels_x = int(ceil(float(nx) / (sqrt(float(*maxThreads * *maxBlocks)))));
+        int kernels_y = int(ceil(float(ny) / (sqrt(float(*maxThreads * *maxBlocks)))));
 
         // easiest (but maybe not most balanced way) is to split kernels into strips
         // not enough kernels to fill all processes. This would be inefficient if ny > nx, so need to fix this to look in the y direction if this is the case.
@@ -268,7 +268,7 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
     cudaGetDevice(&device);
     cudaGetDeviceProperties(&prop, device);
 
-    int total = (nx - 2*ng) * (ny - 2*ng);
+    int total = (nx) * (ny);
 
     int kernels_x = 0;
     int kernels_y = 0;
@@ -295,7 +295,7 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
             }
         }
         // kernels_x-1
-        int nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
+        int nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
 
         //printf("nx_remaining: %i\n", nx_remaining);
 
@@ -313,7 +313,7 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
         }
 
         // kernels_y-1
-        int ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
+        int ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
         //printf("ny_remaining: %i\n", ny_remaining);
         for (int i = 0; i < (kernels_x-1); i++) {
 
@@ -328,8 +328,8 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
         }
 
         // recalculate
-        nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
-        ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
+        nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
+        ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
         //printf("nx_remaining: %i\n", nx_remaining);
         //printf("ny_remaining: %i\n", ny_remaining);
 
@@ -597,38 +597,20 @@ __device__ float p_from_rho_eps_d(float rho, float eps, float gamma) {
     return (gamma - 1.0) * rho * eps;
 }
 
-float p_from_rho_eps(float rho, float eps, float gamma) {
+__device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma) {
     // calculate p using rho and epsilon for gamma law equation of state
     return (gamma - 1.0) * rho * eps;
 }
 
-float phi_from_p(float p, float rho, float gamma) {
+__device__ __host__ float phi_from_p(float p, float rho, float gamma) {
     // calculate the metric potential Phi given p for gamma law equation of
     // state
     return 1.0 + (gamma - 1.0) / gamma *
         log(1.0 + gamma * p / ((gamma - 1.0) * rho));
 }
 
-
-
-__device__ float f_of_p_d(float p, float D, float Sx, float Sy, float tau,
-            float gamma, float * gamma_up) {
-    // function of p whose root is to be found when doing conserved to
-    // primitive variable conversion
-
-    float sq = sqrt(pow(tau + p + D, 2) -
-        Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - Sy*Sy*gamma_up[3]);
-
-    //if (nan_check(sq)) cout << "sq is nan :(\n";
-
-    float rho = D * sq / (tau + p + D);
-    float eps = (sq - p * (tau + p + D) / sq - D) / D;
-
-    return (gamma - 1.0) * rho * eps - p;
-}
-
-float f_of_p(float p, float D, float Sx, float Sy, float tau,
-            float gamma, float * gamma_up) {
+__device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
+                                 float tau, float gamma, float * gamma_up) {
     // function of p whose root is to be found when doing conserved to
     // primitive variable conversion
 
@@ -668,12 +650,12 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     }
 
     // check sign change
-    if (f_of_p_d(pmin, D, Sx, Sy, tau, gamma, gamma_up) *
-        f_of_p_d(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
+    if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up) *
+        f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
         pmin = 0.0;
     }
 
-    float p = zbrent((fptr)f_of_p_d, pmin, pmax, TOL, D, Sx, Sy,
+    float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy,
                     tau, gamma, gamma_up);
     if (nan_check(p)){
         //printf("NAN ALERT\n");
@@ -763,10 +745,12 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
     }
 }
 
+
 __device__ void shallow_water_fluxes(float * q, float * f, bool x_dir,
                           float * gamma_up, float alpha, float * beta,
                           float gamma) {
     // calculate the flux vector of the shallow water equations
+    if (nan_check(q[0])) q[0] = 1.0;
     if (nan_check(q[1])) q[1] = 0.0;
     if (nan_check(q[2])) q[2] = 0.0;
 
@@ -831,7 +815,6 @@ __device__ void compressible_fluxes(float * q, float * f, bool x_dir,
 
     free(q_prim);
 }
-
 
 void p_from_swe(float * q, float * p, int nx, int ny,
                  float * gamma_up, float rho, float gamma) {
@@ -1132,10 +1115,111 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     //delete[] p;
 }
 
-void restrict_grid(float * q_c, float * q_f,
-                        int nx, int ny, int nxf, int nyf,
-                        int * matching_indices,
-                        float rho, float gamma, float * gamma_up) {
+__global__ void swe_from_compressible(float * q, float * q_swe,
+                                      int nxf, int nyf,
+                                      float * gamma_up, float rho,
+                                      float gamma,
+                                      int kx_offset, int ky_offset) {
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int offset = y * nxf + x;
+
+    //printf("Hello?\n");
+
+    if ((x < nxf) && (y < nyf)) {
+        float * q_prim, * q_con;
+        q_con = (float *)malloc(4 * sizeof(float));
+        q_prim = (float *)malloc(4 * sizeof(float));
+
+        for (int i = 0; i < 4; i++) {
+            q_con[i] = q[offset * 4 + i];
+        }
+
+        // find primitive variables
+        cons_to_prim_comp_d(q_con, q_prim, gamma, gamma_up);
+
+        // calculate SWE conserved variables on fine grid.
+        float p = p_from_rho_eps(q_prim[0], q_prim[3], gamma);
+        float ph = phi_from_p(p, rho, gamma);
+
+        float u = q_prim[1];
+        float v = q_prim[2];
+
+        float W = 1.0 / sqrt(1.0 -
+                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] - v*v*gamma_up[3]);
+
+        q_swe[offset*3] = ph * W;
+        q_swe[offset*3+1] = ph * W * W * u;
+        q_swe[offset*3+2] = ph * W * W * v;
+
+        free(q_con);
+        free(q_prim);
+    }
+}
+
+__global__ void restrict_interpolate(float * qf_sw, float * q_c,
+                                     int nx, int ny, int nxf, int nyf,
+                                     int * matching_indices,
+                                     int kx_offset, int ky_offset) {
+    // interpolate fine grid to coarse grid
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+
+    if ((x < int(round(nxf*0.5))) && (y < int(round(nyf*0.5)))) {
+        for (int n = 0; n < 3; n++) {
+            q_c[((y+matching_indices[2]) * nx +
+                  x+matching_indices[0]) * 3+n] =
+                  0.25 * (qf_sw[(y*2 * nxf + x*2) * 3 + n] +
+                          qf_sw[(y*2 * nxf + x*2+1) * 3 + n] +
+                          qf_sw[((y*2+1) * nxf + x*2) * 3 + n] +
+                          qf_sw[((y*2+1) * nxf + x*2+1) * 3 + n]);
+        }
+    }
+}
+
+void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                    int * cumulative_kernels, float * q_cd, float * q_fd,
+                    int nx, int ny, int nxf, int nyf,
+                    int * matching_indices,
+                    float rho, float gamma, float * gamma_up,
+                    int ng, int rank, float * qf_swe) {
+
+    int kx_offset = 0;
+    int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+    int k_offset = 0;
+    if (rank > 0) {
+        k_offset = cumulative_kernels[rank - 1];
+    }
+
+    for (int j = 0; j < kernels[rank].y; j++) {
+       kx_offset = 0;
+       for (int i = 0; i < kernels[rank].x; i++) {
+            //cout << "compressible_from_swe\n";
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, gamma_up, rho, gamma, kx_offset, ky_offset);
+            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
+                threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
+       }
+       ky_offset += blocks[k_offset + j * kernels[rank].x].y *
+            threads[k_offset + j * kernels[rank].x].y - 2*ng;
+    }
+
+    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+    for (int j = 0; j < kernels[rank].y; j++) {
+       kx_offset = 0;
+       for (int i = 0; i < kernels[rank].x; i++) {
+           //cout << "prolong_reconstruct?\n";
+           restrict_interpolate<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nx, ny, nxf, nyf, matching_indices, kx_offset, ky_offset);
+
+           kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
+                threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
+       }
+       ky_offset += blocks[k_offset + j * kernels[rank].x].y *
+            threads[k_offset + j * kernels[rank].x].y - 2*ng;
+    }
+
+    /*
     // restrict fine grid to coarse grid
 
     float * q_prim = new float[nxf*nyf*4];
@@ -1149,12 +1233,12 @@ void restrict_grid(float * q_c, float * q_f,
     // find primitive variables
     cons_to_prim_comp(q_f, q_prim, nxf, nyf, gamma, gamma_up);
 
-    /*cout << "Restricting grid\n";
+    cout << "Restricting grid\n";
     for (int y = 0; y < nyf; y++) {
         for (int x = 0; x < nxf; x++) {
             cout << '(' << x << ',' << y << "): " << q_prim[((y*nxf)+x)*4+3] << '\n';
         }
-    }*/
+    }
 
     // calculate SWE conserved variables on fine grid
     for (int i = 0; i < nxf*nyf; i++) {
@@ -1187,7 +1271,7 @@ void restrict_grid(float * q_c, float * q_f,
     }
 
     delete[] q_prim;
-    delete[] qf_sw;
+    delete[] qf_sw;*/
 }
 
 
@@ -1864,6 +1948,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
     float * q_comp_d;
     cudaMalloc((void**)&q_comp_d, nx*ny*4*sizeof(float));
+    float * qf_swe;
+    cudaMalloc((void**)&qf_swe, nxf*nyf*3*sizeof(float));
 
     int * matching_indices_d;
     cudaMalloc((void**)&matching_indices_d, 4*sizeof(int));
@@ -2010,10 +2096,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     //Uf_h[j] = Upf_h[j];
                 //}
 
-                // if not last step, copy to device
-                if (i < 1) {
-                    cudaMemcpy(Uf_d, Uf_h, nxf*nyf*4*sizeof(float), cudaMemcpyHostToDevice);
-                }
+                // copy to device
+
+                cudaMemcpy(Uf_d, Uf_h, nxf*nyf*4*sizeof(float), cudaMemcpyHostToDevice);
+
             }
 
             /*for (int y = 0; y < nyf; y++) {
@@ -2032,8 +2118,19 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }*/
 
             // restrict to coarse grid
-            restrict_grid(Uc_h, Uf_h, nx, ny, nxf, nyf, matching_indices,
-                          rho, gamma, gamma_up);
+            restrict_grid(kernels, threads, blocks, cumulative_kernels,
+                          Uc_d, Uf_d, nx, ny, nxf, nyf, matching_indices_d,
+                          rho, gamma, gamma_up_d, ng, rank, qf_swe);
+            cudaMemcpy(Uc_h, Uc_d, nxf*nyf*4*sizeof(float), cudaMemcpyDeviceToHost);
+
+            // enforce boundaries
+            //bcs_fv(Up_h, nx, ny, nlayers, ng);
+            if (n_processes == 1) {
+                bcs_fv(Uc_h, nx, ny, ng, 3);
+            } else {
+                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                bcs_mpi(Uc_h, nx, ny, 3, ng, comm, status, rank, n_processes, y_size);
+            }
 
             /*cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
@@ -2056,6 +2153,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 dx, dy, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
                 h_shallow_water_fluxes);
+
+            cudaMemcpy(Uc_d, Uc_h, nx*ny*3*sizeof(float), cudaMemcpyHostToDevice);
 
             /*cout << "\nAfter rk3 coarse: \n\n";
             for (int y = 0; y < ny; y++) {
@@ -2185,7 +2284,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
                          Uf_d, nx, ny, nxf, nyf, dx, dy, gamma_up,
-                         rho, gamma, matching_indices, ng, rank, q_comp_d);
+                         rho, gamma, matching_indices_d, ng, rank, q_comp_d);
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*4*sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -2209,8 +2308,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             // restrict to coarse grid
-            restrict_grid(Uc_h, Uf_h, nx, ny, nxf, nyf, matching_indices,
-                          rho, gamma, gamma_up);
+            restrict_grid(kernels, threads, blocks, cumulative_kernels,
+                          Uc_d, Uf_d, nx, ny, nxf, nyf, matching_indices_d,
+                          rho, gamma, gamma_up_d, ng, rank, qf_swe);
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
@@ -2299,6 +2399,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaFree(fy_p_d);
     cudaFree(fy_m_d);
     cudaFree(q_comp_d);
+    cudaFree(qf_swe);
     cudaFree(matching_indices_d);
 
     delete[] kernels;

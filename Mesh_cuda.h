@@ -29,11 +29,6 @@ typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
 
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
-float f_of_p(float p, float D, float Sx, float Sy, float tau, float gamma,
-             float * gamma_up);
-
-float p_from_rho_eps(float rho, float eps, float gamma);
-
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
                        float gamma, float * gamma_up);
 void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
@@ -45,10 +40,12 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
 //                      int nx, int ny, int nxf, int nyf, float dx, float dy,
 //                      float * gamma_up, float rho, float gamma,
 //                      int * matching_indices);
-void restrict_grid(float * q_c, float * q_f,
-                       int nx, int ny, int nxf, int nyf,
-                       int * matching_indices,
-                       float rho, float gamma, float * gamma_up);
+void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                    int * cumulative_kernels, float * q_cd, float * q_fd,
+                    int nx, int ny, int nxf, int nyf,
+                    int * matching_indices,
+                    float rho, float gamma, float * gamma_up,
+                    int ng, int rank, float * qf_swe);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float rho, float mu, int nx, int ny,
