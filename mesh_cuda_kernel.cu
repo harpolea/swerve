@@ -39,6 +39,21 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
     Using Brent's method, return the root of a function or functor func known
     to lie between x1 and x2. The root will be regined until its accuracy is
     tol.
+
+    Parameters
+    ----------
+    func : fptr
+        function pointer to shallow water or compressible flux function.
+    x1, x2 : const float
+        limits of root
+    tol : const float
+        tolerance to which root shall be calculated to
+    D, Sx, Sy, tau: float
+        conserved variables
+    gamma : float
+        adiabatic index
+    gamma_up : float *
+        spatial metric
     */
 
     const int ITMAX = 300;
@@ -375,6 +390,17 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
 void bcs_fv(float * grid, int nx, int ny, int ng, int vec_dim) {
     /*
     Enforce boundary conditions on section of grid.
+
+    Parameters
+    ----------
+    grid : float *
+        grid of data
+    nx, ny : int
+        dimensions of grid
+    ng : int
+        number of ghost cells
+    vec_dim : int
+        dimension of state vector
     */
     // outflow
 
@@ -413,6 +439,8 @@ void bcs_mpi(float * grid, int nx, int ny, int vec_dim, int ng, MPI_Comm comm, M
         grid of data
     nx, ny : int
         dimensions of grid
+    vec_dim : int
+        dimension of state vector
     ng : int
         number of ghost cells
     comm : MPI_Comm
@@ -672,7 +700,22 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
                        float gamma, float * gamma_up) {
-    // convert compressible conserved variables to primitive variables
+    /*
+    Convert compressible conserved variables to primitive variables
+
+    Parameters
+    ----------
+    q_cons : float *
+        grid of conserved variables
+    q_prim : float *
+        grid where shall put the primitive variables
+    nxf, nyf : int
+        grid dimensions
+    gamma : float
+        adiabatic index
+    gamma_up : float *
+        spatial metric
+    */
 
     const float TOL = 1.e-5;
 
@@ -727,7 +770,26 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
 __device__ void shallow_water_fluxes(float * q, float * f, bool x_dir,
                           float * gamma_up, float alpha, float * beta,
                           float gamma) {
-    // calculate the flux vector of the shallow water equations
+    /*
+    Calculate the flux vector of the shallow water equations
+
+    Parameters
+    ----------
+    q : float *
+        state vector
+    f : float *
+        grid where fluxes shall be stored
+    x_dir : bool
+        true if calculating flux in x-direction, false if in y_direction
+    gamma_up : float *
+        spatial metric
+    alpha : float
+        lapse function
+    beta : float *
+        shift vector
+    gamma : float
+        adiabatic index
+    */
     if (nan_check(q[0])) q[0] = 1.0;
     if (nan_check(q[1])) q[1] = 0.0;
     if (nan_check(q[2])) q[2] = 0.0;
@@ -763,7 +825,26 @@ __device__ void shallow_water_fluxes(float * q, float * f, bool x_dir,
 __device__ void compressible_fluxes(float * q, float * f, bool x_dir,
                          float * gamma_up, float alpha, float * beta,
                          float gamma) {
-    // calculate the flux vector of the compressible GR hydrodynamics equations
+    /*
+    Calculate the flux vector of the compressible GR hydrodynamics equations
+
+    Parameters
+    ----------
+    q : float *
+        state vector
+    f : float *
+        grid where fluxes shall be stored
+    x_dir : bool
+        true if calculating flux in x-direction, false if in y_direction
+    gamma_up : float *
+        spatial metric
+    alpha : float
+        lapse function
+    beta : float *
+        shift vector
+    gamma : float
+        adiabatic index
+    */
 
     // this is worked out on the fine grid
     float * q_prim;
@@ -796,7 +877,24 @@ __device__ void compressible_fluxes(float * q, float * f, bool x_dir,
 
 void p_from_swe(float * q, float * p, int nx, int ny,
                  float * gamma_up, float rho, float gamma) {
-    // calculate p using SWE conserved variables
+    /*
+    Calculate p using SWE conserved variables
+
+    Parameters
+    ----------
+    q : float *
+        state vector
+    p : float *
+        grid where pressure shall be stored
+    nx, ny : int
+        grid dimensions
+    gamma_up : float *
+        spatial metric
+    rho : float
+        density
+    gamma : float
+        adiabatic index
+    */
 
     for (int i = 0; i < nx*ny; i++) {
         float W = sqrt((q[i*3+1]*q[i*3+1] * gamma_up[0] +
@@ -812,7 +910,22 @@ void p_from_swe(float * q, float * p, int nx, int ny,
 
 __device__ float p_from_swe(float * q, float * gamma_up, float rho,
                             float gamma, float W) {
-    // calculate p using SWE conserved variables
+    /*
+    Calculates p and returns using SWE conserved variables
+
+    Parameters
+    ----------
+    q : float *
+        state vector
+    gamma_up : float *
+        spatial metric
+    rho : float
+        density
+    gamma : float
+        adiabatic index
+    W : float
+        Lorentz factor
+    */
 
     float ph = q[0] / W;
 
@@ -824,6 +937,24 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                            int nx, int ny,
                            float * gamma_up, float rho, float gamma,
                            int kx_offset, int ky_offset) {
+    /*
+    Calculates the compressible state vector from the SWE variables.
+
+    Parameters
+    ----------
+    q : float *
+        grid of SWE state vector
+    q_comp : float *
+        grid where compressible state vector to be stored
+    nx, ny : int
+        grid dimensions
+    gamma_up : float *
+        spatial metric
+    rho, gamma : float
+        density and adiabatic index
+    kx_offset, ky_offset : int
+        kernel offsets in the x and y directions
+    */
 
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -862,6 +993,26 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f,
                     int nx, int ny, int nxf, int nyf, float dx, float dy,
                     int * matching_indices_d,
                     int kx_offset, int ky_offset) {
+    /*
+    Reconstruct fine grid variables from compressible variables on coarse grid
+
+    Parameters
+    ----------
+    q_comp : float *
+        compressible variables on coarse grid
+    q_f : float *
+        fine grid state vector
+    nx, ny : int
+        coarse grid dimensions
+    nxf, nyf : int
+        fine grid dimensions
+    dx, dy : float
+        coarse grid spacings
+    matching_indices_d : int *
+        position of fine grid wrt coarse grid
+    kx_offset, ky_offset : int
+        kernel offsets in the x and y directions
+    */
 
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -927,6 +1078,36 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int nx, int ny, int nxf, int nyf, float dx, float dy,
                   float * gamma_up_d, float rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp) {
+    /*
+    Prolong coarse grid data to fine grid
+
+    Parameters
+    ----------
+    kernels, threads, blocks : dim3 *
+        number of kernels, threads and blocks for each process/kernel
+    cumulative_kernels : int *
+        cumulative number of kernels in mpi processes of r < rank
+    q_cd, q_fd : float *
+        coarse and fine grids of state vectors
+    nx, ny : int
+        dimensions of coarse grid
+    nxf, nyf : int
+        dimensions of fine grid
+    dx, dy : float
+        coarse grid cell spacings
+    gamma_up_d : float *
+        spatial metric
+    rho, gamma : float
+        density and adiabatic index
+    matching_indices_d : int *
+        position of fine grid wrt coarse grid
+    ng : int
+        number of ghost cells
+    rank : int
+        rank of MPI process
+    qc_comp : float *
+        grid of compressible variables on coarse grid
+    */
 
     int kx_offset = 0;
     int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
@@ -967,6 +1148,25 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       float * gamma_up, float rho,
                                       float gamma,
                                       int kx_offset, int ky_offset) {
+
+    /*
+    Calculates the SWE state vector from the compressible variables.
+
+    Parameters
+    ----------
+    q : float *
+        grid of compressible state vector
+    q_swe : float *
+        grid where SWE state vector to be stored
+    nxf, nyf : int
+        grid dimensions
+    gamma_up : float *
+        spatial metric
+    rho, gamma : float
+        density and adiabatic index
+    kx_offset, ky_offset : int
+        kernel offsets in the x and y directions
+    */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int offset = y * nxf + x;
@@ -1006,6 +1206,25 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                                      int nx, int ny, int nxf, int nyf,
                                      int * matching_indices,
                                      int kx_offset, int ky_offset) {
+
+    /*
+    Interpolate SWE variables on fine grid to get them on coarse grid.
+
+    Parameters
+    ----------
+    qf_swe : float *
+        SWE variables on fine grid
+    q_c : float *
+        coarse grid state vector
+    nx, ny : int
+        coarse grid dimensions
+    nxf, nyf : int
+        fine grid dimensions
+    matching_indices : int *
+        position of fine grid wrt coarse grid
+    kx_offset, ky_offset : int
+        kernel offsets in the x and y directions
+    */
     // interpolate fine grid to coarse grid
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -1028,6 +1247,34 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * matching_indices,
                     float rho, float gamma, float * gamma_up,
                     int ng, int rank, float * qf_swe) {
+    /*
+    Restrict fine grid data to coarse grid
+
+    Parameters
+    ----------
+    kernels, threads, blocks : dim3 *
+        number of kernels, threads and blocks for each process/kernel
+    cumulative_kernels : int *
+        cumulative number of kernels in mpi processes of r < rank
+    q_cd, q_fd : float *
+        coarse and fine grids of state vectors
+    nx, ny : int
+        dimensions of coarse grid
+    nxf, nyf : int
+        dimensions of fine grid
+    matching_indices : int *
+        position of fine grid wrt coarse grid
+    rho, gamma : float
+        density and adiabatic index
+    gamma_up : float *
+        spatial metric
+    ng : int
+        number of ghost cells
+    rank : int
+        rank of MPI process
+    qf_swe : float *
+        grid of SWE variables on fine grid
+    */
 
     int kx_offset = 0;
     int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
@@ -2064,6 +2311,5 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     delete[] Upf_h;
     delete[] Ff_h;
 }
-
 
 #endif
