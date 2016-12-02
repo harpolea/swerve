@@ -383,17 +383,17 @@ void bcs_fv(float * grid, int nx, int ny, int ng, int vec_dim) {
     // outflow
 
     for (int y = 0; y < ny; y++){
-        for (int i = 0; i < vec_dim; i++) {
-            for (int g = 0; g < ng; g++) {
+        for (int g = 0; g < ng; g++) {
+            for (int i = 0; i < vec_dim; i++) {
                 grid[(y * nx + g) * vec_dim+i] = grid[(y * nx + ng)*vec_dim+i];
 
                 grid[(y * nx + (nx-1-g))*vec_dim+i] = grid[(y * nx + (nx-1-ng))*vec_dim+i];
             }
         }
     }
-    for (int x = 0; x < nx; x++){
-        for (int i = 0; i < vec_dim; i++) {
-            for (int g = 0; g < ng; g++) {
+    for (int g = 0; g < ng; g++) {
+        for (int x = 0; x < nx; x++){
+            for (int i = 0; i < vec_dim; i++) {
                 grid[(g * nx + x)*vec_dim+i] = grid[(ng * nx + x)*vec_dim+i];
 
                 grid[((ny-1-g) * nx + x)*vec_dim+i] = grid[((ny-1-ng) * nx + x)*vec_dim+i];
@@ -905,7 +905,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f,
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
 
-    if ((x < int(round(nxf*0.5))) && (y < int(round(nyf*0.5)))) {
+    if ((x>0) && (x < int(round(nxf*0.5))-1) && (y > 0) && (y < int(round(nyf*0.5))-1)) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[0];
         int c_y = y + matching_indices_d[2];
@@ -1165,7 +1165,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
 
-    if ((x < int(round(nxf*0.5))) && (y < int(round(nyf*0.5)))) {
+    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5)))) {
         for (int n = 0; n < 3; n++) {
             q_c[((y+matching_indices[2]) * nx +
                   x+matching_indices[0]) * 3+n] =
