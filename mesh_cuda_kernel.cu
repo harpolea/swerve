@@ -297,8 +297,6 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
         // kernels_x-1
         int nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
 
-        //printf("nx_remaining: %i\n", nx_remaining);
-
         for (int j = 0; j < (kernels_y-1); j++) {
 
             threads[j*kernels_x + kernels_x-1].y =
@@ -314,7 +312,7 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
 
         // kernels_y-1
         int ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
-        //printf("ny_remaining: %i\n", ny_remaining);
+
         for (int i = 0; i < (kernels_x-1); i++) {
 
             threads[(kernels_y-1)*kernels_x + i].x =
@@ -330,8 +328,6 @@ void getNumBlocksAndThreads(int nx, int ny, int ng, int maxBlocks, int maxThread
         // recalculate
         nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
         ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
-        //printf("nx_remaining: %i\n", nx_remaining);
-        //printf("ny_remaining: %i\n", ny_remaining);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -679,22 +675,12 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
     // convert compressible conserved variables to primitive variables
 
     const float TOL = 1.e-5;
-    //printf("size of q_cons: %i\n", sizeof(q_cons)/sizeof(q_cons[0]));
-    //printf("size of nxf*nyf*4: %i\n", nxf*nyf*4);
-    /*cout << "Cons to prim\n";
-    for (int y = 0; y < nyf; y++) {
-        for (int x = 0; x < nxf; x++) {
-            cout << '(' << x << ',' << y << "): " << q_cons[(y*nxf+x)*4+3] << '\n';
-        }
-    }*/
 
     for (int i = 0; i < nxf*nyf; i++) {
         float D = q_cons[i*4];
         float Sx = q_cons[i*4+1];
         float Sy = q_cons[i*4+2];
         float tau = q_cons[i*4+3];
-
-        //printf("D = %f\n", D);
 
         // S^2
         float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
@@ -715,14 +701,6 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
             f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
             pmin = 0.0;
         }
-
-        // nan check inputs
-        //if (nan_check(pmin)) cout << "pmin is nan!\n";
-        //if (nan_check(pmax)) cout << "pmax is nan!\n";
-        //if (nan_check(D)) cout << "D is nan!\n";
-        //if (nan_check(Sx)) cout << "Sx is nan!\n";
-        //if (nan_check(Sy)) cout << "Sy is nan!\n";
-        //if (nan_check(tau)) cout << "tau is nan!\n";
 
         float p;
         try {
@@ -851,16 +829,11 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int offset = y * nx + x;
 
-    //printf("Hello?\n");
-
     if ((x < nx) && (y < ny)) {
         float * q_swe;
         q_swe = (float *)malloc(3 * sizeof(float));
 
-        //printf("Hello?\n");
-
         for (int i = 0; i < 3; i++) {
-            //printf("(%i, %i), i = %i, q = %f\n", x, y, i, q[offset * 3 + i]);
             q_swe[i] = q[offset * 3 + i];
         }
 
@@ -868,14 +841,8 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                 2.0 * q[offset*3+1] * q[offset*3+2] * gamma_up[1] +
                 q[offset*3+2] * q[offset*3+2] * gamma_up[3]) /
                 (q[offset*3] * q[offset*3]) + 1.0);
-        //if (nan_check(W)) printf("W is nan! q1, q2: %f, %f\n", q[offset*3+1], q[offset*3+2]);
-
-        //printf("Am I running??\n");
 
         float p = p_from_swe(q_swe, gamma_up, rho, gamma, W);
-        //if (nan_check(p)) printf("p is nan! q1, q2: %f, %f\n", q[offset*3+1], q[offset*3+2]);
-
-        //printf("(%i, %i): %f\n", x, y, p);
 
         float rhoh = rhoh_from_p(p, rho, gamma);
 
@@ -884,14 +851,8 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         q_comp[offset*4+2] = rhoh * W * q[offset*3+2] / q[offset*3];
         q_comp[offset*4+3] = rhoh*W*W - p - rho * W;
 
-        //printf("Hi again?\n");
-
-        //if (nan_check(p)) printf("p is nan :(\n");
-
         // NOTE: hack?
         if (q_comp[offset*4+3] < 0.0) q_comp[offset*4+3] = 0.0;
-
-        //printf("comp: %f, %f, %f, %f\n", q_comp[offset*4], q_comp[offset*4+1], q_comp[offset*4+2], q_comp[offset*4+3]);
 
         free(q_swe);
     }
@@ -909,8 +870,6 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f,
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[0];
         int c_y = y + matching_indices_d[2];
-
-        //printf("q_comp: %f\n", q_comp[(c_y * nx + c_x) * 4]);
 
         for (int n = 0; n < 4; n++) {
             int coarse_index = (c_y * nx + c_x) * 4 + n;
@@ -946,8 +905,6 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f,
 
             Sy *= phi(r);
 
-            //if (nan_check(q_comp[coarse_index])) printf("q_comp is nan :(\n");
-
             q_f[(2*y * nxf + 2*x) * 4 + n] = q_comp[coarse_index] -
                 0.25 * (dx * Sx + dy * Sy);
 
@@ -970,13 +927,6 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int nx, int ny, int nxf, int nyf, float dx, float dy,
                   float * gamma_up_d, float rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp) {
-    // prolong coarse grid to fine one
-    //float * qc_comp;// = new float[int(nx*ny*4)];
-    //float * Sx = new float[int(nx*ny*4)];
-    //float * Sy = new float[int(nx*ny*4)];
-    //float * p = new float[int(nx*ny)];
-
-    //cudaMalloc((void**)&qc_comp, nx*ny*4*sizeof(float));
 
     int kx_offset = 0;
     int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
@@ -989,7 +939,6 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            //cout << "compressible_from_swe\n";
             compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, gamma_up_d, rho, gamma, kx_offset, ky_offset);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1003,7 +952,6 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           //cout << "prolong_reconstruct?\n";
            prolong_reconstruct<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, nx, ny, nxf, nyf, dx, dy, matching_indices_d, kx_offset, ky_offset);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
@@ -1012,107 +960,6 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
        ky_offset += blocks[k_offset + j * kernels[rank].x].y *
             threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
-
-    /*p_from_swe(q_c, p, nx, ny, gamma_up, rho, gamma);
-
-    // first calculate the compressible conserved variables on the coarse grid
-    for (int i = 0; i < nx*ny; i++) {
-        float rhoh = rhoh_from_p(p[i], rho, gamma);
-        float W = sqrt((q_c[i*3+1] * q_c[i*3+1] * gamma_up[0] +
-                2.0 * q_c[i*3+1] * q_c[i*3+2] * gamma_up[1] +
-                q_c[i*3+2] * q_c[i*3+2] * gamma_up[3]) /
-                (q_c[i*3] * q_c[i*3]) + 1.0);
-
-        qc_comp[i*4] = rho * W;
-        qc_comp[i*4+1] = rhoh * W * q_c[i*3+1] / q_c[i*3];
-        qc_comp[i*4+2] = rhoh * W * q_c[i*3+2] / q_c[i*3];
-        qc_comp[i*4+3] = rhoh*W*W - p[i] - qc_comp[i*4];
-
-        // NOTE: hack?
-        if (qc_comp[i*4+3] < 0.0) qc_comp[i*4+3] = 0.0;
-    }
-
-    // NOTE: qc_comp seems ok
-
-    // do some slope limiting
-    for (int j = matching_indices[2]; j < matching_indices[3]+1; j++) {
-        for (int i = matching_indices[0]; i < matching_indices[1]+1; i++) {
-            for (int n = 0; n < 4; n++) {
-
-                // x-dir
-                float S_upwind = (qc_comp[(j * nx + i+1) * 4 + n] -
-                    qc_comp[(j * nx + i) * 4 + n]) / dx;
-                float S_downwind = (qc_comp[(j * nx + i) * 4 + n] -
-                    qc_comp[(j * nx + i-1) * 4 + n]) / dx;
-
-                Sx[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
-
-                float r = 1.0e6;
-                if (abs(S_downwind) > 1.0e-10) {
-                    r = S_upwind / S_downwind;
-                }
-
-                Sx[(j * nx + i) * 4 + n] *= phi(r);
-
-                // y-dir
-                S_upwind = (qc_comp[((j+1) * nx + i) * 4 + n] -
-                    qc_comp[(j * nx + i) * 4 + n]) / dy;
-                S_downwind = (qc_comp[(j * nx + i) * 4 + n] -
-                    qc_comp[((j-1) * nx + i) * 4 + n]) / dy;
-
-                Sy[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
-
-                r = 1.0e6;
-                if (abs(S_downwind) > 1.0e-10) {
-                    r = S_upwind / S_downwind;
-                }
-
-                Sy[(j * nx + i) * 4 + n] *= phi(r);
-            }
-        }
-    }
-
-    // Sx, Sy seem ok
-
-    // reconstruct values at fine grid cell centres
-    //for (int j = 0; j < matching_indices[3] - matching_indices[2]; j++) {
-    for (int j = 0; j < int(nyf*0.5); j++) {
-        //for (int i = 0; i < matching_indices[1] - matching_indices[0]; i++) {
-        for (int i = 0; i < int(nxf*0.5); i++) {
-            for (int n = 0; n < 4; n++) {
-                int coarse_index = ((j + matching_indices[2]) * nx + i +
-                    matching_indices[0]) * 4 + n;
-
-                q_f[(2*j * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] -
-                    0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-
-                q_f[(2*j * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (dx * Sx[coarse_index] - dy * Sy[coarse_index]);
-
-                q_f[((2*j+1) * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (-dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-
-                q_f[((2*j+1) * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-
-                //cout << "q_f indices: " << (2*j * nxf + 2*i) * 4 + n << ','
-                //    << (2*j * nxf + 2*i+1) * 4 + n << ',' <<
-                //    ((2*j+1) * nxf + 2*i) * 4 + n << ',' <<
-                //    ((2*j+1) * nxf + 2*i+1) * 4 + n << '\n';
-            }
-        }
-    }*/
-
-    /*cout << "q_f: \n";
-    for (int y = 0; y < nyf; y++) {
-        for (int x = 0; x < nxf; x++) {
-            cout << '(' << x << ',' << y << "): " << q_f[((y*nxf)+x)*4+3] << '\n';
-        }
-    }*/
-    //delete[] qc_comp;
-    //delete[] Sx;
-    //delete[] Sy;
-    //delete[] p;
 }
 
 __global__ void swe_from_compressible(float * q, float * q_swe,
@@ -1123,8 +970,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int offset = y * nxf + x;
-
-    //printf("Hello?\n");
 
     if ((x < nxf) && (y < nyf)) {
         float * q_prim, * q_con;
@@ -1195,7 +1040,6 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            //cout << "compressible_from_swe\n";
             swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, gamma_up, rho, gamma, kx_offset, ky_offset);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1209,7 +1053,6 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           //cout << "prolong_reconstruct?\n";
            restrict_interpolate<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nx, ny, nxf, nyf, matching_indices, kx_offset, ky_offset);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
@@ -1218,60 +1061,6 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
        ky_offset += blocks[k_offset + j * kernels[rank].x].y *
             threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
-
-    /*
-    // restrict fine grid to coarse grid
-
-    float * q_prim = new float[nxf*nyf*4];
-    float * qf_sw = new float[nxf*nyf*3];
-
-    // initialise q_prim
-    for (int i = 0; i < nxf*nyf*4; i++) {
-        q_prim[i] = 0.0;
-    }
-
-    // find primitive variables
-    cons_to_prim_comp(q_f, q_prim, nxf, nyf, gamma, gamma_up);
-
-    cout << "Restricting grid\n";
-    for (int y = 0; y < nyf; y++) {
-        for (int x = 0; x < nxf; x++) {
-            cout << '(' << x << ',' << y << "): " << q_prim[((y*nxf)+x)*4+3] << '\n';
-        }
-    }
-
-    // calculate SWE conserved variables on fine grid
-    for (int i = 0; i < nxf*nyf; i++) {
-        float p = p_from_rho_eps(q_prim[i*4], q_prim[i*4+3], gamma);
-        float phi = phi_from_p(p, rho, gamma);
-
-        float u = q_prim[i*4+1];
-        float v = q_prim[i*4+2];
-
-        float W = 1.0 / sqrt(1.0 -
-                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] - v*v*gamma_up[3]);
-
-        qf_sw[i*3] = phi * W;
-        qf_sw[i*3+1] = phi * W * W * u;
-        qf_sw[i*3+2] = phi * W * W * v;
-    }
-
-    // interpolate fine grid to coarse grid
-    for (int j = 0; j < int(0.5*nyf); j++) {
-        for (int i = 0; i < int(0.5*nxf); i++) {
-            for (int n = 0; n < 3; n++) {
-                q_c[((j+matching_indices[2]) * nx +
-                      i+matching_indices[0]) * 3+n] =
-                      0.25 * (qf_sw[(j*2 * nxf + i*2) * 3 + n] +
-                              qf_sw[(j*2 * nxf + i*2+1) * 3 + n] +
-                              qf_sw[((j*2+1) * nxf + i*2) * 3 + n] +
-                              qf_sw[((j*2+1) * nxf + i*2+1) * 3 + n]);
-            }
-        }
-    }
-
-    delete[] q_prim;
-    delete[] qf_sw;*/
 }
 
 
@@ -1351,20 +1140,12 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         // fluxes
 
-        //printf("x, y: %i, %i, q_p: %f, Un_d: %f\n", x, y, q_p[0], Un_d[offset+0]);
-
         flux_func(q_p, f, true, gamma_up_d, alpha, beta_d, gamma);
-
-        //printf("q_p, f: %f, %f\n", q_p[0], f[0]);
-
-        //printf("Called flux func?\n");
 
         for (int i = 0; i < vec_dim; i++) {
             qx_plus_half[offset + i] = q_p[i];
             fx_plus_half[offset + i] = f[i];
         }
-
-        //printf("fx_p_d (%i, %i): %f\n", x, y, fx_plus_half[offset]);
 
         flux_func(q_m, f, true, gamma_up_d, alpha, beta_d, gamma);
 
@@ -1409,10 +1190,6 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             qy_minus_half[offset + i] = q_m[i];
             fy_minus_half[offset + i] = f[i];
         }
-
-        //printf("evolve_fv (%i, %i): %f\n", x, y, fx_plus_half[offset + vec_dim-1]);
-
-        //printf("fy_p_d (%i, %i): %f\n", x, y, fy_plus_half[offset]);
     }
 
     free(q_p);
@@ -1458,7 +1235,6 @@ __global__ void evolve_fv_fluxes(float * F,
 
     // do fluxes
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1))) {
-        //printf("qy_p_d (%i, %i): %f\n", x, y, qy_plus_half[(y * nx + x) * vec_dim]);
         for (int i = 0; i < vec_dim; i++) {
             // x-boundary
             // from i-1
@@ -1631,8 +1407,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     rank, n_processes : int
         rank of current MPI process and total number of MPI processes
     */
-
-    //cout << "\nu1\n\n";
     // u1 = un + dt * F(un)
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
@@ -1657,16 +1431,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
             }
         }
     }
-
-    //cout << "\nUn_h, Up_h\n\n";
-    /*for (int y = 0; y < ny; y++) {
-        for (int x = 0; x < nx; x++) {
-
-                cout << '(' << x << ',' << y << "): " << Un_h[((y*nx)+x)*vec_dim] << ',' << Up_h[((y*nx)+x)*vec_dim] << '\n';
-
-        }
-    }*/
-
     // enforce boundaries and copy back
     if (n_processes == 1) {
         bcs_fv(Up_h, nx, ny, ng, vec_dim);
@@ -1675,17 +1439,9 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_mpi(Up_h, nx, ny, vec_dim, ng, comm, status, rank, n_processes, y_size);
     }
 
-    /*cout << "Printing Up_h\n";
-    for (int y = 0; y < ny; y++) {
-        for (int x = 0; x < nx; x++) {
-            cout << '(' << x << ',' << y << "): " << Up_h[((y*nx)+x)*vec_dim + vec_dim-1] << '\n';
-        }
-    }*/
-
     cudaMemcpy(Un_d, Up_h, nx*ny*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
 
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
-    //cout << "\nu2\n\n";
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1695,7 +1451,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
-    //bcs_fv(F_h, nx, ny, nlayers, ng);
+
     if (n_processes == 1) {
         bcs_fv(F_h, nx, ny, ng, vec_dim);
     } else {
@@ -1715,7 +1471,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     }
 
     // enforce boundaries and copy back
-    //bcs_fv(Up_h, nx, ny, nlayers, ng);
     if (n_processes == 1) {
         bcs_fv(Up_h, nx, ny, ng, vec_dim);
     } else {
@@ -1725,7 +1480,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     cudaMemcpy(Un_d, Up_h, nx*ny*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
 
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
-    //cout << "\nu3\n\n";
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -1735,7 +1489,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
-    //bcs_fv(F_h, nx, ny, nlayers, ng);
+
     if (n_processes == 1) {
         bcs_fv(F_h, nx, ny, ng, vec_dim);
     } else {
@@ -1755,7 +1509,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     }
 
     // enforce boundaries
-    //bcs_fv(Up_h, nx, ny, nlayers, ng);
     if (n_processes == 1) {
         bcs_fv(Up_h, nx, ny, ng, vec_dim);
     } else {
@@ -1766,8 +1519,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < nx*ny*vec_dim; j++) {
         Un_h[j] = Up_h[j];
     }
-
-    //cudaMemcpy(Up_d, Up_h, nx*ny*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
 
 }
 
@@ -1862,8 +1613,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     getNumKernels(nx, ny, ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
 
     int total_kernels = cumulative_kernels[n_processes-1];
-
-    //int kernels_y = kernels[0].y;
 
     dim3 *blocks = new dim3[total_kernels];
     dim3 *threads = new dim3[total_kernels];
@@ -2000,30 +1749,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             H5Sclose(file_space);
         }
 
-        // prolong to fine grid
-        //prolong_grid(Uc_h, Uf_h, nx, ny, nxf, nyf, dx, dy, gamma_up,
-                     //rho, gamma, matching_indices);
-
         // main loop
         for (int t = 0; t < nt; t++) {
-            cout << "Evolving t = " << t << '\n';
-            //printf("t = %i\n", t);
-            // offset by kernels in previous
-            //int kx_offset = 0;
-            int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
-            //int k_offset = 0;
-            //if (rank > 0) {
-                //k_offset = cumulative_kernels[rank - 1];
-            //}
 
-            /*cout << "Coarse grid: \n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    if (nan_check(Uc_h[((y*nx)+x)*3])) {
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << '\n';
-                    }
-                }
-            }*/
+            cout << "Evolving t = " << t << '\n';
+
+            int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2033,16 +1764,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*4*sizeof(float), cudaMemcpyDeviceToHost);
 
-            /*cout << "Fine grid after prolonging\n";
-            for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                    cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+2] << '\n';
-
-                }
-            }*/
-
             // enforce boundaries
-            //bcs_fv(Up_h, nx, ny, nlayers, ng);
             if (n_processes == 1) {
                 bcs_fv(Uf_h, nxf, nyf, ng, 4);
             } else {
@@ -2055,14 +1777,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // evolve fine grid through two subcycles
             for (int i = 0; i < 2; i++) {
 
-                //cout << "\ni = " << i << "\n\n";
-                /*for (int y = 0; y < nyf; y++) {
-                    for (int x = 0; x < nxf; x++) {
-                        if (nan_check(Uf_h[((y*nxf)+x)*4+3])) {
-                            cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
-                        }
-                    }
-                }*/
                 rk3(kernels, threads, blocks, cumulative_kernels,
                         beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
                         qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -2073,7 +1787,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         h_compressible_fluxes);
 
                 // enforce boundaries
-                //bcs_fv(Up_h, nx, ny, nlayers, ng);
                 if (n_processes == 1) {
                     bcs_fv(Uf_h, nxf, nyf, ng, 4);
                 } else {
@@ -2081,41 +1794,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     bcs_mpi(Uf_h, nxf, nyf, 4, ng, comm, status, rank, n_processes, y_size);
                 }
 
-                /*cout << "\nAfter rk3\n\n";
-                for (int y = 0; y < nyf; y++) {
-                    for (int x = 0; x < nxf; x++) {
-                        if (nan_check(Uf_h[((y*nxf)+x)*4+3])) {
-                            cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4+3] << '\n';
-                        }
-                    }
-                }*/
-
                 cudaDeviceSynchronize();
 
-                //for (int j = 0; j < nxf*nyf*4; j++) {
-                    //Uf_h[j] = Upf_h[j];
-                //}
-
                 // copy to device
-
                 cudaMemcpy(Uf_d, Uf_h, nxf*nyf*4*sizeof(float), cudaMemcpyHostToDevice);
 
             }
-
-            /*for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                    cout << '(' << x << ',' << y << "): " << Uf_h[((y*nxf)+x)*4] << '\n';
-                }
-            }*/
-
-            /*cout << "\nCoarse grid before restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3+2] << '\n';
-
-                }
-            }*/
 
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2124,7 +1808,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaMemcpy(Uc_h, Uc_d, nxf*nyf*4*sizeof(float), cudaMemcpyDeviceToHost);
 
             // enforce boundaries
-            //bcs_fv(Up_h, nx, ny, nlayers, ng);
             if (n_processes == 1) {
                 bcs_fv(Uc_h, nx, ny, ng, 3);
             } else {
@@ -2132,18 +1815,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uc_h, nx, ny, 3, ng, comm, status, rank, n_processes, y_size);
             }
 
-            /*cout << "\nCoarse grid after restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << '\n';
-
-                }
-            }*/
-
             cudaMemcpy(Uc_d, Uc_h, nx*ny*3*sizeof(float), cudaMemcpyHostToDevice);
-
-            //cout << "\nCalculating coarse rk3\n\n";
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
@@ -2155,20 +1827,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 h_shallow_water_fluxes);
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*3*sizeof(float), cudaMemcpyHostToDevice);
-
-            /*cout << "\nAfter rk3 coarse: \n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    if (nan_check(Uc_h[((y*nx)+x)*3+2])) {
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3+2] << '\n';
-                    }
-                }
-            }*/
-
-
-            //for (int j = 0; j < nx*ny*3; j++) {
-                //Uc_h[j] = Upc_h[j];
-            //}
 
             /*for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
@@ -2228,7 +1886,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         float * buf = new float[nx*ny*3];
                         int tag = 0;
                         for (int source = 1; source < n_processes; source++) {
-                            //printf("Receiving from rank %i\n", source);
                             mpi_err = MPI_Recv(buf, nx*ny*3, MPI_FLOAT, source, tag, comm, &status);
 
                             check_mpi_error(mpi_err);
@@ -2260,7 +1917,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     // close file dataspae
                     H5Sclose(file_space);
                 } else { // send data to rank 0
-                    //printf("Rank %i sending\n", rank);
                     int tag = 0;
                     mpi_err = MPI_Ssend(Uc_h, ny*nx*3, MPI_FLOAT, 0, tag, comm);
                     check_mpi_error(mpi_err);
@@ -2277,9 +1933,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     } else { // don't print
 
         for (int t = 0; t < nt; t++) {
-
-            //int kx_offset = 0;
-            //int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
