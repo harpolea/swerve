@@ -6,15 +6,15 @@
 
 void check_mpi_error(int mpi_err);
 
-void getNumKernels(int nx, int ny, int nlayers, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 *kernels, int *cumulative_kernels);
+void getNumKernels(int nx, int ny, int nz, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 *kernels, int *cumulative_kernels);
 
-void getNumBlocksAndThreads(int nx, int ny, int nlayers, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads);
+void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads);
 
 unsigned int nextPow2(unsigned int x);
 
-void bcs_fv(float * grid, int nx, int ny, int ng, int vec_dim);
+void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim);
 
-void bcs_mpi(float * grid, int nx, int ny, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
+void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
 
 typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
                                 float * gamma_up,
@@ -48,8 +48,8 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int ng, int rank, float * qf_swe);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float rho, float mu, int nx, int ny,
-         int nxf, int nyf, int ng,
+         float rho, float mu, int nx, int ny, int nlayers,
+         int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float dx, float dy, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
@@ -57,7 +57,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
 class Sea {
 public:
-    Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
+    Sea(int _nx, int _ny, int _nz, int _nlayers, int _nt, int _ng,
+            int _r, float _df,
             float xmin, float xmax,
             float ymin, float ymax, float  _rho,
             float  _Q, float _mu, float _gamma,
@@ -70,22 +71,11 @@ public:
 
     void initial_data(float * D0, float * Sx0, float * Sy0);
 
-    void bcs(float * grid, int n_x, int n_y, int vec_dim);
+    void bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim);
 
     void print_inputs();
 
     void run(MPI_Comm comm, MPI_Status * status, int rank, int size);
-
-    float phi(float r); // MC limiter
-
-    void prolong_grid(float * q_c, float * q_f);
-    void restrict_grid(float * q_c, float * q_f);
-    void p_from_swe(float * q, float * p);
-
-    float rhoh_from_p(float p);
-    float p_from_rhoh(float rhoh);
-
-    float phi_from_p(float p);
 
     ~Sea();
 
@@ -93,6 +83,8 @@ public:
     //int nlayers;
     int nx;
     int ny;
+    int nz;
+    int nlayers;
     int ng;
     float *xs;
     float *ys;

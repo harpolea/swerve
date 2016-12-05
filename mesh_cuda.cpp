@@ -28,13 +28,14 @@ Compile with 'make mesh'
 Implement Sea class
 */
 
-Sea::Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
+Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
+        int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax, float  _rho,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), ng(_ng), nt(_nt), r(_r), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), nt(_nt), r(_r), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -71,8 +72,8 @@ Sea::Sea(int _nx, int _ny, int _nt, int _ng, int _r, float _df,
     nyf = int(r * df * ny);
 
     // D, Sx, Sy, zeta
-    U_coarse = new float[nx*ny*3];
-    U_fine = new float[nxf*nyf*4];
+    U_coarse = new float[nx*ny*nlayers*3];
+    U_fine = new float[nxf*nyf*nz*4];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
@@ -107,6 +108,12 @@ Sea::Sea(char * filename)
         } else if (variableName == "ny") {
             inputFile >> value;
             ny = int(value);
+        } else if (variableName == "nz") {
+            inputFile >> value;
+            nz = int(value);
+        } else if (variableName == "nlayers") {
+            inputFile >> value;
+            nlayers = int(value);
         } else if (variableName == "ng") {
             inputFile >> value;
             ng = int(value);
@@ -198,26 +205,14 @@ Sea::Sea(char * filename)
     gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
     gamma_up[1*2+1] = gamma_down[0*2+0]/det;
 
-    //cout << "gamma_up: " << gamma_up[0] << ',' << gamma_up[1] << ',' <<
-    //    gamma_up[2] << ',' << gamma_up[3] << '\n';
-
-    U_coarse = new float[nx*ny*3];
-    U_fine = new float[nxf*nyf*4];
-
-    /*try {
-        U_coarse = new float[int(nx*ny*3)];
-        U_fine = new float[int(nxf*nyf*4)];
-        //beta = new float[int(2*nx*ny)];
-    } catch (bad_alloc&) {
-        cerr << "Could not allocate U_grid - try smaller problem size.\n";
-        exit(1);
-    }*/
+    U_coarse = new float[nx*ny*nlayers*3];
+    U_fine = new float[nxf*nyf*nz*4];
 
     // initialise arrays
-    for (int i = 0; i < nx*ny*3; i++) {
+    for (int i = 0; i < nx*ny*nlayers*3; i++) {
         U_coarse[i] = 0.0;
     }
-    for (int i = 0; i < nxf*nyf*4; i++) {
+    for (int i = 0; i < nxf*nyf*nz*4; i++) {
         U_fine[i] = 0.0;
     }
 
@@ -236,7 +231,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
@@ -259,14 +254,14 @@ Sea::Sea(const Sea &seaToCopy)
         beta[i] = seaToCopy.beta[i];
     }
 
-    U_coarse = new float[int(nx*ny*3)];
-    U_fine = new float[nxf*nyf*4];
+    U_coarse = new float[int(nx*ny*nlayers*3)];
+    U_fine = new float[nxf*nyf*nz*4];
 
-    for (int i = 0; i < nx*ny*3;i++) {
+    for (int i = 0; i < nx*ny*nlayers*3;i++) {
         U_coarse[i] = seaToCopy.U_coarse[i];
     }
 
-    for (int i = 0; i < nxf*nyf*4;i++) {
+    for (int i = 0; i < nxf*nyf*nz*4;i++) {
         U_fine[i] = seaToCopy.U_fine[i];
     }
 
@@ -297,13 +292,13 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     /*
     Initialise D, Sx, Sy and Q.
     */
-    for (int i = 0; i < nx*ny; i++) {
+    for (int i = 0; i < nx*ny*nlayers; i++) {
         U_coarse[i*3] = D0[i];
         U_coarse[i*3+1] = Sx0[i];
         U_coarse[i*3+2] = Sy0[i];
     }
 
-    bcs(U_coarse, nx, ny, 3);
+    bcs(U_coarse, nx, ny, nlayers, 3);
 
     cout << "Set initial data.\n";
 }
@@ -314,9 +309,9 @@ void Sea::print_inputs() {
     */
 
     cout << "\nINPUT DATA\n" << "----------\n";
-    cout << "(nx, ny, ng) \t\t(" << nx << ',' << ny << ',' << ng << ")\n";
+    cout << "(nx, ny, nlayers, ng) \t\t(" << nx << ',' << ny << ',' << nlayers << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
-    cout << "(nxf, nyf, r, df) \t(" << nxf << ',' << nyf << ',' << r << ',' << df << ")\n";
+    cout << "(nxf, nyf, nz, r, df) \t(" << nxf << ',' << nyf << ',' << nz << ',' << r << ',' << df << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dt) \t\t(" << dx << ',' << dy << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho << "\n";
@@ -328,256 +323,70 @@ void Sea::print_inputs() {
     cout << "outfile \t\t" << outfile << "\n\n";
 }
 
-void Sea::bcs(float * grid, int n_x, int n_y, int vec_dim) {
+void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
     /*
     Enforce boundary conditions on grid of quantities with dimension vec_dim.
     */
 
     if (periodic) {
-        for (int l = 0; l < vec_dim; l++) {
+        for (int z = 0; z < n_z; z++) {
             for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {
-                    grid[(y * n_x + g) * vec_dim + l] =
-                        grid[(y * n_x + (n_x-2*ng+g)) * vec_dim + l];
+                    for (int l = 0; l < vec_dim; l++) {
+                        grid[((z * n_z + y) * n_x + g) * vec_dim + l] =
+                            grid[((z * n_z + y) * n_x + (n_x-2*ng+g)) * vec_dim + l];
 
-                    grid[(y * n_x + (n_x-ng+g)) * vec_dim + l] =
-                        grid[(y * n_x + ng+g) * vec_dim + l];
+                        grid[((z * n_z + y) * n_x + (n_x-ng+g)) * vec_dim + l] =
+                            grid[((z * n_z + y) * n_x + ng+g) * vec_dim + l];
+                    }
                 }
             }
-            for (int x = 0; x < n_x; x++){
-                for (int g = 0; g < ng; g++) {
-                    grid[(g * n_x + x) * vec_dim + l] =
-                        grid[((n_y-ng-1) * n_x + x) * vec_dim + l];
+            for (int g = 0; g < ng; g++) {
+                for (int x = 0; x < n_x; x++){
+                    for (int l = 0; l < vec_dim; l++) {
+                        grid[((z * n_z + g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_z + n_y-ng-1) * n_x + x) * vec_dim + l];
 
-                    grid[((n_y-ng+g) * n_x + x) * vec_dim + l] =
-                        grid[(ng * n_x + x) * vec_dim + l];
+                        grid[((z * n_z + n_y-ng+g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_z + ng) * n_x + x) * vec_dim + l];
+                    }
                 }
             }
         }
     } else { // outflow
-        for (int l = 0; l < vec_dim; l++) {
+        for (int z = 0; z < n_z; z++) {
             for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {
-                    grid[(y * n_x + g) * vec_dim + l] =
-                        grid[(y * n_x + ng) * vec_dim + l];
+                    for (int l = 0; l < vec_dim; l++) {
+                        grid[((z * n_z + y) * n_x + g) * vec_dim + l] =
+                            grid[((z * n_z + y) * n_x + ng) * vec_dim + l];
 
-                    grid[(y * n_x + (n_x-1-g)) * vec_dim + l] =
-                        grid[(y * n_x + (n_x-1-ng)) * vec_dim + l];
+                        grid[((z * n_z + y) * n_x + (n_x-1-g)) * vec_dim + l] =
+                            grid[((z * n_z + y) * n_x + (n_x-1-ng)) * vec_dim + l];
+                    }
                 }
             }
-            for (int x = 0; x < n_x; x++){
-                for (int g = 0; g < ng; g++) {
-                    grid[(g * n_x + x) * vec_dim + l] =
-                        grid[(ng * n_x + x) * vec_dim + l];
+            for (int g = 0; g < ng; g++) {
+                for (int x = 0; x < n_x; x++){
+                    for (int l = 0; l < vec_dim; l++) {
+                        grid[((z * n_z + g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_z + ng) * n_x + x) * vec_dim + l];
 
-                    grid[((n_y-1-g) * n_x + x) * vec_dim + l] =
-                        grid[((n_y-1-ng) * n_x + x) * vec_dim + l];
+                        grid[((z * n_z + n_y-1-g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_z + n_y-1-ng) * n_x + x) * vec_dim + l];
+                    }
                 }
             }
         }
     }
 }
-
-float Sea::phi(float r) {
-    // calculate superbee slope limiter Phi(r)
-    float ph = 0.0;
-    if (r >= 1.0) {
-        ph = min(float(2.0), min(r, float(2.0 / (1.0 + r))));
-    } else if (r >= 0.5) {
-        ph = 1.0;
-    } else if (r > 0.0) {
-        ph = 2.0 * r;
-    }
-    return ph;
-}
-
-float Sea::rhoh_from_p(float p) {
-    // calculate rhoh using p for gamma law equation of state
-    return rho + gamma * p / (gamma - 1.0);
-}
-
-float Sea::p_from_rhoh(float rhoh) {
-    // calculate p using rhoh for gamma law equation of state
-    return (rhoh - rho) * (gamma - 1.0) / gamma;
-}
-
-float Sea::phi_from_p(float p) {
-    // calculate the metric potential Phi given p for gamma law equation of
-    // state
-    return 1.0 + (gamma - 1.0) / gamma *
-        log(1.0 + gamma * p / ((gamma - 1.0) * rho));
-}
-
-void Sea::prolong_grid(float * q_c, float * q_f) {
-    // prolong coarse grid to fine one
-    float * qc_comp = new float[int(nx*ny*4)];
-    float * Sx = new float[int(nx*ny*4)];
-    float * Sy = new float[int(nx*ny*4)];
-    float * p = new float[int(nx*ny)];
-
-    p_from_swe(q_c, p);
-
-    // first calculate the compressible conserved variables on the coarse grid
-    for (int i = 0; i < nx*ny; i++) {
-        float rhoh = rhoh_from_p(p[i]);
-        float W = sqrt((q_c[i*3+1] * q_c[i*3+1] * gamma_up[0] +
-                2.0 * q_c[i*3+1] * q_c[i*3+2] * gamma_up[1] +
-                q_c[i*3+2] * q_c[i*3+2] * gamma_up[3]) /
-                (q_c[i*3] * q_c[i*3]) + 1.0);
-
-        qc_comp[i*4] = rho * W;
-        qc_comp[i*4+1] = rhoh * W * q_c[i*3+1] / q_c[i*3];
-        qc_comp[i*4+2] = rhoh * W * q_c[i*3+2] / q_c[i*3];
-        qc_comp[i*4+3] = rhoh*W*W - p[i] - qc_comp[i*4];
-
-        // NOTE: hack?
-        if (qc_comp[i*4+3] < 0.0) qc_comp[i*4+3] = 0.0;
-    }
-
-    /*cout << "compressible coarse grid: \n";
-    for (int j = 0; j < ny; j++) {
-        for(int i = 0; i < nx; i++) {
-            //cout << p[j*nx + i] <<' ';
-            cout << qc_comp[(j*nx + i)*4] << ' ';
-        }
-        cout << '\n';
-    }
-    cout << '\n';*/
-
-    // do some slope limiting
-    for (int j = matching_indices[2]; j < matching_indices[3]+1; j++) {
-        for (int i = matching_indices[0]; i < matching_indices[1]+1; i++) {
-            for (int n = 0; n < 4; n++) {
-
-                // x-dir
-                float S_upwind = (qc_comp[(j * nx + i+1) * 4 + n] -
-                    qc_comp[(j * nx + i) * 4 + n]) / dx;
-                float S_downwind = (qc_comp[(j * nx + i) * 4 + n] -
-                    qc_comp[(j * nx + i-1) * 4 + n]) / dx;
-
-                Sx[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
-
-                float r = 1.0e6;
-                if (abs(S_downwind) > 1.0e-10) {
-                    r = S_upwind / S_downwind;
-                }
-
-                Sx[(j * nx + i) * 4 + n] *= phi(r);
-
-                // y-dir
-                S_upwind = (qc_comp[((j+1) * nx + i) * 4 + n] -
-                    qc_comp[(j * nx + i) * 4 + n]) / dy;
-                S_downwind = (qc_comp[(j * nx + i) * 4 + n] -
-                    qc_comp[((j-1) * nx + i) * 4 + n]) / dy;
-
-                Sy[(j * nx + i) * 4 + n] = 0.5 * (S_upwind + S_downwind);
-
-                r = 1.0e6;
-                if (abs(S_downwind) > 1.0e-10) {
-                    r = S_upwind / S_downwind;
-                }
-
-                Sy[(j * nx + i) * 4 + n] *= phi(r);
-            }
-        }
-    }
-
-    // reconstruct values at fine grid cell centres
-    for (int j = 0; j < matching_indices[3] - matching_indices[2]+1; j++) {
-        for (int i = 0; i < matching_indices[1] - matching_indices[0]+1; i++) {
-            for (int n = 0; n < 4; n++) {
-                int coarse_index = ((j + matching_indices[2]) * nx + i +
-                    matching_indices[0]) * 4 + n;
-
-                q_f[(2*j * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] -
-                    0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-
-                q_f[(2*j * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (dx * Sx[coarse_index] - dy * Sy[coarse_index]);
-
-                q_f[((2*j+1) * nxf + 2*i) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (-dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-
-                q_f[((2*j+1) * nxf + 2*i+1) * 4 + n] = qc_comp[coarse_index] +
-                    0.25 * (dx * Sx[coarse_index] + dy * Sy[coarse_index]);
-            }
-        }
-    }
-
-    delete[] qc_comp;
-    delete[] Sx;
-    delete[] Sy;
-    delete[] p;
-}
-
-void Sea::restrict_grid(float * q_c, float * q_f) {
-    // restrict fine grid to coarse grid
-
-    float * q_prim = new float[nxf*nyf*4];
-    float * qf_sw = new float[nxf*nyf*3];
-
-    // find primitive variables
-    cons_to_prim_comp(q_f, q_prim, nxf, nyf, gamma, gamma_up);
-
-    // calculate SWE conserved variables on fine grid
-    for (int i = 0; i < nxf*nyf; i++) {
-        float p = p_from_rho_eps(q_prim[i*4], q_prim[i*4+3], gamma);
-        float phi = phi_from_p(p);
-
-        float u = q_prim[i*4+1];
-        float v = q_prim[i*4+2];
-
-        float W = 1.0 / sqrt(1.0 -
-                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] - v*v*gamma_up[3]);
-
-        qf_sw[i*3] = phi * W;
-        qf_sw[i*3+1] = phi * W * W * u;
-        qf_sw[i*3+2] = phi * W * W * v;
-    }
-
-    // interpolate fine grid to coarse grid
-    for (int j = 1; j < matching_indices[3] - matching_indices[2]; j++) {
-        for (int i = 1; i < matching_indices[1] - matching_indices[0]; i++) {
-            for (int n = 0; n < 3; n++) {
-                q_c[((j+matching_indices[2]) * nx +
-                      i+matching_indices[0]) * 3+n] =
-                      0.25 * (qf_sw[(j*2 * nxf + i*2) * 3 + n] +
-                              qf_sw[(j*2 * nxf + i*2+1) * 3 + n] +
-                              qf_sw[((j*2+1) * nxf + i*2) * 3 + n] +
-                              qf_sw[((j*2+1) * nxf + i*2+1) * 3 + n]);
-            }
-        }
-    }
-
-    delete[] q_prim;
-    delete[] qf_sw;
-}
-
-void Sea::p_from_swe(float * q, float * p) {
-    // calculate p using SWE conserved variables
-
-    // only use on coarse grid
-    for (int i = 0; i < nx*ny; i++) {
-        float W = sqrt((q[i*3+1]*q[i*3+1] * gamma_up[0] +
-                2.0 * q[i*3+1] * q[i*3+2] * gamma_up[1] +
-                q[i*3+2] * q[i*3+2] * gamma_up[3]) / (q[i*3]*q[i*3]) + 1.0);
-
-        float ph = q[i*3] / W;
-
-        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) /
-            (gamma - 1.0)) - 1.0) / gamma;
-    }
-}
-
-
 
 void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     run code
     */
-    //cout << "Size of U_fine: " << sizeof(U_fine) / sizeof(U_fine[0]) << '\n';
     cuda_run(beta, gamma_up, U_coarse, U_fine, rho, mu,
-             nx, ny, nxf, nyf, ng, nt,
+             nx, ny, nlayers, nxf, nyf, nz, ng, nt,
              alpha, gamma, dx, dy, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 }
 
@@ -613,18 +422,20 @@ int main(int argc, char *argv[]) {
 
     Sea sea(input_filename);
 
-    float * D0 = new float[sea.nx*sea.ny];
-    float * Sx0 = new float[sea.nx*sea.ny];
-    float * Sy0 = new float[sea.nx*sea.ny];
+    float * D0 = new float[sea.nx*sea.ny*sea.nlayers];
+    float * Sx0 = new float[sea.nx*sea.ny*sea.nlayers];
+    float * Sy0 = new float[sea.nx*sea.ny*sea.nlayers];
 
     // set initial data
-    for (int x = 0; x < sea.nx; x++) {
+    for (int z = 0; z < sea.nlayers; z++) {
         for (int y = 0; y < sea.ny; y++) {
-            D0[y * sea.nx + x] = 1.0 + 0.4 *
-                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            for (int x = 0; x < sea.nx; x++) {
+                D0[(z * sea.ny + y) * sea.nx + x] = 1.0 + 0.4 *
+                    exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
 
-            Sx0[y * sea.nx + x] = 0.0;
-            Sy0[y * sea.nx + x] = 0.0;
+                Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
+                Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
+            }
         }
     }
 
