@@ -22,6 +22,7 @@ typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
 
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
                        float gamma, float * gamma_up);
+typedef float (* fmodptr)(float x, float y);
 
 //float zbrent(fptr func, const float x1, const float x2, const float tol,
 //             float D, float Sx, float Sy, float tau, float gamma,
@@ -50,7 +51,8 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float rho, float mu, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
-         int nt, float alpha, float gamma, float dx, float dy, float dt, bool burning,
+         int nt, float alpha, float gamma, float zmin,
+         float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices);
@@ -60,7 +62,8 @@ public:
     Sea(int _nx, int _ny, int _nz, int _nlayers, int _nt, int _ng,
             int _r, float _df,
             float xmin, float xmax,
-            float ymin, float ymax, float  _rho,
+            float ymin, float ymax,
+            float zmin, float zmax, float  _rho,
             float  _Q, float _mu, float _gamma,
             float _alpha, float * _beta, float * _gamma_down,
             bool _periodic, bool _burning, int _dprint);
@@ -101,6 +104,8 @@ private:
 
     float dx;
     float dy;
+    float dz;
+    float zmin;
     float dt;
     float df;
 
