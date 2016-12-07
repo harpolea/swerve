@@ -1085,7 +1085,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         float r = find_height(q_c[(c_y * nx + c_x) * 3]);
         float prev_r = r;
 
-        int neighbour_layer = nz-1; // SWE layer just below compressible layer
+        int neighbour_layer = nz; // SWE layer just below compressible layer
         float layer_frac = 0.0; // fraction of distance between SWE layers that compressible is at
 
         // find heights of SWE layers - if height of SWE layer is above it, stop.
@@ -1099,7 +1099,11 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             prev_r = r;
         }
 
-        // TODO: make sure top and bottom layers properly taken care of
+        if (neighbour_layer == nz) {
+            // if compressible below lowest SWE layer, just copy across values from this layer
+            neighbour_layer = nz - 1;
+            layer_frac = 1.0;
+        }
 
         for (int n = 0; n < 5; n++) {
             int coarse_index = ((neighbour_layer * ny + c_y) * nx + c_x) * 5 + n;
@@ -1342,6 +1346,9 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         int z_index = nz - 1 - int((r - zmin) / dz);
         float z_frac = 1.0 - d_fmod((r - zmin) / dz, 1.0);
 
+        // yes can get here
+        //printf("Am I here????\n");
+
         // interpolate between compressible cells nearest to SWE layer.
         for (int n = 0; n < 3; n++) {
             q_c[((z * ny + y+matching_indices[2]) * nx +
@@ -1356,6 +1363,9 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                 qf_sw[(((z_index+1) * nyf + y*2+1) * nxf + x*2) * 3 + n] +
                 qf_sw[(((z_index+1) * nyf + y*2+1) * nxf + x*2+1) * 3 + n]));
         }
+        // yes can get here
+        //printf("Am I here????\n");
+
     }
 }
 
@@ -2217,14 +2227,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 2*sizeof(float));
-    cudaMalloc((void**)&gamma_up_d, 5*sizeof(float));
+    cudaMalloc((void**)&gamma_up_d, 4*sizeof(float));
     cudaMalloc((void**)&Uc_d, nx*ny*nlayers*3*sizeof(float));
     cudaMalloc((void**)&Uf_d, nxf*nyf*nz*5*sizeof(float));
     //cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 2*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(gamma_up_d, gamma_up, 5*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(gamma_up_d, gamma_up, 4*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
     //cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
@@ -2266,8 +2276,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMalloc((void**)&qf_swe, nxf*nyf*nz*3*sizeof(float));
 
     int * matching_indices_d;
-    cudaMalloc((void**)&matching_indices_d, 5*sizeof(int));
-    cudaMemcpy(matching_indices_d, matching_indices, 5*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&matching_indices_d, 4*sizeof(int));
+    cudaMemcpy(matching_indices_d, matching_indices, 4*sizeof(int), cudaMemcpyHostToDevice);
 
     // make host-side function pointers to __device__ functions
     flux_func_ptr h_compressible_fluxes;
@@ -2316,6 +2326,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             H5Sclose(file_space);
         }
 
+        cudaError_t err;
+        err = cudaGetLastError();
+        cout << "Before evolution\n";
+        if (err != cudaSuccess)
+            printf("Error: %s\n", cudaGetErrorString(err));
+
         // main loop
         for (int t = 0; t < nt; t++) {
 
@@ -2330,6 +2346,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
+            err = cudaGetLastError();
+            cout << "After prolonging\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
 
             // enforce boundaries
             if (n_processes == 1) {
@@ -2340,6 +2361,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
+            err = cudaGetLastError();
+            cout << "Before fine rk3\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
 
             // evolve fine grid through two subcycles
             for (int i = 0; i < 2; i++) {
@@ -2367,13 +2392,28 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
             }
+            err = cudaGetLastError();
+            cout << "Before restricting\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
 
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
                           rho, gamma, gamma_up_d, ng, rank, qf_swe, h_fmod);
-            cudaMemcpy(Uc_h, Uc_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
+            err = cudaGetLastError();
+            cout << "After restricting\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
+            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+            err = cudaGetLastError();
+            cout << "After copying\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
 
             // enforce boundaries
             if (n_processes == 1) {
@@ -2385,6 +2425,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
+            err = cudaGetLastError();
+            cout << "Coarse rk3\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
+
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d,
@@ -2393,6 +2438,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 dx, dy, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
                 h_shallow_water_fluxes);
+
+            err = cudaGetLastError();
+            cout << "Done coarse rk3\n";
+            if (err != cudaSuccess)
+                printf("Error: %s\n", cudaGetErrorString(err));
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -2429,7 +2479,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaDeviceSynchronize();
 
-            cudaError_t err = cudaGetLastError();
+            err = cudaGetLastError();
 
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));

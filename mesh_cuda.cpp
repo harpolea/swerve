@@ -316,11 +316,11 @@ void Sea::print_inputs() {
     */
 
     cout << "\nINPUT DATA\n" << "----------\n";
-    cout << "(nx, ny, nlayers, ng) \t\t(" << nx << ',' << ny << ',' << nlayers << ',' << ng << ")\n";
+    cout << "(nx, ny, nlayers, ng) \t(" << nx << ',' << ny << ',' << nlayers << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
     cout << "(nxf, nyf, nz, r, df) \t(" << nxf << ',' << nyf << ',' << nz << ',' << r << ',' << df << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
-    cout << "(dx, dy, dz, dt) \t\t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
+    cout << "(dx, dy, dz, dt) \t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho << "\n";
     cout << "mu \t\t\t" << mu << '\n';
     cout << "alpha \t\t\t" << alpha << '\n';
