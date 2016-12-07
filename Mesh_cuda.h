@@ -22,7 +22,6 @@ typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
 
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
                        float gamma, float * gamma_up);
-typedef float (* fmodptr)(float x, float y);
 
 //float zbrent(fptr func, const float x1, const float x2, const float tol,
 //             float D, float Sx, float Sy, float tau, float gamma,

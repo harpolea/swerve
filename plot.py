@@ -127,6 +127,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             ny = int(dat[0])
         elif name == 'nt':
             nt = int(dat[0])
+        elif name == 'nlayers':
+            nlayers = int(dat[0])
         elif name == 'xmin':
             xmin = float(dat[0])
         elif name == 'xmax':
@@ -147,7 +149,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     # read data
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
-    D_2d = table[:,:,:,0]
+    D_2d = table[:,:,:,:,0]
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
@@ -166,7 +168,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
 
-    for i in range(start, len(D_2d[:,0,0])):
+    for i in range(start, len(D_2d[:,0,0,0])):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
 
@@ -175,7 +177,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
         ax.set_zlim(0.7,1.9)
-        ax.plot_surface(X,Y,D_2d[i,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
+        for l in range(nlayers):
+            ax.plot_surface(X,Y,D_2d[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)
 
     # close hdf5 file

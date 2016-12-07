@@ -365,22 +365,22 @@ void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
             for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {
                     for (int l = 0; l < vec_dim; l++) {
-                        grid[((z * n_z + y) * n_x + g) * vec_dim + l] =
-                            grid[((z * n_z + y) * n_x + ng) * vec_dim + l];
+                        grid[((z * n_y + y) * n_x + g) * vec_dim + l] =
+                            grid[((z * n_y + y) * n_x + ng) * vec_dim + l];
 
-                        grid[((z * n_z + y) * n_x + (n_x-1-g)) * vec_dim + l] =
-                            grid[((z * n_z + y) * n_x + (n_x-1-ng)) * vec_dim + l];
+                        grid[((z * n_y + y) * n_x + (n_x-1-g)) * vec_dim + l] =
+                            grid[((z * n_y + y) * n_x + (n_x-1-ng)) * vec_dim + l];
                     }
                 }
             }
             for (int g = 0; g < ng; g++) {
                 for (int x = 0; x < n_x; x++){
                     for (int l = 0; l < vec_dim; l++) {
-                        grid[((z * n_z + g) * n_x + x) * vec_dim + l] =
-                            grid[((z * n_z + ng) * n_x + x) * vec_dim + l];
+                        grid[((z * n_y + g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_y + ng) * n_x + x) * vec_dim + l];
 
-                        grid[((z * n_z + n_y-1-g) * n_x + x) * vec_dim + l] =
-                            grid[((z * n_z + n_y-1-ng) * n_x + x) * vec_dim + l];
+                        grid[((z * n_y + n_y-1-g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_y + n_y-1-ng) * n_x + x) * vec_dim + l];
                     }
                 }
             }
@@ -434,12 +434,14 @@ int main(int argc, char *argv[]) {
     float * Sy0 = new float[sea.nx*sea.ny*sea.nlayers];
 
     // set initial data
-    for (int z = 0; z < sea.nlayers; z++) {
-        for (int y = 0; y < sea.ny; y++) {
-            for (int x = 0; x < sea.nx; x++) {
-                D0[(z * sea.ny + y) * sea.nx + x] = 1.0 + 0.4 *
-                    exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
 
+    for (int y = 0; y < sea.ny; y++) {
+        for (int x = 0; x < sea.nx; x++) {
+            D0[y * sea.nx + x] = 0.7 + 0.2 *
+                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            D0[(sea.ny + y) * sea.nx + x] = 1.0 + 0.4 *
+                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            for (int z = 0; z < sea.nlayers; z++) {
                 Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
                 Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
             }
