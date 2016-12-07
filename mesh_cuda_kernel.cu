@@ -1085,24 +1085,29 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         float r = find_height(q_c[(c_y * nx + c_x) * 3]);
         float prev_r = r;
 
-        int neighbour_layer = nz; // SWE layer just below compressible layer
+        int neighbour_layer = nlayers; // SWE layer just below compressible layer
         float layer_frac = 0.0; // fraction of distance between SWE layers that compressible is at
 
-        // find heights of SWE layers - if height of SWE layer is above it, stop.
-        for (int l = 1; l < nlayers; l++) {
-            r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3]);
-            if (height > r) {
-                neighbour_layer = l;
-                layer_frac = (height - r) / (prev_r - r);
-                break;
-            }
-            prev_r = r;
-        }
+        if (height > r) { // compressible layer above top SWE layer
+            neighbour_layer = 1;
+        } else {
 
-        if (neighbour_layer == nz) {
-            // if compressible below lowest SWE layer, just copy across values from this layer
-            neighbour_layer = nz - 1;
-            layer_frac = 1.0;
+            // find heights of SWE layers - if height of SWE layer is above it, stop.
+            for (int l = 1; l < nlayers; l++) {
+                r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3]);
+                if (height > r) {
+                    neighbour_layer = l;
+                    layer_frac = (height - r) / (prev_r - r);
+                    break;
+                }
+                prev_r = r;
+            }
+
+            if (neighbour_layer == nlayers) {
+                // if compressible below lowest SWE layer, just copy across values from this layer
+                neighbour_layer = nlayers - 1;
+                layer_frac = 1.0;
+            }
         }
 
         for (int n = 0; n < 5; n++) {
@@ -2339,6 +2344,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
+            cout << "\nCoarse grid before prolonging\n\n";
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
+                }
+            }
+
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, zmin, gamma_up_d,
@@ -2358,6 +2370,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
                 bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size);
+            }
+
+            cout << "\nFine grid after prolonging\n\n";
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                        cout << '(' << x << ',' << y << "): ";
+                        for (int z = 0; z < nz; z++) {
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5] << ',';
+                        }
+                        cout << '\n';
+                }
             }
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
@@ -2386,6 +2409,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size);
                 }
 
+                cout << "\nFine grid\n\n";
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << "): ";
+                            for (int z = 0; z < nz; z++) {
+                                cout << Uf_h[(((z*nyf + y)*nxf)+x)*5] << ',';
+                            }
+                            cout << '\n';
+                    }
+                }
+
                 cudaDeviceSynchronize();
 
                 // copy to device
@@ -2408,6 +2442,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+            cout << "\nCoarse grid after restricting\n\n";
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
+                }
+            }
 
             err = cudaGetLastError();
             cout << "After copying\n";
