@@ -731,7 +731,6 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy,
                     tau, gamma, gamma_up);
     if (nan_check(p)){
-        //printf("NAN ALERT\n");
         p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
             abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
     }
@@ -1029,7 +1028,6 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                 (q[offset*3] * q[offset*3]) + 1.0);
 
         float p = p_from_swe(q_swe, gamma_up, rho, gamma, W);
-
         float rhoh = rhoh_from_p(p, rho, gamma);
 
         q_comp[offset*5] = rho * W;
@@ -1091,7 +1089,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 q_c[(c_y*nx+c_x)*3+2] * q_c[(c_y*nx+c_x)*3+2] * gamma_up[3]) /
                 (q_c[(c_y*nx+c_x)*3] * q_c[(c_y*nx+c_x)*3]) + 1.0);
         float r = find_height(q_c[(c_y * nx + c_x) * 3]/W);
-        //printf("heights = %f, %f\n", height, r);
+        //printf("z = %i, heights = %f, %f\n", z, height, r);
         float prev_r = r;
 
         int neighbour_layer = nlayers; // SWE layer just below compressible layer
@@ -1129,7 +1127,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             }
         }
 
-        //printf("height: %f, neighbour_layer: %i, layer_frac: %f, \n", height, neighbour_layer, layer_frac);
+        //printf("z: %i, height: %f, neighbour_layer: %i, layer_frac: %f, \n", z, height, neighbour_layer, layer_frac);
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1394,12 +1392,11 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             }
         }
 
-        //printf("height: %f, z_index: %i, z_frac: %f\n", r, z_index, z_frac);
+        //printf("z: %i, height: %f, z_index: %i, z_frac: %f\n", z, r, z_index, z_frac);
 
         // interpolate between compressible cells nearest to SWE layer.
         for (int n = 0; n < 3; n++) {
-            q_c[((z * ny + y+matching_indices[2]) * nx +
-                  x+matching_indices[0]) * 3+n] =
+            q_c[coarse_index + n] =
                 0.25 * (z_frac *
                 (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 3 + n] +
                 qf_sw[((z_index * nyf + y*2) * nxf + x*2+1) * 3 + n] +
@@ -1555,7 +1552,6 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
             q_p[i] = Un_d[offset + i] + S * 0.5 * dx;
             q_m[i] = Un_d[offset + i] - S * 0.5 * dx;
-
         }
 
         // fluxes
@@ -2383,11 +2379,15 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             /*cout << "\nCoarse grid before prolonging\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
+            for (int z = 0; z < nlayers; z++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+                    }
                 }
             }*/
+
+            //cout << "\n\nProlonging\n\n";
 
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2416,7 +2416,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 for (int x = 0; x < nx; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
                         }
                         cout << '\n';
                 }
@@ -2473,6 +2473,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
+            //cout << "\n\nRestricting\n\n";
+
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
@@ -2487,9 +2489,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
 
             /*cout << "\nCoarse grid after restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
+            for (int z = 0; z < nlayers; z++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+                    }
                 }
             }*/
 
@@ -2588,20 +2592,22 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     printf("Printing t = %i\n", t+1);
 
                     if (n_processes > 1) { // only do MPI stuff if needed
-                        float * buf = new float[nx*ny*3];
+                        float * buf = new float[nx*ny*nlayers*3];
                         int tag = 0;
                         for (int source = 1; source < n_processes; source++) {
-                            mpi_err = MPI_Recv(buf, nx*ny*3, MPI_FLOAT, source, tag, comm, &status);
+                            mpi_err = MPI_Recv(buf, nx*ny*nlayers*3, MPI_FLOAT, source, tag, comm, &status);
 
                             check_mpi_error(mpi_err);
 
                             // copy data back to grid
                             ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
                             // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
-                            for (int y = ky_offset; y < ny; y++) {
-                                for (int x = 0; x < nx; x++) {
-                                    for (int i = 0; i < 3; i++) {
-                                        Uc_h[(y * nx + x) * 3 + i] = buf[(y * nx + x) * 3 + i];
+                            for (int z = 0; z < nlayers; z++) {
+                                for (int y = ky_offset; y < ny; y++) {
+                                    for (int x = 0; x < nx; x++) {
+                                        for (int i = 0; i < 3; i++) {
+                                            Uc_h[((z * ny + y) * nx + x) * 3 + i] = buf[((z * ny + y) * nx + x) * 3 + i];
+                                        }
                                     }
                                 }
                             }

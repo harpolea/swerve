@@ -101,6 +101,11 @@ def quick_plot(input_filename=None, filename=None, start=0):
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()"""
 
+def find_height(D, Sx, Sy, gamma_up, M=1.0):
+    D[D < 1.e-6] = 1.e-6
+    W = np.sqrt((Sx**2*gamma_up[0,0] + 2. * Sx * Sy * gamma_up[1,0]+ Sy**2 * gamma_up[1,1]) / D**2 + 1.0)
+    return 2. * M / (1. - np.exp(-2 * D / W))
+
 
 def mesh_plot(input_filename=None, filename=None, start=0):
 
@@ -137,6 +142,11 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             ymin = float(dat[0])
         elif name == 'ymax':
             ymax = float(dat[0])
+        elif name == 'gamma_down':
+            gamma_down = np.array([float(i) for i in dat])
+            gamma_up = np.reshape(gamma_down, (2,2))
+            gamma_up[0,0] = 1. / gamma_up[0,0]
+            gamma_up[1,1] = 1. / gamma_up[1,1]
         elif name == 'dprint':
             dprint = int(dat[0])
 
@@ -150,6 +160,10 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
     D_2d = table[:,:,:,:,0]
+    Sx = table[:,:,:,:,1]
+    Sy = table[:,:,:,:,2]
+
+    heights = find_height(D_2d, Sx, Sy, gamma_up)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
@@ -176,9 +190,9 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        ax.set_zlim(0.7,1.9)
+        ax.set_zlim(2.3,2.9)
         for l in range(nlayers):
-            ax.plot_surface(X,Y,D_2d[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
+            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)
 
     # close hdf5 file
