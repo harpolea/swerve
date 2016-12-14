@@ -71,7 +71,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
     if (fa * fb >= 0.0) {
         //cout << "Root must be bracketed in zbrent.\n";
         //printf("Root must be bracketed in zbrent.\n");
-        return x1;
+        return x2;
     }
 
     if (abs(fa) < abs(fb)) {
@@ -677,7 +677,7 @@ __device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma) {
 __device__ __host__ float phi_from_p(float p, float rho, float gamma) {
     // calculate the metric potential Phi given p for gamma law equation of
     // state
-    return 1.0 + (gamma - 1.0) / gamma *
+    return 0.6 + (gamma - 1.0) / gamma *
         log(1.0 + gamma * p / ((gamma - 1.0) * rho));
 }
 
@@ -725,7 +725,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     // check sign change
     if (f_of_p(pmin, D, Sx, Sy, tau, gamma, gamma_up) *
         f_of_p(pmax, D, Sx, Sy, tau, gamma, gamma_up) > 0.0) {
-        pmin = 0.0;
+        pmin *= 0.1;
     }
 
     float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy,
@@ -956,7 +956,7 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
 
         float ph = q[i*3] / W;
 
-        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) /
+        p[i] = rho * (gamma - 1.0) * (exp(gamma * (ph - 0.6) /
             (gamma - 1.0)) - 1.0) / gamma;
     }
 }
@@ -982,7 +982,7 @@ __device__ float p_from_swe(float * q, float * gamma_up, float rho,
 
     float ph = q[0] / W;
 
-    return rho * (gamma - 1.0) * (exp(gamma * (ph - 1.0) /
+    return rho * (gamma - 1.0) * (exp(gamma * (ph - 0.6) /
         (gamma - 1.0)) - 1.0) / gamma;
 }
 
@@ -1015,6 +1015,8 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
     int offset = (z * ny + y) * nx + x;
 
     if ((x < nx) && (y < ny) && (z < nz)) {
+        //printf("(%d, %d, %d): %f, %f, %f\n", x, y, z, q[offset*3], q[offset*3+1], q[offset*3+2]);
+
         float * q_swe;
         q_swe = (float *)malloc(3 * sizeof(float));
 
@@ -1026,6 +1028,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                 2.0 * q[offset*3+1] * q[offset*3+2] * gamma_up[1] +
                 q[offset*3+2] * q[offset*3+2] * gamma_up[3]) /
                 (q[offset*3] * q[offset*3]) + 1.0);
+        //printf("(%d, %d, %d): %f, \n", x, y, z, W);
 
         float p = p_from_swe(q_swe, gamma_up, rho, gamma, W);
         float rhoh = rhoh_from_p(p, rho, gamma);
@@ -1037,8 +1040,13 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         q_comp[offset*5+3] = 0.0;
         q_comp[offset*5+4] = rhoh*W*W - p - rho * W;
 
+        //printf("s2c (%d, %d, %d): %f, %f\n", x, y, z, q_comp[offset*5+4], p);
+
         // NOTE: hack?
-        if (q_comp[offset*5+4] < 0.0) q_comp[offset*5+4] = 0.0;
+        if (q_comp[offset*5+4] < 0.0) {
+            //printf("tau < 0, p: %f, tau: %f\n", p, q_comp[offset*5+4]);
+            q_comp[offset*5+4] = 0.0;
+        }
 
         free(q_swe);
     }
@@ -1075,7 +1083,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x>0) && (x < int(round(nxf*0.5))-1) && (y > 0) && (y < int(round(nyf*0.5))-1) && (z < nz)) {
+    if ((x>0) && (x < int(round(nxf*0.5)+1)) && (y > 0) && (y < int(round(nyf*0.5)+1)) && (z < nz)) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[0];
         int c_y = y + matching_indices_d[2];
@@ -1089,6 +1097,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 q_c[(c_y*nx+c_x)*3+2] * q_c[(c_y*nx+c_x)*3+2] * gamma_up[3]) /
                 (q_c[(c_y*nx+c_x)*3] * q_c[(c_y*nx+c_x)*3]) + 1.0);
         float r = find_height(q_c[(c_y * nx + c_x) * 3]/W);
+        // Heights are sane here?
         //printf("z = %i, heights = %f, %f\n", z, height, r);
         float prev_r = r;
 
@@ -1097,10 +1106,24 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
         if (height > r) { // compressible layer above top SWE layer
             neighbour_layer = 1;
+            W = sqrt((q_c[((ny+c_y)*nx+c_x)*3+1] *
+                    q_c[((ny+c_y)*nx+c_x)*3+1] *
+                    gamma_up[0] +
+                    2.0 * q_c[((ny+c_y)*nx+c_x)*3+1] *
+                    q_c[((ny+c_y)*nx+c_x)*3+2] *
+                    gamma_up[1] +
+                    q_c[((ny+c_y)*nx+c_x)*3+2] *
+                    q_c[((ny+c_y)*nx+c_x)*3+2] * gamma_up[3]) /
+                    (q_c[((ny+c_y)*nx+c_x)*3] *
+                    q_c[((ny+c_y)*nx+c_x)*3]) + 1.0);
+            r = find_height(q_c[((ny + c_y) * nx + c_x) * 3] / W);
+            layer_frac = (height - prev_r) / (r - prev_r);
+            //printf("Layer frac: %f  ", layer_frac);
         } else {
 
             // find heights of SWE layers - if height of SWE layer is above it, stop.
             for (int l = 1; l < nlayers; l++) {
+                prev_r = r;
                 W = sqrt((q_c[((l*ny+c_y)*nx+c_x)*3+1] *
                         q_c[((l*ny+c_y)*nx+c_x)*3+1] *
                         gamma_up[0] +
@@ -1114,18 +1137,19 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3] / W);
                 if (height > r) {
                     neighbour_layer = l;
-                    layer_frac = 1.0 - (height - r) / (prev_r - r);
+                    layer_frac = (height - prev_r)/ (r - prev_r);
                     break;
                 }
-                prev_r = r;
             }
 
             if (neighbour_layer == nlayers) {
-                // if compressible below lowest SWE layer, just copy across values from this layer
+                // lowest compressible beneath lowest SWE layer
                 neighbour_layer = nlayers - 1;
-                layer_frac = 1.0;
+                layer_frac = (height - prev_r) / (r - prev_r);
+                //printf("Lower layer frac: %f  ", layer_frac);
             }
         }
+        //printf("Layer frac: %f  ", layer_frac);
 
         //printf("z: %i, height: %f, neighbour_layer: %i, layer_frac: %f, \n", z, height, neighbour_layer, layer_frac);
 
@@ -1194,7 +1218,22 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
             q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 5 + n] =
                 interp_q_comp + 0.25 * (dx * Sx + dy * Sy);
+
         }
+        //printf("(%d, %d, %d): %f, \n", 2*x, 2*y, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5+4]);
+        //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
+        //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
+        //printf("(%d, %d, %d): %f, \n", 2*x+1, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 5]);
+    }
+
+    // going to get rid of tau < 0 (slightly hacky?)
+    if ((x < nxf) && (y < nyf) && (z < nz)) {
+        if (q_f[((z * nyf + y) * nxf + x) * 5 + 4] < 0.0) {
+            //printf("tau < 0 (%d, %d, %d): %f, \n", x, y, z, q_f[((z * nyf + y) * nxf + x) * 5 + 4]);
+            q_f[((z * nyf + y) * nxf + x) * 5 + 4] = 0.0;
+        }
+
+        //printf("(%d, %d, %d): %f, \n", x, y, z, q_f[((z * nyf + y) * nxf + x) * 5 + 4]);
     }
 }
 
@@ -1297,6 +1336,15 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     int z = threadIdx.z;
     int offset = (z * nyf + y) * nxf + x;
 
+    /*if (x == 0 && y == 0 && z == 0) {
+        for (int j = 0; j < 40; j++) {
+            for (int i = 0; i < 40; i++) {
+                printf("%d, ", q[(j*nxf+i)*5]);
+            }
+        }
+        printf("\n\n");
+    }*/
+
     if ((x < nxf) && (y < nyf) && (z < nz)) {
         float * q_prim, * q_con;
         q_con = (float *)malloc(5 * sizeof(float));
@@ -1309,15 +1357,19 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         // find primitive variables
         cons_to_prim_comp_d(q_con, q_prim, gamma, gamma_up);
 
-        // calculate SWE conserved variables on fine grid.
-        float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
-        float ph = phi_from_p(p, rho, gamma);
-
         float u = q_prim[1];
         float v = q_prim[2];
 
         float W = 1.0 / sqrt(1.0 -
                 u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] - v*v*gamma_up[3]);
+
+        //rho = q_prim[0];
+
+        // calculate SWE conserved variables on fine grid.
+        float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
+        float ph = phi_from_p(p, q_prim[0], gamma);
+
+        //printf("W: %f, ph: %f, tau: %f, eps: %f\n", W, ph, q_con[4], q_prim[4]);
 
         q_swe[offset*3] = ph * W;
         q_swe[offset*3+1] = ph * W * W * u;
@@ -1359,6 +1411,15 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
+    /*if (x == 0 && y == 0 && z == 0) {
+        for (int j = 0; j < nyf; j++) {
+            for (int i = 0; i < nxf; i++) {
+                printf("%f, ", qf_sw[(j*nxf+i)*3]);
+            }
+        }
+        printf("\n");
+    }*/
+
     if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z < nlayers)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
@@ -1370,10 +1431,12 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                 q_c[coarse_index+2] * q_c[coarse_index+2] * gamma_up[3]) /
                 (q_c[coarse_index] * q_c[coarse_index]) + 1.0);
         float r = find_height(q_c[coarse_index] / W);
+        //printf("r: %f, W: %f, Phi: %f \n", r, W, q_c[coarse_index]);
         int z_index = nz;
         float z_frac = 0.0;
 
         if (r > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
+            //printf("hi :/\n");
             z_index = 1;
         } else {
 
@@ -1387,6 +1450,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             }
 
             if (z_index == nz) {
+                //printf("oops..\n");
                 z_index = nz - 1;
                 z_frac = 1.0;
             }
@@ -2378,12 +2442,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
+            // good here
             /*cout << "\nCoarse grid before prolonging\n\n";
-            for (int z = 0; z < nlayers; z++) {
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
-                    }
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
                 }
             }*/
 
@@ -2401,6 +2464,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cout << "After prolonging\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
+            // good here
+            /*cout << "\nFine grid after prolonging\n\n";
+            for (int y = 0; y < nyf; y++) {
+                for (int x = 0; x < nxf; x++) {
+                        cout << '(' << x << ',' << y << "): ";
+                        for (int z = 0; z < nz; z++) {
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
+                        }
+                        cout << '\n';
+                }
+            }*/
 
 
             // enforce boundaries
@@ -2412,8 +2486,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             /*cout << "\nFine grid after prolonging\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
+            for (int y = 0; y < nyf; y++) {
+                for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
                             cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
@@ -2474,6 +2548,26 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             //cout << "\n\nRestricting\n\n";
+            // probably good here
+            /*cout << "\nFine grid before restricting\n\n";
+            for (int y = 0; y < nyf; y++) {
+                for (int x = 0; x < nxf; x++) {
+                        cout << '(' << x << ',' << y << "): ";
+                        for (int z = 0; z < nz; z++) {
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
+                        }
+                        cout << '\n';
+                }
+            }*/
+
+            /*cout << "\nCoarse grid before restricting\n\n";
+            for (int z = 0; z < nlayers; z++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+                    }
+                }
+            }*/
 
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2489,11 +2583,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
 
             /*cout << "\nCoarse grid after restricting\n\n";
-            for (int z = 0; z < nlayers; z++) {
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
-                    }
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
                 }
             }*/
 
@@ -2536,6 +2628,15 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+
+            /*cout << "\nCoarse grid after rk3\n\n";
+            for (int z = 0; z < nlayers; z++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+                    }
+                }
+            }*/
 
             /*for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;

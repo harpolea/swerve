@@ -190,7 +190,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        ax.set_zlim(2.3,2.9)
+        ax.set_zlim(2.0,2.6)
         for l in range(nlayers):
             ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)

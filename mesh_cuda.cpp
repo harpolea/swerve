@@ -437,9 +437,9 @@ int main(int argc, char *argv[]) {
 
     for (int y = 0; y < sea.ny; y++) {
         for (int x = 0; x < sea.nx; x++) {
-            D0[y * sea.nx + x] = 1.2 - 0.2 *
+            D0[y * sea.nx + x] = 1.0 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.ny + y) * sea.nx + x] = 1.4 - 0.2 *
+            D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
             for (int z = 0; z < sea.nlayers; z++) {
                 Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
