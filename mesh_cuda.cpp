@@ -32,11 +32,11 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax,
-        float _zmin, float zmax, float * _rho,
+        float _zmin, float zmax, float * _rho, float _p_floor,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), nt(_nt), r(_r), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), nt(_nt), r(_r), df(_df), p_floor(_p_floor), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -180,6 +180,8 @@ Sea::Sea(char * filename)
             for (int i = 0; i < nlayers; i++) {
                 inputFile >> rho[i];
             }
+        } else if (variableName == "p_floor") {
+            inputFile >> p_floor;
         } else if (variableName == "Q") {
             inputFile >> Q;
         } else if (variableName == "mu") {
@@ -281,7 +283,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), p_floor(seaToCopy.p_floor), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
@@ -365,7 +367,7 @@ void Sea::print_inputs() {
     cout << "(nxf, nyf, nz, r, df) \t(" << nxf << ',' << nyf << ',' << nz << ',' << r << ',' << df << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dz, dt) \t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
-    cout << "rho \t\t\t" << rho << "\n";
+    cout << "rho \t\t\t" << rho[0] << ',' << rho[1]<< "\n";
     cout << "mu \t\t\t" << mu << '\n';
     cout << "alpha \t\t\t" << alpha << '\n';
     cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ")\n";
@@ -436,7 +438,7 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     run code
     */
-    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, mu,
+    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, p_floor, mu,
              nx, ny, nlayers, nxf, nyf, nz, ng, nt,
              alpha, gamma, zmin, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 }

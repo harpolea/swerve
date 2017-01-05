@@ -48,7 +48,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int ng, int rank, float * qf_swe);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float mu, int nx, int ny, int nlayers,
+         float * rho, float p_floor, float mu, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,
@@ -62,7 +62,7 @@ public:
             int _r, float _df,
             float xmin, float xmax,
             float ymin, float ymax,
-            float zmin, float zmax, float  * _rho,
+            float zmin, float zmax, float  * _rho, float p_floor,
             float  _Q, float _mu, float _gamma,
             float _alpha, float * _beta, float * _gamma_down,
             bool _periodic, bool _burning, int _dprint);
@@ -112,6 +112,7 @@ private:
     float df;
 
     float *rho;
+    float p_floor;
     float Q;
     float mu; // friction
     float gamma;

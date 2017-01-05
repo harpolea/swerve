@@ -1033,7 +1033,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                            int nx, int ny, int nz,
                            float * gamma_up, float * rho, float gamma,
                            int kx_offset, int ky_offset, float dt,
-                           float * old_phi) {
+                           float * old_phi, float p_floor) {
     /*
     Calculates the compressible state vector from the SWE variables.
 
@@ -1087,7 +1087,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         for (int i = 0; i < nz; i++) {
             phis[i] = q[((i * ny + y) * nx + x) * 3];
         }
-        const float p_floor = 1.0;
+
         calc_As(rho, phis, A, p_floor, nz, gamma);
 
         float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
@@ -1310,7 +1310,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   float dx, float dy, float dz, float dt, float zmin,
                   float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
-                  float * old_phi_d) {
+                  float * old_phi_d, float p_floor) {
     /*
     Prolong coarse grid data to fine grid
 
@@ -1353,7 +1353,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d);
+            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, p_floor);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -1380,7 +1380,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int nxf, int nyf, int nz,
                                       float * gamma_up, float * rho,
                                       float gamma,
-                                      int kx_offset, int ky_offset) {
+                                      int kx_offset, int ky_offset,
+                                      float p_floor) {
     /*
     Calculates the SWE state vector from the compressible variables.
 
@@ -1445,7 +1446,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         for (int i = 0; i < nz; i++) {
             phis[i] = q[((i * nyf + y) * nxf + x) * 3];
         }
-        const float p_floor = 1.0;
         calc_As(rho, phis, A, p_floor, nz, gamma);
 
         float ph = phi_from_p(p, q_prim[0], gamma, A[z]);
@@ -1671,7 +1671,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz,
                     float dz, float zmin, int * matching_indices,
                     float * rho, float gamma, float * gamma_up,
-                    int ng, int rank, float * qf_swe) {
+                    int ng, int rank, float * qf_swe, float p_floor) {
     /*
     Restrict fine grid data to coarse grid
 
@@ -1712,7 +1712,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset);
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -2311,10 +2311,12 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
        int * cumulative_kernels, float * beta_d, float * gamma_up_d,
        float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+       float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+       float * fz_p_d, float * fz_m_d,
        int nx, int ny, int nz, int vec_dim, int ng, float alpha, float gamma,
-       float dx, float dy, float dt, int rank,
-       flux_func_ptr h_flux_func) {
+       float dx, float dy, float dz, float dt, int rank,
+       flux_func_ptr h_flux_func, bool do_z) {
     /*
     Solves the homogeneous part of the equation (ie the bit without source terms).
 
@@ -2346,6 +2348,8 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
         gridpoint spacing and timestep spacing
     rank : int
         rank of MPI process
+    do_z : bool
+        should we evolve in the z direction?
     */
 
     int kx_offset = 0;
@@ -2364,6 +2368,13 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
                   dx, dy, dt, kx_offset, ky_offset);
+           if (do_z) {
+               evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
+                      qz_p_d, qz_m_d,
+                      fz_p_d, fz_m_d,
+                      nx, ny, nz, vec_dim, alpha, gamma,
+                      dz, dt, kx_offset, ky_offset);
+           }
           kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
@@ -2381,6 +2392,15 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   nx, ny, nz, vec_dim, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
 
+            if (do_z) {
+                evolve_z_fluxes<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
+                       F_d,
+                       qz_p_d, qz_m_d,
+                       fz_p_d, fz_m_d,
+                       nx, ny, nz, vec_dim, alpha,
+                       dz, dt, kx_offset, ky_offset);
+            }
+
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
@@ -2392,12 +2412,14 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float * beta_d, float * gamma_up_d, float * Un_d,
        float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
+       float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
+       float * fz_p_d, float * fz_m_d,
        int nx, int ny, int nz, int vec_dim, int ng, float alpha, float gamma,
-       float dx, float dy, float dt,
+       float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr h_flux_func) {
+       flux_func_ptr h_flux_func, bool do_z) {
     /*
     Integrates the homogeneous part of the ODE in time using RK3.
 
@@ -2439,14 +2461,15 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         status of MPI processes
     rank, n_processes : int
         rank of current MPI process and total number of MPI processes
+    do_z
     */
     // u1 = un + dt * F(un)
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
-          qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-          fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+          qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+          fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dt, rank, h_flux_func);
+          dx, dy, dz, dt, rank, h_flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2473,10 +2496,10 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
-          qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-          fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+          qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+          fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dt, rank, h_flux_func);
+          dx, dy, dz, dt, rank, h_flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2504,10 +2527,10 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
           beta_d, gamma_up_d, Un_d, F_d,
-          qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-          fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+          qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+          fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dt, rank, h_flux_func);
+          dx, dy, dz, dt, rank, h_flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2542,7 +2565,8 @@ __device__ flux_func_ptr d_compressible_fluxes = compressible_fluxes;
 __device__ flux_func_ptr d_shallow_water_fluxes = shallow_water_fluxes;
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float mu, int nx, int ny, int nlayers,
+         float * rho, float p_floor, float mu,
+         int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,
@@ -2702,7 +2726,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
 
-    float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d;
+    float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *qz_p_d, *qz_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d, *fz_p_d, *fz_m_d;
     float *Upc_h = new float[nx*ny*nlayers*3];
     float *Fc_h = new float[nx*ny*nlayers*3];
 
@@ -2720,10 +2744,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMalloc((void**)&qx_m_d, grid_size*sizeof(float));
     cudaMalloc((void**)&qy_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&qy_m_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&qz_p_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&qz_m_d, grid_size*sizeof(float));
     cudaMalloc((void**)&fx_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&fx_m_d, grid_size*sizeof(float));
     cudaMalloc((void**)&fy_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&fy_m_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&fz_p_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&fz_m_d, grid_size*sizeof(float));
 
     float * q_comp_d;
     cudaMalloc((void**)&q_comp_d, nx*ny*nlayers*5*sizeof(float));
@@ -2806,7 +2834,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, dt, zmin, gamma_up_d,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d, p_floor);
 
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2860,12 +2888,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
                 rk3(kernels, threads, blocks, cumulative_kernels,
                         beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
-                        qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                        fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                        qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                        fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                         nxf, nyf, nz, 5, ng, alpha, gamma,
-                        dx*0.5, dy*0.5, dt*0.5, Upf_h, Ff_h, Uf_h,
+                        dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
                         comm, status, rank, n_processes,
-                        h_compressible_fluxes);
+                        h_compressible_fluxes, true);
 
                 // enforce boundaries is done within rk3
                 /*if (n_processes == 1) {
@@ -2924,7 +2952,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+                          p_floor);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After restricting\n";
@@ -2965,12 +2994,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
-                qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                 nx, ny, nlayers, 3, ng, alpha, gamma,
-                dx, dy, dt, Upc_h, Fc_h, Uc_h,
+                dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
-                h_shallow_water_fluxes);
+                h_shallow_water_fluxes, false);
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3089,7 +3118,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     mpi_err = MPI_Ssend(Uc_h, ny*nx*nlayers*3, MPI_FLOAT, 0, tag, comm);
                     check_mpi_error(mpi_err);
                 }
-
             }
         }
 
@@ -3106,7 +3134,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
                          Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
                          dt, zmin, gamma_up,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d, p_floor);
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -3114,12 +3142,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             for (int i = 0; i < 2; i++) {
                 rk3(kernels, threads, blocks, cumulative_kernels,
                         beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
-                        qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                        fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                        qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                        fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                         nxf, nyf, nz, 5, ng, alpha, gamma,
-                        dx*0.5, dy*0.5, dt*0.5, Upf_h, Ff_h, Uf_h,
+                        dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
                         comm, status, rank, n_processes,
-                        h_compressible_fluxes);
+                        h_compressible_fluxes, true);
 
                 // if not last step, copy output array to input array
                 if (i < 1) {
@@ -3133,16 +3161,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+                          p_floor);
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
-                qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                 nx, ny, nlayers, 3, ng, alpha, gamma,
-                dx, dy, dt, Upc_h, Fc_h, Uc_h,
+                dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
-                h_shallow_water_fluxes);
+                h_shallow_water_fluxes, false);
 
             /*int k_offset = 0;
             if (rank > 0) {
@@ -3196,7 +3225,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             if (err != cudaSuccess)
                 printf("Error: %s\n", cudaGetErrorString(err));
-
         }
     }
 
@@ -3218,10 +3246,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaFree(qx_m_d);
     cudaFree(qy_p_d);
     cudaFree(qy_m_d);
+    cudaFree(qz_p_d);
+    cudaFree(qz_m_d);
     cudaFree(fx_p_d);
     cudaFree(fx_m_d);
     cudaFree(fy_p_d);
     cudaFree(fy_m_d);
+    cudaFree(fz_p_d);
+    cudaFree(fz_m_d);
     cudaFree(q_comp_d);
     cudaFree(qf_swe);
     cudaFree(matching_indices_d);
