@@ -66,8 +66,8 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
 
     float a = x1, b = x2;
     float c, d=0.0, e=0.0;
-    float fa = func(a, D, Sx, Sy, tau, gamma, gamma_up);
-    float fb = func(b, D, Sx, Sy, tau, gamma, gamma_up);
+    float fa = func(a, D, Sx, Sy, Sz, tau, gamma, gamma_up);
+    float fb = func(b, D, Sx, Sy, Sz, tau, gamma, gamma_up);
     float fc=0.0, fs, s;
 
     if (fa * fb >= 0.0) {
@@ -133,7 +133,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
             mflag = false;
         }
 
-        fs = func(s, D, Sx, Sy, tau, gamma, gamma_up);
+        fs = func(s, D, Sx, Sy, Sz, tau, gamma, gamma_up);
 
         d = c;
         c = b;
@@ -1295,9 +1295,10 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int nx, int ny, int nlayers, int nxf, int nyf, int nz,
-                  float dx, float dy, float dz, float zmin,
+                  float dx, float dy, float dz, float dt, float zmin,
                   float * gamma_up_d, float rho, float gamma,
-                  int * matching_indices_d, int ng, int rank, float * qc_comp) {
+                  int * matching_indices_d, int ng, int rank, float * qc_comp,
+                  float * old_phi_d) {
     /*
     Prolong coarse grid data to fine grid
 
@@ -1340,7 +1341,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset);
+            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -1897,9 +1898,9 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         // z-direction
         for (int i = 0; i < vec_dim; i++) {
             float S_upwind = (Un_d[(((z+1) * ny + y) * nx + x) * vec_dim + i] -
-                Un_d[((z * ny + y) * nx + x) * vec_dim + i]) / dx;
+                Un_d[((z * ny + y) * nx + x) * vec_dim + i]) / dz;
             float S_downwind = (Un_d[((z * ny + y) * nx + x) * vec_dim + i] -
-                Un_d[(((z-1) * ny + y) * nx + x) * vec_dim + i]) / dx;
+                Un_d[(((z-1) * ny + y) * nx + x) * vec_dim + i]) / dz;
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e6;
@@ -2048,21 +2049,21 @@ __global__ void evolve_z_fluxes(float * F,
     int z = threadIdx.z;
 
     // do fluxes
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z < nz)) {
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z > 0) && (z < (nz-1))) {
         for (int i = 0; i < vec_dim; i++) {
             // z-boundary
             // from i-1
             float fz_m = 0.5 * (
-                fz_plus_half[((z * ny + y) * nx + x-1) * vec_dim + i] +
+                fz_plus_half[(((z-1) * ny + y) * nx + x) * vec_dim + i] +
                 fz_minus_half[((z * ny + y) * nx + x) * vec_dim + i] +
-                qz_plus_half[((z * ny + y) * nx + x-1) * vec_dim + i] -
+                qz_plus_half[(((z-1) * ny + y) * nx + x) * vec_dim + i] -
                 qz_minus_half[((z * ny + y) * nx + x) * vec_dim + i]);
             // from i+1
             float fz_p = 0.5 * (
-                fx_plus_half[((z * ny + y) * nx + x) * vec_dim + i] +
-                fx_minus_half[((z * ny + y) * nx + x+1) * vec_dim + i] +
-                qx_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
-                qx_minus_half[((z * ny + y) * nx + x+1) * vec_dim + i]);
+                fz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] +
+                fz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i] +
+                qz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
+                qz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i]);
 
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 F[((z * ny + y) * nx + x)*vec_dim + i]
@@ -2674,7 +2675,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // need to fill old_phi with current phi to initialise
     float *pphi = new float[nlayers*nx*ny];
     for (int i = 0; i < nlayers*nx*ny; i++) {
-        pphi[i*3] = Uc_h;
+        pphi[i] = Uc_h[i*3];
     }
     cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -2782,8 +2783,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
-                         Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, zmin, gamma_up_d,
-                         rho, gamma, matching_indices_d, ng, rank, q_comp_d);
+                         Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, dt, zmin, gamma_up_d,
+                         rho, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2959,7 +2960,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             // update old_phi
             for (int i = 0; i < nlayers*nx*ny; i++) {
-                pphi[i*3] = Uc_h;
+                pphi[i] = Uc_h[i*3];
             }
             cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3082,8 +3083,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
                          Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
-                         zmin, gamma_up,
-                         rho, gamma, matching_indices_d, ng, rank, q_comp_d);
+                         dt, zmin, gamma_up,
+                         rho, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
 

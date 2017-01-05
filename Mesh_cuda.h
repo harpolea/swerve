@@ -16,7 +16,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim);
 
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
 
-typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
+typedef void (* flux_func_ptr)(float * q, float * f, int dir,
                                 float * gamma_up,
                                 float alpha, float * beta, float gamma);
 
