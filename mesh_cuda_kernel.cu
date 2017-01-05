@@ -677,11 +677,11 @@ __device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma) {
     return (gamma - 1.0) * rho * eps;
 }
 
-__device__ __host__ float phi_from_p(float p, float rho, float gamma) {
+__device__ __host__ float phi_from_p(float p, float rho, float gamma, float A) {
     // calculate the metric potential Phi given p for gamma law equation of
     // state
     return (gamma - 1.0) / gamma *
-        log(1.0 + gamma * p / ((gamma - 1.0) * rho));
+        log((rho + gamma * p / (gamma - 1.0)) / A);
 }
 
 __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
@@ -712,6 +712,24 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     float old_h = find_height(old_phi);
 
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
+}
+
+__device__ void calc_As(float * rhos, float * phis, float * A,
+                        float p_floor, int nlayers, float gamma) {
+    // Calculates the As used to calculate the pressure given Phi, given
+    // the pressure at the sea floor
+
+    // calculate A at sea floor
+    A[nlayers-1] = (gamma * p_floor / (gamma - 1.0) +
+        rhos[nlayers-1]) / exp(gamma * phis[nlayers-1] / (gamma - 1.0));
+    for (int n = nlayers-2; n >= 0; n--) {
+        // first calculate p at height of layer above previous layer
+        float p = (gamma - 1.0) * (A[n+1] * exp(gamma * phis[n] /
+            (gamma - 1.0)) - rhos[n+1]) / gamma;
+        // now invert to calculate A
+        A[n] = (gamma * p / (gamma - 1.0) +
+            rhos[n]) / exp(gamma * phis[n] / (gamma - 1.0));
+    }
 }
 
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
@@ -956,7 +974,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
 }
 
 void p_from_swe(float * q, float * p, int nx, int ny, int nz,
-                 float * gamma_up, float rho, float gamma) {
+                 float * gamma_up, float rho, float gamma, float A) {
     /*
     Calculate p using SWE conserved variables
 
@@ -981,13 +999,13 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
 
         float ph = q[i*3] / W;
 
-        p[i] = rho * (gamma - 1.0) * (exp(gamma * ph /
-            (gamma - 1.0)) - 1.0) / gamma;
+        p[i] = (gamma - 1.0) * (A * exp(gamma * ph /
+            (gamma - 1.0)) - rho) / gamma;
     }
 }
 
 __device__ float p_from_swe(float * q, float * gamma_up, float rho,
-                            float gamma, float W) {
+                            float gamma, float W, float A) {
     /*
     Calculates p and returns using SWE conserved variables
 
@@ -1007,13 +1025,13 @@ __device__ float p_from_swe(float * q, float * gamma_up, float rho,
 
     float ph = q[0] / W;
 
-    return rho * (gamma - 1.0) * (exp(gamma * ph /
-        (gamma - 1.0)) - 1.0) / gamma;
+    return (gamma - 1.0) * (A * exp(gamma * ph /
+        (gamma - 1.0)) - rho) / gamma;
 }
 
 __global__ void compressible_from_swe(float * q, float * q_comp,
                            int nx, int ny, int nz,
-                           float * gamma_up, float rho, float gamma,
+                           float * gamma_up, float * rho, float gamma,
                            int kx_offset, int ky_offset, float dt,
                            float * old_phi) {
     /*
@@ -1061,15 +1079,28 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                 q[offset*3+2] * gamma_up[5]) / q[offset*3] +
                 hdot * hdot * gamma_up[8] + 1.0);
         //printf("(%d, %d, %d): %f, \n", x, y, z, W);
+        // TODO: this is really inefficient as redoing the same calculation
+        // on differnt layers
+        float * A, * phis;
+        A = (float *)malloc(nz * sizeof(float));
+        phis = (float *)malloc(nz * sizeof(float));
+        for (int i = 0; i < nz; i++) {
+            phis[i] = q[((i * ny + y) * nx + x) * 3];
+        }
+        const float p_floor = 1.0;
+        calc_As(rho, phis, A, p_floor, nz, gamma);
 
-        float p = p_from_swe(q_swe, gamma_up, rho, gamma, W);
-        float rhoh = rhoh_from_p(p, rho, gamma);
+        float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
+        float rhoh = rhoh_from_p(p, rho[z], gamma);
 
-        q_comp[offset*5] = rho * W;
+        free(phis);
+        free(A);
+
+        q_comp[offset*5] = rho[z] * W;
         q_comp[offset*5+1] = rhoh * W * q[offset*3+1] / q[offset*3];
         q_comp[offset*5+2] = rhoh * W * q[offset*3+2] / q[offset*3];
-        q_comp[offset*5+3] = rho * W * hdot;
-        q_comp[offset*5+4] = rhoh*W*W - p - rho * W;
+        q_comp[offset*5+3] = rho[z] * W * hdot;
+        q_comp[offset*5+4] = rhoh*W*W - p - rho[z] * W;
 
         //printf("s2c (%d, %d, %d): %f, %f\n", x, y, z, q_comp[offset*5+4], p);
 
@@ -1277,7 +1308,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int nx, int ny, int nlayers, int nxf, int nyf, int nz,
                   float dx, float dy, float dz, float dt, float zmin,
-                  float * gamma_up_d, float rho, float gamma,
+                  float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
                   float * old_phi_d) {
     /*
@@ -1347,7 +1378,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
 __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int nxf, int nyf, int nz,
-                                      float * gamma_up, float rho,
+                                      float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset) {
     /*
@@ -1407,7 +1438,20 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
 
         // calculate SWE conserved variables on fine grid.
         float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
-        float ph = phi_from_p(p, q_prim[0], gamma);
+        // TODO: calculate A
+        float * A, * phis;
+        A = (float *)malloc(nz * sizeof(float));
+        phis = (float *)malloc(nz * sizeof(float));
+        for (int i = 0; i < nz; i++) {
+            phis[i] = q[((i * nyf + y) * nxf + x) * 3];
+        }
+        const float p_floor = 1.0;
+        calc_As(rho, phis, A, p_floor, nz, gamma);
+
+        float ph = phi_from_p(p, q_prim[0], gamma, A[z]);
+
+        free(phis);
+        free(A);
 
         //printf("W: %f, ph: %f, tau: %f, eps: %f\n", W, ph, q_con[4], q_prim[4]);
 
@@ -1626,7 +1670,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * cumulative_kernels, float * q_cd, float * q_fd,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz,
                     float dz, float zmin, int * matching_indices,
-                    float rho, float gamma, float * gamma_up,
+                    float * rho, float gamma, float * gamma_up,
                     int ng, int rank, float * qf_swe) {
     /*
     Restrict fine grid data to coarse grid
@@ -2498,7 +2542,7 @@ __device__ flux_func_ptr d_compressible_fluxes = compressible_fluxes;
 __device__ flux_func_ptr d_shallow_water_fluxes = shallow_water_fluxes;
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float rho, float mu, int nx, int ny, int nlayers,
+         float * rho, float mu, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,
@@ -2615,7 +2659,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     float * gamma_up_d;
     float * Uc_d;
     float * Uf_d;
-    //float * rho_d;
+    float * rho_d;
     //float * Q_d;
 
     // initialise Uf_h
@@ -2631,6 +2675,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
     cudaMalloc((void**)&Uc_d, nx*ny*nlayers*3*sizeof(float));
     cudaMalloc((void**)&Uf_d, nxf*nyf*nz*5*sizeof(float));
+    cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
     //cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
 
     // copy stuff to GPU
@@ -2638,7 +2683,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
-    //cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
     //cudaMemcpy(Q_d, Q, nlayers*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
 
     float *Upc_d, *Uc_half_d, *Upf_d, *Uf_half_d, *old_phi_d;//*sum_phs_d;
@@ -2761,7 +2806,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, dt, zmin, gamma_up_d,
-                         rho, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2879,7 +2924,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho, gamma, gamma_up_d, ng, rank, qf_swe);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After restricting\n";
@@ -3061,7 +3106,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
                          Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
                          dt, zmin, gamma_up,
-                         rho, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -3088,7 +3133,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho, gamma, gamma_up_d, ng, rank, qf_swe);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
@@ -3160,7 +3205,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaFree(gamma_up_d);
     cudaFree(Uc_d);
     cudaFree(Uf_d);
-    //cudaFree(rho_d);
+    cudaFree(rho_d);
     //cudaFree(Q_d);
     cudaFree(Upc_d);
     cudaFree(Uc_half_d);

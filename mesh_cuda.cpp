@@ -32,7 +32,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax,
-        float _zmin, float zmax, float  _rho,
+        float _zmin, float zmax, float * _rho,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
@@ -53,7 +53,10 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     dz = (zmax - _zmin) / (nz - 1.0);
     dt = 0.1 * min(dx, min(dy, dz));
 
-    rho = _rho;
+    rho = new float[nlayers];
+    for (int i = 0; i < nlayers; i++) {
+        rho[i] = _rho[i];
+    }
     Q = _Q;
 
     for (int i = 0; i < 3; i++) {
@@ -149,6 +152,7 @@ Sea::Sea(char * filename)
         } else if (variableName == "nlayers") {
             inputFile >> value;
             nlayers = int(value);
+            rho = new float[nlayers];
         } else if (variableName == "ng") {
             inputFile >> value;
             ng = int(value);
@@ -173,7 +177,9 @@ Sea::Sea(char * filename)
         } else if (variableName == "zmax") {
             inputFile >> zmax;
         } else if (variableName == "rho") {
-            inputFile >> rho;
+            for (int i = 0; i < nlayers; i++) {
+                inputFile >> rho[i];
+            }
         } else if (variableName == "Q") {
             inputFile >> Q;
         } else if (variableName == "mu") {
@@ -288,9 +294,10 @@ Sea::Sea(const Sea &seaToCopy)
         ys[i] = seaToCopy.ys[i];
     }
 
-    //beta = new float[2*nx*ny];
-
-    rho = seaToCopy.rho;
+    rho = new float[nlayers];
+    for (int i = 0; i < nlayers; i++) {
+        rho[i] = seaToCopy.rho[i];
+    }
 
     Q = seaToCopy.Q;
 
@@ -325,7 +332,7 @@ Sea::Sea(const Sea &seaToCopy)
 Sea::~Sea() {
     delete[] xs;
     delete[] ys;
-    //delete[] beta;
+    delete[] rho;
 
     delete[] U_coarse;
     delete[] U_fine;

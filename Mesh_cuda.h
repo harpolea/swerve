@@ -34,7 +34,7 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
 void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int nx, int ny, int nxf, int nyf, float dx, float dy,
-                  float * gamma_up_d, float rho, float gamma,
+                  float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp);
 //void prolong_grid(float * q_c, float * q_f,
 //                      int nx, int ny, int nxf, int nyf, float dx, float dy,
@@ -44,11 +44,11 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * cumulative_kernels, float * q_cd, float * q_fd,
                     int nx, int ny, int nxf, int nyf,
                     int * matching_indices,
-                    float rho, float gamma, float * gamma_up,
+                    float * rho, float gamma, float * gamma_up,
                     int ng, int rank, float * qf_swe);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float rho, float mu, int nx, int ny, int nlayers,
+         float * rho, float mu, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,
@@ -62,7 +62,7 @@ public:
             int _r, float _df,
             float xmin, float xmax,
             float ymin, float ymax,
-            float zmin, float zmax, float  _rho,
+            float zmin, float zmax, float  * _rho,
             float  _Q, float _mu, float _gamma,
             float _alpha, float * _beta, float * _gamma_down,
             bool _periodic, bool _burning, int _dprint);
@@ -111,7 +111,7 @@ private:
     float dt;
     float df;
 
-    float rho;
+    float *rho;
     float Q;
     float mu; // friction
     float gamma;
