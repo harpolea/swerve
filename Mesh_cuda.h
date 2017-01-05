@@ -20,8 +20,8 @@ typedef void (* flux_func_ptr)(float * q, float * f, bool x_dir,
                                 float * gamma_up,
                                 float alpha, float * beta, float gamma);
 
-typedef float (* fptr)(float p, float D, float Sx, float Sy, float tau,
-                       float gamma, float * gamma_up);
+typedef float (* fptr)(float p, float D, float Sx, float Sy, float Sz,
+                       float tau, float gamma, float * gamma_up);
 
 //float zbrent(fptr func, const float x1, const float x2, const float tol,
 //             float D, float Sx, float Sy, float tau, float gamma,
@@ -88,12 +88,16 @@ public:
     int nz;
     int nlayers;
     int ng;
+
+    float zmin;
     float *xs;
     float *ys;
     float *U_coarse;
     float *U_fine;
 
 private:
+
+    void invert_mat(float * A, int m, int n);
 
     int nt;
     int r; // refinement ratio
@@ -104,7 +108,6 @@ private:
     float dx;
     float dy;
     float dz;
-    float zmin;
     float dt;
     float df;
 
@@ -114,9 +117,9 @@ private:
     float gamma;
 
     float alpha;
-    float beta[2];
-    float gamma_down[2*2];
-    float gamma_up[2*2];
+    float beta[3];
+    float gamma_down[3*3];
+    float gamma_up[3*3];
 
     bool periodic;
     bool burning;

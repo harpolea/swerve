@@ -36,7 +36,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), nt(_nt), r(_r), zmin(_zmin), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), nt(_nt), r(_r), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -56,19 +56,24 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     rho = _rho;
     Q = _Q;
 
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 3; i++) {
         beta[i] = _beta[i];
-        for (int j = 0; j < 2; j++) {
-            gamma_down[i*2+j] = _gamma_down[i*2+j];
+        for (int j = 0; j < 3; j++) {
+            gamma_down[i*3+j] = _gamma_down[i*3+j];
         }
     }
 
     // find inverse of gamma
-    float det = gamma_down[0] * gamma_down[1*2+1] - gamma_down[0*2+1] * gamma_down[1*2+0];
-    gamma_up[0] = gamma_down[1*2+1] / det;
-    gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
-    gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
-    gamma_up[1*2+1] = gamma_down[0*2+0]/det;
+    for (int i = 0; i < 3*3; i++) {
+        gamma_up[i] = gamma_down[i];
+    }
+    Sea::invert_mat(gamma_up, 3, 3);
+
+    //float det = gamma_down[0] * gamma_down[1*3+1] - gamma_down[0*3+1] * gamma_down[1*3+0];
+    //gamma_up[0] = gamma_down[1*3+1] / det;
+    //gamma_up[0*3+1] = -gamma_down[0*3+1]/det;
+    //gamma_up[1*3+0] = -gamma_down[1*3+0]/det;
+    //gamma_up[1*3+1] = gamma_down[0*3+0]/det;
 
     nxf = int(r * df * nx);
     nyf = int(r * df * ny);
@@ -84,8 +89,36 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
 
     cout << "Matching indices: " << matching_indices[0] << ',' << matching_indices[1] << ',' << matching_indices[2] << ',' << matching_indices[3] << '\n';
 
-
     cout << "Made a Sea.\n";
+}
+
+void Sea::invert_mat(float * A, int m, int n) {
+    // invert the m x n matrix A in place using Gaussian elimination
+    for (int k = 0; k < min(m,n); k++) {
+        // i_max  := argmax (i = k ... m, abs(A[i, k]))
+        int i_max = k;
+        for (int i = k+1; i < m; i++) {
+            if (abs(A[i*n+k]) > abs(A[i_max*n+k])) {
+                i_max = i;
+            }
+        }
+        if (A[i_max*n+k] == 0) {
+            cout << "Matrix is singular!\n";
+        }
+        // swap rows(k, i_max)
+        for (int i = 0; i < n; i++) {
+            float temp = A[k*n+i];
+            A[k*n+i] = A[i_max*n+i];
+            A[i_max*n+i] = temp;
+        }
+        for (int i = k+1; i < m; i++) {
+            float f = A[i*n+k] / A[k*k+k];
+            for (int j = k+1; j < n; j++) {
+                A[i*n+j] -= A[k*n+j] * f;
+            }
+            A[i*n+k] = 0;
+        }
+    }
 }
 
 Sea::Sea(char * filename)
@@ -150,11 +183,11 @@ Sea::Sea(char * filename)
         } else if (variableName == "alpha") {
             inputFile >> alpha;
         } else if (variableName == "beta") {
-            for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 3; i++) {
                 inputFile >> beta[i];
             }
         } else if (variableName == "gamma_down") {
-            for (int i = 0; i < 2*2; i++) {
+            for (int i = 0; i < 3*3; i++) {
                 inputFile >> gamma_down[i];
             }
         } else if (variableName == "periodic") {
@@ -205,12 +238,16 @@ Sea::Sea(char * filename)
     dt = 0.1 * min(dx, min(dy, dz));
 
     // find inverse of gamma
-    float det = gamma_down[0] * gamma_down[1*2+1] -
-                gamma_down[0*2+1] * gamma_down[1*2+0];
-    gamma_up[0] = gamma_down[1*2+1] / det;
-    gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
-    gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
-    gamma_up[1*2+1] = gamma_down[0*2+0]/det;
+    //float det = gamma_down[0] * gamma_down[1*2+1] -
+                //gamma_down[0*2+1] * gamma_down[1*2+0];
+    //gamma_up[0] = gamma_down[1*2+1] / det;
+    //gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
+    //gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
+    //gamma_up[1*2+1] = gamma_down[0*2+0]/det;
+    for (int i = 0; i < 3*3; i++) {
+        gamma_up[i] = gamma_down[i];
+    }
+    Sea::invert_mat(gamma_up, 3, 3);
 
     U_coarse = new float[nx*ny*nlayers*3];
     U_fine = new float[nxf*nyf*nz*5];
@@ -238,7 +275,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), zmin(seaToCopy.zmin), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
@@ -257,7 +294,7 @@ Sea::Sea(const Sea &seaToCopy)
 
     Q = seaToCopy.Q;
 
-    for (int i = 0; i < 2*nx*ny; i++) {
+    for (int i = 0; i < 3*nx*ny; i++) {
         beta[i] = seaToCopy.beta[i];
     }
 
@@ -272,10 +309,10 @@ Sea::Sea(const Sea &seaToCopy)
         U_fine[i] = seaToCopy.U_fine[i];
     }
 
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 2; j++) {
-            gamma_down[i*2+j] = seaToCopy.gamma_down[i*2+j];
-            gamma_up[i*2+j] = seaToCopy.gamma_up[i*2+j];
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            gamma_down[i*3+j] = seaToCopy.gamma_down[i*3+j];
+            gamma_up[i*3+j] = seaToCopy.gamma_up[i*3+j];
         }
     }
 
@@ -441,6 +478,7 @@ int main(int argc, char *argv[]) {
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
             D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            D0[(2*sea.ny + y) * sea.nx + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);
             for (int z = 0; z < sea.nlayers; z++) {
                 Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
                 Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
