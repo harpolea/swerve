@@ -102,8 +102,10 @@ def quick_plot(input_filename=None, filename=None, start=0):
     output, error = process.communicate()"""
 
 def find_height(D, Sx, Sy, gamma_up, M=1.0):
+
     D[D < 1.e-6] = 1.e-6
-    W = np.sqrt((Sx**2*gamma_up[0,0] + 2. * Sx * Sy * gamma_up[1,0]+ Sy**2 * gamma_up[1,1]) / D**2 + 1.0)
+    W = np.sqrt((Sx**2*gamma_up[0,0] + 2. * Sx * Sy * gamma_up[1,0]
+        + Sy**2 * gamma_up[1,1]) / D**2 + 1.0)
     return 2. * M / (1. - np.exp(-2 * D / W))
 
 
@@ -144,12 +146,16 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             ymax = float(dat[0])
         elif name == 'gamma_down':
             gamma_down = np.array([float(i) for i in dat])
-            gamma_up = np.reshape(gamma_down, (2,2))
-            gamma_up[0,0] = 1. / gamma_up[0,0]
-            gamma_up[1,1] = 1. / gamma_up[1,1]
+            if len(gamma_down) == 4:
+                gamma_up = np.reshape(gamma_down, (2,2))
+                gamma_up[0,0] = 1. / gamma_up[0,0]
+                gamma_up[1,1] = 1. / gamma_up[1,1]
+            else:
+                n = int(np.sqrt(len(gamma_down)))
+                gamma_up = np.reshape(gamma_down, (n,n))
+                gamma_up = inv(gamma_up)
         elif name == 'dprint':
             dprint = int(dat[0])
-
 
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
@@ -167,7 +173,6 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
-
 
     x = np.linspace(0, xmax, num=nx-4, endpoint=False)
     y = np.linspace(0, ymax, num=ny-4, endpoint=False)
@@ -200,7 +205,6 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
 
 if __name__ == '__main__':
-    #plotme()
     #quick_plot(filename="../../Documents/Work/swerve/mpi")
 
     mesh_plot(filename="../../Documents/Work/swerve/mpi_mesh")

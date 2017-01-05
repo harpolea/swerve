@@ -8,12 +8,6 @@
 #include "device_launch_parameters.h"
 #include <helper_functions.h>
 #include "Mesh_cuda.h"
-#include <thrust/device_ptr.h>
-#include <thrust/fill.h>
-
-/*
-TODO: make functions for calculating Lorentz factors using SWE and compressible variables as having to copy and paste same messy definitions like a million times at the moment.
-*/
 
 using namespace std;
 
@@ -627,6 +621,13 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     delete[] yrbuf;
 }
 
+__host__ __device__ float W_swe(float * q, float * gamma_up) {
+    // calculate Lorentz factor for conserved swe state vector
+    return sqrt((q[1]*q[1] * gamma_up[0] +
+            2.0 * q[1] * q[2] * gamma_up[1] +
+            q[2] * q[2] * gamma_up[4]) / (q[0]*q[0]) + 1.0);
+}
+
 __host__ __device__ float phi(float r) {
     // calculate superbee slope limiter Phi(r)
     float ph = 0.0;
@@ -863,9 +864,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
     if (nan_check(q[1])) q[1] = 0.0;
     if (nan_check(q[2])) q[2] = 0.0;
 
-    float W = sqrt((q[1] * q[1] * gamma_up[0] +
-                2.0 * q[1] * q[2] * gamma_up[1] +
-                q[2] * q[2] * gamma_up[4]) / (q[0] * q[0]) + 1.0);
+    float W = W_swe(q, gamma_up);
     if (nan_check(W)) {
         printf("W is nan! q0, q1, q2: %f, %f, %f\n", q[0], q[1], q[2]);
         W = 1.0;
@@ -978,9 +977,7 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
     */
 
     for (int i = 0; i < nx*ny*nz; i++) {
-        float W = sqrt((q[i*3+1]*q[i*3+1] * gamma_up[0] +
-                2.0 * q[i*3+1] * q[i*3+2] * gamma_up[1] +
-                q[i*3+2] * q[i*3+2] * gamma_up[4]) / (q[i*3]*q[i*3]) + 1.0);
+        float W = W_swe(q, gamma_up);
 
         float ph = q[i*3] / W;
 
@@ -1124,12 +1121,12 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
         // height of this layer
         float height = zmin + dz * (nz - z - 1.0);
-        float W = sqrt((q_c[(c_y*nx+c_x)*3+1] * q_c[(c_y*nx+c_x)*3+1] *
-                gamma_up[0] +
-                2.0 * q_c[(c_y*nx+c_x)*3+1] * q_c[(c_y*nx+c_x)*3+2] *
-                gamma_up[1] +
-                q_c[(c_y*nx+c_x)*3+2] * q_c[(c_y*nx+c_x)*3+2] * gamma_up[4]) /
-                (q_c[(c_y*nx+c_x)*3] * q_c[(c_y*nx+c_x)*3]) + 1.0);
+        float * q_swe;
+        q_swe = (float *)malloc(3 * sizeof(float));
+        for (int i = 0; i < 3; i++) {
+            q_swe[i] = q_c[(c_y*nx+c_x)*3+i];
+        }
+        float W = W_swe(q_swe, gamma_up);
         float r = find_height(q_c[(c_y * nx + c_x) * 3]/W);
         // Heights are sane here?
         //printf("z = %i, heights = %f, %f\n", z, height, r);
@@ -1143,35 +1140,23 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             //if ((height - r) > dz) {
                 //layer_frac = 0.0; // just copy across as another compressible layer between this and top SWE layer
             //} else {
-                W = sqrt((q_c[((ny+c_y)*nx+c_x)*3+1] *
-                        q_c[((ny+c_y)*nx+c_x)*3+1] *
-                        gamma_up[0] +
-                        2.0 * q_c[((ny+c_y)*nx+c_x)*3+1] *
-                        q_c[((ny+c_y)*nx+c_x)*3+2] *
-                        gamma_up[1] +
-                        q_c[((ny+c_y)*nx+c_x)*3+2] *
-                        q_c[((ny+c_y)*nx+c_x)*3+2] * gamma_up[4]) /
-                        (q_c[((ny+c_y)*nx+c_x)*3] *
-                        q_c[((ny+c_y)*nx+c_x)*3]) + 1.0);
-                r = find_height(q_c[((ny + c_y) * nx + c_x) * 3] / W);
-                layer_frac = (height - prev_r) / (r - prev_r);
-                //printf("Layer frac: %f  ", layer_frac);
+            for (int i = 0; i < 3; i++) {
+                q_swe[i] = q_c[((ny+c_y)*nx+c_x)*3+i];
+            }
+            W = W_swe(q_swe, gamma_up);
+            r = find_height(q_c[((ny + c_y) * nx + c_x) * 3] / W);
+            layer_frac = (height - prev_r) / (r - prev_r);
+            //printf("Layer frac: %f  ", layer_frac);
             //}
         } else {
 
             // find heights of SWE layers - if height of SWE layer is above it, stop.
             for (int l = 1; l < nlayers-1; l++) {
                 prev_r = r;
-                W = sqrt((q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                        q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                        gamma_up[0] +
-                        2.0 * q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                        q_c[((l*ny+c_y)*nx+c_x)*3+2] *
-                        gamma_up[1] +
-                        q_c[((l*ny+c_y)*nx+c_x)*3+2] *
-                        q_c[((l*ny+c_y)*nx+c_x)*3+2] * gamma_up[4]) /
-                        (q_c[((l*ny+c_y)*nx+c_x)*3] *
-                        q_c[((l*ny+c_y)*nx+c_x)*3]) + 1.0);
+                for (int i = 0; i < 3; i++) {
+                    q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*3+i];
+                }
+                W = W_swe(q_swe, gamma_up);
                 r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3] / W);
                 if (height > r) {
                     neighbour_layer = l;
@@ -1188,22 +1173,18 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 } else {
                     prev_r = r;
                     int l = neighbour_layer;
-                    W = sqrt((q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                            q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                            gamma_up[0] +
-                            2.0 * q_c[((l*ny+c_y)*nx+c_x)*3+1] *
-                            q_c[((l*ny+c_y)*nx+c_x)*3+2] *
-                            gamma_up[1] +
-                            q_c[((l*ny+c_y)*nx+c_x)*3+2] *
-                            q_c[((l*ny+c_y)*nx+c_x)*3+2] * gamma_up[4]) /
-                            (q_c[((l*ny+c_y)*nx+c_x)*3] *
-                            q_c[((l*ny+c_y)*nx+c_x)*3]) + 1.0);
+                    for (int i = 0; i < 3; i++) {
+                        q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*3+i];
+                    }
+                    W = W_swe(q_swe, gamma_up);
                     r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3] / W);
                     layer_frac = (height - prev_r) / (r - prev_r);
                     //printf("Lower layer frac: %f  ", layer_frac);
                 }
             }
         }
+
+        free(q_swe);
         //printf("Layer frac: %f  ", layer_frac);
 
         //printf("z: %i, height: %f, neighbour_layer: %i, layer_frac: %f, \n", z, height, neighbour_layer, layer_frac);
@@ -1485,10 +1466,7 @@ __device__ float height_err(float * q_c_new, float * qf_sw, float zmin,
             qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2) * 3 + n] +
             qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2+1) * 3 + n]));
     }
-    float W = sqrt((q_c_new[1] * q_c_new[1] * gamma_up[0] +
-            2.0 * q_c_new[1] * q_c_new[2] * gamma_up[1] +
-            q_c_new[2] * q_c_new[2] * gamma_up[4]) /
-            (q_c_new[0] * q_c_new[0]) + 1.0);
+    float W = W_swe(q_c_new, gamma_up);
 
     float actual_r = find_height(q_c_new[0] / W);
     return abs(height_guess - actual_r) / height_guess;
@@ -1542,13 +1520,11 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
 
         float * q_c_new;
         q_c_new = (float *)malloc(3 * sizeof(float));
+        for (int i = 0; i < 3; i++) {
+            q_c_new[i] = q_c[coarse_index+i];
+        }
 
-        float W = sqrt((q_c[coarse_index+1] * q_c[coarse_index+1] *
-                gamma_up[0] +
-                2.0 * q_c[coarse_index+1] * q_c[coarse_index+2] *
-                gamma_up[1] +
-                q_c[coarse_index+2] * q_c[coarse_index+2] * gamma_up[4]) /
-                (q_c[coarse_index] * q_c[coarse_index]) + 1.0);
+        float W = W_swe(q_c_new, gamma_up);
         float r = find_height(q_c[coarse_index] / W);
         float height_min = 0.9 * r;
         float height_max = 1.1 * r;
@@ -2146,13 +2122,14 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
     // do source terms
     if ((x < nx) && (y < ny) && (l < nlayers)) {
+        float * q_swe;
+        q_swe = (float *)malloc(3 * sizeof(float));
 
-        W = sqrt(float((U_half[offset*3+1] *
-            U_half[offset*3+1] * gamma_up_d[0] +
-            2.0 * U_half[offset*3+1] *
-            U_half[offset*3+2] * gamma_up_d[1] +
-            U_half[offset*3+2] * U_half[offset*3+2] * gamma_up_d[4]) /
-            (U_half[offset*3] * U_half[offset*3]) + 1.0));
+        for (int i = 0; i < 3; i++) {
+            q_swe[i] = U_half[offset * 3 + i];
+        }
+        W = W_swe(q_swe, gamma_up_d);
+        free(q_swe);
 
         U_half[offset*3] /= W;
     }
