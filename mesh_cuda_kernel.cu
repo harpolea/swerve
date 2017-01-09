@@ -11,6 +11,8 @@
 
 using namespace std;
 
+// TODO: This file is becoming way too long - move a load of the functions into other files.
+
 unsigned int nextPow2(unsigned int x)
 {
     --x;
@@ -709,7 +711,7 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     // way to do this which will more accurately give hdot at current time.
 
     float h = find_height(phi);
-    float old_h = find_height(old_phi);
+    //float old_h = find_height(old_phi);
 
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }
@@ -718,6 +720,22 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
                         float p_floor, int nlayers, float gamma) {
     // Calculates the As used to calculate the pressure given Phi, given
     // the pressure at the sea floor
+    /*
+    Parameters
+    ----------
+    rhos : float array
+        densities of layers
+    phis : float array
+        Vector of Phi for different layers
+    A : float array
+        vector of As for layers
+    p_floor : float
+        pressure at sea floor
+    nlayers : int
+        number of layers
+    gamma : float
+        adiabatic index
+    */
 
     // calculate A at sea floor
     A[nlayers-1] = (gamma * p_floor / (gamma - 1.0) +
@@ -1070,6 +1088,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
 
         // calculate hdot = w (?)
         float hdot = h_dot(q[offset*3], old_phi[offset], dt);
+        //printf("hdot(%d, %d, %d): %f, \n", x, y, z, hdot);
 
         float W = sqrt((q[offset*3+1] * q[offset*3+1] * gamma_up[0] +
                 2.0 * q[offset*3+1] * q[offset*3+2] * gamma_up[1] +
@@ -1078,7 +1097,8 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                 2.0 * hdot * (q[offset*3+1] * gamma_up[2] +
                 q[offset*3+2] * gamma_up[5]) / q[offset*3] +
                 hdot * hdot * gamma_up[8] + 1.0);
-        //printf("(%d, %d, %d): %f, \n", x, y, z, W);
+        //printf("%d\n",  gamma_up[8]);
+        //printf("W(%d, %d, %d): %f, \n", x, y, z, W);
         // TODO: this is really inefficient as redoing the same calculation
         // on differnt layers
         float * A, * phis;
@@ -2843,8 +2863,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cout << "After prolonging\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
-            // good here
-            /*cout << "\nFine grid after prolonging\n\n";
+            // EVERYTHING HAS NAN'd
+            cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -2853,7 +2873,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
 
             // enforce boundaries

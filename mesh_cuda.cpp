@@ -95,33 +95,69 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     cout << "Made a Sea.\n";
 }
 
-void Sea::invert_mat(float * A, int m, int n) {
+void Sea::invert_mat(float * M, int m, int n) {
     // invert the m x n matrix A in place using Gaussian elimination
+    float * B = new float[m*n*2];
+    // initialise augmented matrix
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            B[i*2*n+j] = M[i*n+j];
+            B[i*2*n+ n+j] = 0.0;
+        }
+        B[i*2*n+n+i] = 1.0;
+    }
+
     for (int k = 0; k < min(m,n); k++) {
         // i_max  := argmax (i = k ... m, abs(A[i, k]))
         int i_max = k;
         for (int i = k+1; i < m; i++) {
-            if (abs(A[i*n+k]) > abs(A[i_max*n+k])) {
+            if (abs(B[i*n*2+k]) > abs(B[i_max*n*2+k])) {
                 i_max = i;
             }
         }
-        if (A[i_max*n+k] == 0) {
+        if (abs(B[i_max*n*2+k]) < 1.0e-12) {
             cout << "Matrix is singular!\n";
         }
         // swap rows(k, i_max)
-        for (int i = 0; i < n; i++) {
-            float temp = A[k*n+i];
-            A[k*n+i] = A[i_max*n+i];
-            A[i_max*n+i] = temp;
+        for (int i = 0; i < 2*n; i++) {
+            float temp = B[k*n*2+i];
+            B[k*n*2+i] = B[i_max*n*2+i];
+            B[i_max*n*2+i] = temp;
         }
+
+
         for (int i = k+1; i < m; i++) {
-            float f = A[i*n+k] / A[k*k+k];
-            for (int j = k+1; j < n; j++) {
-                A[i*n+j] -= A[k*n+j] * f;
+            float f = B[i*n*2+k] / B[k*n*2+k];
+            for (int j = k+1; j < n*2; j++) {
+                B[i*n*2+j] -= B[k*n*2+j] * f;
             }
-            A[i*n+k] = 0;
+            B[i*n*2+k] = 0.0;
         }
     }
+
+    // back substitution
+    for (int k = 0; k < m; k++) {
+        for (int i = k+1; i < n; i++) {
+            float f = B[k*n*2+i] / B[i*2*n+i];
+            for (int j = k+1; j < 2*n; j++) {
+                B[k*n*2+j] -= B[i*n*2+j] * f;
+            }
+        }
+        for (int i = k+1; i < 2*n; i++) {
+            B[k*n*2+i] /= B[k*n*2+k];
+        }
+        B[k*n*2+k] = 1.0;
+    }
+
+    // put answer back in M
+    for (int i = 0; i < m; i++) {
+        for (int j = 0; j < n; j++) {
+            M[i*n+j] = B[i*2*n+n+j];
+
+        }
+    }
+
+    delete[] B;
 }
 
 Sea::Sea(char * filename)
