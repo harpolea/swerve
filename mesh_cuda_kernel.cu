@@ -2948,7 +2948,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            /*cout << "\nFine grid before restricting\n\n";
+            cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -2957,7 +2957,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
             /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {

@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
     }
 
     // run simulation
-    sea.run(comm, status, rank, size);
+    sea.run(comm, &status, rank, size);
 
     bool passed = true;
 

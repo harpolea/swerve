@@ -77,6 +77,8 @@ public:
 
     void print_inputs();
 
+    static void invert_mat(float * A, int m, int n);
+
     void run(MPI_Comm comm, MPI_Status * status, int rank, int size);
 
     ~Sea();
@@ -96,8 +98,6 @@ public:
     float *U_fine;
 
 private:
-
-    void invert_mat(float * A, int m, int n);
 
     int nt;
     int r; // refinement ratio
