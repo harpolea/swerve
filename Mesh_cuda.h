@@ -29,7 +29,7 @@ typedef float (* fptr)(float p, float D, float Sx, float Sy, float Sz,
 
 // the typedef/function pointer thing sadly does not work well with
 // member functions :(
-void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny,
+void cons_to_prim_comp(float * q_cons, float * q_prim, int nx, int ny, int nz, 
                        float gamma, float * gamma_up);
 void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
