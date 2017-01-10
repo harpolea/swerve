@@ -5,6 +5,8 @@
 #include <algorithm>
 #include "mpi.h"
 #include "../Mesh_cuda.h"
+#include <cstdlib>
+#include <ctime>
 
 using namespace std;
 
@@ -33,24 +35,32 @@ bool test_invert_matrix() {
         0.39762458, -0.18311387,  0.02548928, -0.11957036,  0.08561838,
        -0.04202634};
 
-    const float tol = 1.0e-6; // tolerance
+    const float tol = 1.0e-5; // tolerance
     for (int i = 0; i < 4; i++) {
-        if (abs(A[i] - a_inv[i]) > tol) {
+        if (abs((A[i] - a_inv[i])/A[i]) > tol) {
+            cout << A[i] << ',' << a_inv[i] << '\n';
             return false;
         }
     }
     for (int i = 0; i < 9; i++) {
-        if (abs(B[i] - b_inv[i]) > tol) {
+        if (abs((B[i] - b_inv[i])/B[i]) > tol) {
+            cout << B[i] << ',' << b_inv[i] << '\n';
             return false;
         }
     }
     for (int i = 0; i < 16; i++) {
-        if (abs(C[i] - c_inv[i]) > tol) {
+        if (abs((C[i] - c_inv[i])/C[i]) > tol) {
+            cout << C[i] << ',' << c_inv[i] << '\n';
             return false;
         }
     }
 
     return true;
+}
+
+float r() {
+    // generate random number between 0 and 1
+    return (float) rand() / RAND_MAX;
 }
 
 bool test_cons_to_prim_comp() {
@@ -59,7 +69,6 @@ bool test_cons_to_prim_comp() {
     which converts conserved compressible variables to primitive compressible
     variables.
     */
-    //(float * q_cons, float * q_prim, int nxf, int nyf,int nz, float gamma, float * gamma_up)
 
     float gamma = 5.0 / 3.0;
     float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
@@ -68,25 +77,31 @@ bool test_cons_to_prim_comp() {
     int ny = 1;
     int nz = 1;
 
-    // Define some primitive variables (rho, u, v, w, eps)
-    float q_prim[] = {1.0, 0.1, 0.2, 0.3, 1.5};
-
-    // Define corresponding conserved variables
-    float W = 1./sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
-
-    float h = 1.0 + gamma * q_prim[4];
-    float p = (gamma - 1.0) * q_prim[0] * q_prim[4];
-
-    float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p};
-
     float * q_new_prim = new float[5];
 
-    cons_to_prim_comp(q_cons, q_new_prim, nx, ny, nz, gamma, gamma_up);
+    srand(time(0));
 
-    const float tol = 1.0e-6;
-    for (int i = 0; i < 5; i++) {
-        if (abs(q_prim[i] - q_new_prim[i]) > tol) {
-            return false;
+    for (int i = 0; i < 10000; i++) {
+
+        // Define some primitive variables (rho, u, v, w, eps)
+        float q_prim[] = {10*r(), 0.5f*r(), 0.6f*r(), 0.6f*r(), 15*r()};
+
+        // Define corresponding conserved variables
+        float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
+
+        float h = 1.0 + gamma * q_prim[4];
+        float p = (gamma - 1.0) * q_prim[0] * q_prim[4];
+
+        float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p};
+
+        cons_to_prim_comp(q_cons, q_new_prim, nx, ny, nz, gamma, gamma_up);
+
+        const float tol = 1.0e-4;
+        for (int i = 0; i < 5; i++) {
+            if ((abs((q_prim[i] - q_new_prim[i]) / q_prim[i]) > tol) && (abs(q_prim[i] - q_new_prim[i]) > 0.01*tol)) {
+                cout << i << ' ' << W << ' '<< q_prim[i] << ',' << q_new_prim[i] << '\n';
+                return false;
+            }
         }
     }
 
