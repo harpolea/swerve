@@ -42,8 +42,6 @@ __device__ float rhoh_from_p(float p, float rho, float gamma);
 
 __device__ float p_from_rhoh(float rhoh, float rho, float gamma);
 
-__device__ float p_from_rho_eps_d(float rho, float eps, float gamma);
-
 __device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma);
 
 __device__ __host__ float phi_from_p(float p, float rho, float gamma, float A);
@@ -201,7 +199,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr h_flux_func, bool do_z);                            
+       flux_func_ptr h_flux_func, bool do_z);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float * rho, float p_floor, float mu, int nx, int ny, int nlayers,

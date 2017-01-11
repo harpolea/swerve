@@ -670,11 +670,6 @@ __device__ float p_from_rhoh(float rhoh, float rho, float gamma) {
     return (rhoh - rho) * (gamma - 1.0) / gamma;
 }
 
-__device__ float p_from_rho_eps_d(float rho, float eps, float gamma) {
-    // calculate p using rho and epsilon for gamma law equation of state
-    return (gamma - 1.0) * rho * eps;
-}
-
 __device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma) {
     // calculate p using rho and epsilon for gamma law equation of state
     return (gamma - 1.0) * rho * eps;
@@ -955,7 +950,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
 
     cons_to_prim_comp_d(q, q_prim, gamma, gamma_up);
 
-    float p = p_from_rho_eps_d(q_prim[0], q_prim[4], gamma);
+    float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
     float u = q_prim[1];
     float v = q_prim[2];
     float w = q_prim[2];

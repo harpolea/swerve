@@ -80,12 +80,10 @@ bool test_cons_to_prim_comp() {
 
     float * q_new_prim = new float[5];
 
-    srand(time(0));
-
     for (int i = 0; i < 10000; i++) {
 
         // Define some primitive variables (rho, u, v, w, eps)
-        float q_prim[] = {10*r(), 0.5f*r(), 0.6f*r(), 0.6f*r(), 15*r()};
+        float q_prim[] = {10*r(), r()-0.5f, 1.2f*r()-0.6f, 1.2f*r()-0.6f, 15*r()};
 
         // Define corresponding conserved variables
         float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
@@ -101,6 +99,7 @@ bool test_cons_to_prim_comp() {
         for (int i = 0; i < 5; i++) {
             if ((abs((q_prim[i] - q_new_prim[i]) / q_prim[i]) > tol) && (abs(q_prim[i] - q_new_prim[i]) > 0.01*tol)) {
                 cout << i << ' ' << W << ' '<< q_prim[i] << ',' << q_new_prim[i] << '\n';
+                delete[] q_new_prim;
                 return false;
             }
         }
@@ -111,10 +110,176 @@ bool test_cons_to_prim_comp() {
     return true;
 }
 
+bool test_nan_check() {
+    float a[] = {1.0e-6, 4.0e10, 978324, 0.00000284765893}; //should pass
+
+    float b = sqrt(-1.0); // should not pass
+
+    for (int i = 0; i < 4; i++) {
+        if (nan_check(a[i])) {
+            return false;
+        }
+    }
+
+    if (!(nan_check(b))) {
+        return false;
+    }
+
+    return true;
+}
+
+bool test_zbrent() {
+    return true;
+}
+
+bool test_W_swe() {
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+
+    for (int i = 0; i < 100; i++) {
+        // generate primitive variables
+        float q_prim[] = {0.5f*r()+1.1f, 1.2f*r()-0.6f, 1.2f*r()-0.6f};
+
+        // calculate W
+        float W = 1.0 / sqrt(1.0 - (q_prim[1] * q_prim[1]*gamma_up[0] + 2.0 * q_prim[1] * q_prim[2] * gamma_up[1] + q_prim[2] * q_prim[2] * gamma_up[4]));
+
+        // turn into conserved variables
+        float q_cons[] = {q_prim[0] * W, q_prim[0]*q_prim[1]*W*W, q_prim[0]*q_prim[2]*W*W};
+
+        const float tol = 1.0e-4;
+        if ((abs((W - W_swe(q_cons, gamma_up)) / W) > tol) && (abs(W - W_swe(q_cons, gamma_up)) > 0.01*tol)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_phi() {
+    // test superbee slope limiter
+
+    float r[] = {-2.0e6, -1.0f, 0.0f, 0.1f, 0.498374983475f, 0.7f, 0.9999f, 1.5f, 742.362f};
+    float phis[] = {0.0f, 0.0f, 0.0f, 0.2f, 0.996749967f, 1.0f, 1.0f, 0.8f, 2.690479201e-3f};
+
+    const float tol = 1.0e-4;
+    for (int i = 0; i < 9; i++) {
+        if ((abs((phis[i] - phi(r[i])) / phis[i]) > tol) && (abs(phis[i] - phi(r[i])) > 0.01*tol)) {
+
+            cout << phis[i] << ',' << phi(r[i]) << '\n';
+            return false;
+        }
+    }
+    return true;
+}
+
+bool test_p_from_rho_eps() {
+
+    float gamma = 5.0/3.0;
+
+    float rho[] = {1.0e-3f, 1.0e-3f, 0.1f, 123.812f, 1.0e6};
+    float eps[] = {1.0e-3f, 1.0e3f, 123, 0.1f, 2345.234};
+    float p[] = {6.6666666667e-7, 0.6666666667f, 8.2f, 8.2541333333f, 1563489333.0f};
+
+    const float tol = 1.0e-5;
+    for (int i = 0; i < 5; i++) {
+        if ((abs((p[i] - p_from_rho_eps(rho[i], eps[i], gamma)) / p[i]) > tol) && (abs(p[i] - p_from_rho_eps(rho[i], eps[i], gamma)) > 0.01*tol)) {
+
+            cout << p[i] << ',' << p_from_rho_eps(rho[i], eps[i], gamma) << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_phi_from_p() {
+
+    float gamma = 5.0/3.0;
+
+    float rho[] = {1.0e-3, 1.0e-3, 0.5, 1.5, 1000.0};
+    float p[] = {1.0e-3, 1.0e3, 2.5, 12987.23, 0.1};
+    float A[] = {0.00001, 1.0, 3.0, 1000.0, 1.123987};
+    float phi[] = {2.343173262, 3.129618564, 0.3243720865, 1.392121399, 2.716449225};
+
+    const float tol = 1.0e-5;
+    for (int i = 0; i < 5; i++) {
+        if ((abs((phi[i] - phi_from_p(p[i], rho[i], gamma, A[i])) / phi[i]) > tol) && (abs(phi[i] - phi_from_p(p[i], rho[i], gamma, A[i])) > 0.01*tol)) {
+
+            cout << phi[i] << ',' << phi_from_p(p[i], rho[i], gamma, A[i]) << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_f_of_p() {
+    // Calculated the test data using python
+
+    float gamma = 5.0 / 3.0;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+
+    float q_cons[][5] = {{1.0e-3, 0.0, 0.0, 0.0, 3.0},
+                         {1.0e-3, 0.4, -0.4, 0.4, 1.0e3},
+                         {1.0e3, 0.0, 0.0, 0.0, 1.0e-3},
+                         {5.0, 0.3, 0.1, 0.4, 1.0}};
+    float p[] = {2.0, 50.0, 20.0, 1.0};
+    float f[] = {0.0, 616.66641981029716, -19.99933333333335, -0.34621947550289045};
+
+    for (int i = 0; i < 4; i++) {
+
+        // Define some primitive variables (rho, u, v, w, eps)
+        float new_f = f_of_p(p[i], q_cons[i][0], q_cons[i][1], q_cons[i][2], q_cons[i][3], q_cons[i][4], gamma, gamma_up);
+
+        const float tol = 1.0e-5;
+        if ((abs((f[i] - new_f) / f[i]) > tol) && (abs(f[i] - new_f) > 0.1*tol)) {
+                cout << f[i] << ',' << new_f << '\n';
+                return false;
+        }
+    }
+
+    return true;
+}
+
+bool test_p_from_swe() {
+
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+    float gamma = 5.0/3.0;
+
+    float q_cons[][3] = {{1.0e-3, 0.0, 0.0},
+                         {1.0, 0.0, 0.0},
+                         {1.0, 0.4, 0.4},
+                         {2.0e-2, 0.4, 0.4}};
+
+    float A[] = {1.0e-3, 0.23, 5.0, 1.0e3};
+    float rho[] = {1.e-3,1.0, 15.0, 500.0};
+    float p[] = {6.67222531e-7, 0.7207894444, 12.56043128, 200.7858403};
+
+    int nx = 1;
+    int ny = 1;
+    int nz = 1;
+
+    const float tol = 1.0e-4;
+
+    for (int i = 0; i < 4; i++) {
+        float p_new;
+        p_from_swe(q_cons[i], &p_new, nx, ny, nz, gamma_up, rho[i], gamma, A[i]);
+        if ((abs((p[i] - p_new) / p[i]) > tol) && (abs(p[i] - p_new) > 0.01*tol)) {
+            cout << p[i] << ',' <<  p_new << '\n';
+            return false;
+        }
+    }
+
+    return true;
+}
+
 int main(int argc, char *argv[]) {
 
-    bool passed = test_invert_matrix();
+    srand(time(0));
 
+    bool passed = test_invert_matrix();
     if (passed) {
         cout << "Invert matrix passed!\n";
     } else {
@@ -122,10 +287,59 @@ int main(int argc, char *argv[]) {
     }
 
     passed = test_cons_to_prim_comp();
-
     if (passed) {
         cout << "Cons to prim passed!\n";
     } else {
         cout << "Cons to prim did not pass :(\n";
     }
+
+    passed = test_nan_check();
+    if (passed) {
+        cout << "nan_check passed!\n";
+    } else {
+        cout << "nan_check did not pass :(\n";
+    }
+
+    passed = test_W_swe();
+    if (passed) {
+        cout << "W_swe passed!\n";
+    } else {
+        cout << "W_swe did not pass :(\n";
+    }
+
+    passed = test_phi();
+    if (passed) {
+        cout << "phi passed!\n";
+    } else {
+        cout << "phi did not pass :(\n";
+    }
+
+    passed = test_p_from_rho_eps();
+    if (passed) {
+        cout << "p_from_rho_eps passed!\n";
+    } else {
+        cout << "p_from_rho_eps did not pass :(\n";
+    }
+
+    passed = test_phi_from_p();
+    if (passed) {
+        cout << "phi_from_p passed!\n";
+    } else {
+        cout << "phi_from_p did not pass :(\n";
+    }
+
+    passed = test_f_of_p();
+    if (passed) {
+        cout << "f_of_p passed!\n";
+    } else {
+        cout << "f_of_p did not pass :(\n";
+    }
+
+    passed = test_p_from_swe();
+    if (passed) {
+        cout << "p_from_swe passed!\n";
+    } else {
+        cout << "p_from_swe did not pass :(\n";
+    }
+
 }
