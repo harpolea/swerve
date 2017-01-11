@@ -707,7 +707,7 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     // way to do this which will more accurately give hdot at current time.
 
     float h = find_height(phi);
-    //float old_h = find_height(old_phi);
+    //float old_h = ight(old_phi);
 
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }

@@ -8,6 +8,9 @@
 #include "../mesh_cuda_kernel.h"
 #include <cstdlib>
 #include <ctime>
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include "unit_tests.h"
 
 using namespace std;
 
@@ -342,4 +345,5 @@ int main(int argc, char *argv[]) {
         cout << "p_from_swe did not pass :(\n";
     }
 
+    run();
 }

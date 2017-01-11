@@ -267,7 +267,13 @@ testing/unit_tests.o:testing/unit_tests.cpp
 testing/flat:testing/flat.o gr_cuda_kernel.o link.o SeaCuda.o
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
-testing/unit_tests:testing/unit_tests.o mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
+testing/cuda_tests.o:testing/cuda_tests.cu
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -g -o $@ -dc $<
+
+testing/cuda_tests_link.o: testing/cuda_tests.o
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I/$(MPI_PATH)/include -lmpi -g -o $@ -dlink $<
+
+testing/unit_tests: mesh_cuda.o mesh_cuda_kernel.o mesh_link.o  testing/cuda_tests.o testing/cuda_tests_link.o testing/unit_tests.o
 	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
 
 test: clean_test
