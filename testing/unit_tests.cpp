@@ -5,6 +5,7 @@
 #include <algorithm>
 #include "mpi.h"
 #include "../Mesh_cuda.h"
+#include "../mesh_cuda_kernel.h"
 #include <cstdlib>
 #include <ctime>
 

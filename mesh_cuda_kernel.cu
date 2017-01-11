@@ -8,6 +8,7 @@
 #include "device_launch_parameters.h"
 #include <helper_functions.h>
 #include "Mesh_cuda.h"
+#include "mesh_cuda_kernel.h"
 
 using namespace std;
 
@@ -716,7 +717,7 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }
 
-__device__ void calc_As(float * rhos, float * phis, float * A,
+__device__ void calc_As(float * rhos, float * ps, float * A,
                         float p_floor, int nlayers, float gamma) {
     // Calculates the As used to calculate the pressure given Phi, given
     // the pressure at the sea floor
@@ -729,24 +730,21 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
         Vector of Phi for different layers
     A : float array
         vector of As for layers
-    p_floor : float
-        pressure at sea floor
+    phi_floor : float
+        Phi at sea floor
     nlayers : int
         number of layers
     gamma : float
         adiabatic index
     */
 
-    // calculate A at sea floor
-    A[nlayers-1] = (gamma * p_floor / (gamma - 1.0) +
-        rhos[nlayers-1]) / exp(gamma * phis[nlayers-1] / (gamma - 1.0));
+    const float A_floor = 1.0;
+
+    // define A at sea floor
+    A[nlayers-1] = A_floor;
+
     for (int n = nlayers-2; n >= 0; n--) {
-        // first calculate p at height of layer above previous layer
-        float p = (gamma - 1.0) * (A[n+1] * exp(gamma * phis[n] /
-            (gamma - 1.0)) - rhos[n+1]) / gamma;
-        // now invert to calculate A
-        A[n] = (gamma * p / (gamma - 1.0) +
-            rhos[n]) / exp(gamma * phis[n] / (gamma - 1.0));
+        A[n] = A[n-1] * (gamma/(gamma-1.) * ps[n] + 2.0 * rhos[n-1] - rhos[n]) / (gamma/(gamma-1.0) * ps[n] + rhos[n-1]);
     }
 }
 
@@ -1433,24 +1431,25 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         }
         printf("\n\n");
     }*/
+    float W, u, v, w, p;
+    float * q_prim, * q_con;
+    q_con = (float *)malloc(5 * sizeof(float));
+    q_prim = (float *)malloc(5 * sizeof(float));
 
     if ((x < nxf) && (y < nyf) && (z < nz)) {
-        float * q_prim, * q_con;
-        q_con = (float *)malloc(5 * sizeof(float));
-        q_prim = (float *)malloc(5 * sizeof(float));
 
         for (int i = 0; i < 5; i++) {
-            q_con[i] = q[offset * 5 + i];
+            q_con[i] = q[offset*5 + i];
         }
 
         // find primitive variables
         cons_to_prim_comp_d(q_con, q_prim, gamma, gamma_up);
 
-        float u = q_prim[1];
-        float v = q_prim[2];
-        float w = q_prim[3];
+        u = q_prim[1];
+        v = q_prim[2];
+        w = q_prim[3];
 
-        float W = 1.0 / sqrt(1.0 -
+        W = 1.0 / sqrt(1.0 -
                 u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
                 2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
                 2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
@@ -1458,30 +1457,42 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         //rho = q_prim[0];
 
         // calculate SWE conserved variables on fine grid.
-        float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
-        // TODO: calculate A
-        float * A, * phis;
+        p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
+
+        // save to q_swe
+        q_swe[offset] = p;
+
+        printf("x: (%d, %d, %d), U: (%f, %f, %f), v: (%f,%f,%f), W: %f, p: %f\n", x, y, z, q_con[1],  q[offset*5+2],  q[offset*5+3], u, v, w, W, p);
+    }
+
+    __syncthreads();
+    float ph;
+
+    if ((x < nxf) && (y < nyf) && (z < nz)) {
+        float * A, * ps;
         A = (float *)malloc(nz * sizeof(float));
-        phis = (float *)malloc(nz * sizeof(float));
+        ps = (float *)malloc(nz * sizeof(float));
         for (int i = 0; i < nz; i++) {
-            phis[i] = q[((i * nyf + y) * nxf + x) * 3];
+            ps[i] = q_swe[(i * nyf + y) * nxf + x];
         }
-        calc_As(rho, phis, A, p_floor, nz, gamma);
+        calc_As(rho, ps, A, p_floor, nz, gamma);
 
-        float ph = phi_from_p(p, q_prim[0], gamma, A[z]);
+        ph = phi_from_p(p, q_prim[0], gamma, A[z]);
 
-        free(phis);
+        free(ps);
         free(A);
 
         //printf("W: %f, ph: %f, tau: %f, eps: %f\n", W, ph, q_con[4], q_prim[4]);
-
+    }
+    __syncthreads();
+    if ((x < nxf) && (y < nyf) && (z < nz)) {
         q_swe[offset*3] = ph * W;
         q_swe[offset*3+1] = ph * W * W * u;
         q_swe[offset*3+2] = ph * W * W * v;
-
-        free(q_con);
-        free(q_prim);
     }
+
+    free(q_con);
+    free(q_prim);
 }
 
 __device__ float height_err(float * q_c_new, float * qf_sw, float zmin,
@@ -2863,8 +2874,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cout << "After prolonging\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
-            // EVERYTHING HAS NAN'd
-            cout << "\nFine grid after prolonging\n\n";
+
+            /*cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -2873,7 +2884,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
 
             // enforce boundaries
@@ -2953,20 +2964,20 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+3] << ',';
                         }
                         cout << '\n';
                 }
             }
 
-            /*cout << "\nCoarse grid before restricting\n\n";
+            cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
                 for (int y = 0; y < ny; y++) {
                     for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+3] << '\n';
                     }
                 }
-            }*/
+            }
 
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2981,13 +2992,15 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-
-            /*cout << "\nCoarse grid after restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                        cout << '(' << x << ',' << y << "): " << Uc_h[((y*nx)+x)*3] << ',' <<  Uc_h[(((ny+y)*nx)+x)*3] << '\n';
+            // IT HAS NAN'D HERE
+            cout << "\nCoarse grid after restricting\n\n";
+            for (int z = 0; z < nlayers; z++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+3] << '\n';
+                    }
                 }
-            }*/
+            }
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
