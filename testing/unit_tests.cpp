@@ -345,5 +345,5 @@ int main(int argc, char *argv[]) {
         cout << "p_from_swe did not pass :(\n";
     }
 
-    run();
+    run_cuda_tests();
 }

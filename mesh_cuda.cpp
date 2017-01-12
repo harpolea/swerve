@@ -2,6 +2,7 @@
 #include <cmath>
 #include <limits>
 #include "Mesh_cuda.h"
+#include "mesh_cuda_kernel.h"
 #include <iostream>
 #include <string.h>
 #include <fstream>

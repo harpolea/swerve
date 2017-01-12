@@ -1,6 +1,3 @@
-#ifndef _MESH_CUDA_KERNEL_H_
-#define _MESH_CUDA_KERNEL_H_
-
 #include <stdio.h>
 #include <mpi.h>
 #include "H5Cpp.h"
@@ -12,7 +9,7 @@
 
 using namespace std;
 
-// TODO: This file is becoming way too long - move a load of the functions into other files.
+// TODO: This file is becoming way too long - move a load of the functions
 
 unsigned int nextPow2(unsigned int x)
 {
@@ -739,7 +736,7 @@ __device__ void calc_As(float * rhos, float * ps, float * A,
     A[nlayers-1] = A_floor;
 
     for (int n = nlayers-2; n >= 0; n--) {
-        A[n] = A[n-1] * (gamma/(gamma-1.) * ps[n] + 2.0 * rhos[n-1] - rhos[n]) / (gamma/(gamma-1.0) * ps[n] + rhos[n-1]);
+        A[n] = A[n+1] * (gamma/(gamma-1.) * ps[n+1] + rhos[n]) / (gamma/(gamma-1.0) * ps[n+1] + 2.0 * rhos[n] - rhos[n+1]);
     }
 }
 
@@ -3297,4 +3294,190 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     delete[] pphi;
 }
 
-#endif
+
+__global__ void test_find_height(bool * passed) {
+    *passed = true;
+
+    float ph[] = {1.0e-3, 1.0, 1.0e3};
+    float h[] = {1001.000333, 2.313035285, 2.0};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 3; i++) {
+        if ((abs((h[i] - find_height(ph[i])) / h[i]) > tol) && (abs(h[i] - find_height(ph[i])) > 0.01*tol)) {
+            printf("%f, %f\n", h[i], find_height(ph[i]));
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_find_pot(bool * passed) {
+    *passed = true;
+
+    float r[] = {2.001, 25.0, 1.0e3};
+    float ph[] = {3.800701167, 0.04169080447, 1.001001335e-3};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 3; i++) {
+        if ((abs((ph[i] - find_pot(r[i])) / ph[i]) > tol) && (abs(ph[i] - find_pot(r[i])) > 0.01*tol)) {
+            printf("%f, %f\n", ph[i], find_pot(r[i]));
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_rhoh_from_p(bool * passed) {
+    *passed = true;
+
+    float gamma = 5.0/3.0;
+
+    float rho[] = {1.0e-3, 1.0e-3, 1.0e3, 1.0e3, 1.124};
+    float p[] = {1.0e-3, 1.0e3, 1.0e-3, 1.0e3, 13.12};
+    float rhoh[] = {3.5e-3, 2500.001, 1000.0025, 3500, 33.924};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 5; i++) {
+        float new_rhoh = rhoh_from_p(p[i], rho[i], gamma);
+        if ((abs((rhoh[i] - new_rhoh) / rhoh[i]) > tol) && (abs(rhoh[i] - new_rhoh) > 0.01*tol)) {
+            printf("%f, %f\n", rhoh[i], new_rhoh);
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_p_from_rhoh(bool * passed) {
+    *passed = true;
+
+    float gamma = 5.0/3.0;
+
+    float rho[] = {1.0e-3, 1.0e-3, 1.0e3, 1.0e3, 1.124};
+    float rhoh[] = {3.5e-3, 2500.001, 1000.0025, 3500, 33.924};
+    float p[] = {1.0e-3, 1.0e3, 1.0e-3, 1.0e3, 13.12};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 5; i++) {
+        float new_p = p_from_rhoh(rhoh[i], rho[i], gamma);
+        if ((abs((p[i] - new_p) / p[i]) > tol) && (abs(p[i] - new_p) > 0.1*tol)) {
+            printf("%f, %f\n", p[i], new_p);
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_p_from_rho_eps(bool * passed) {
+    *passed = true;
+
+    float gamma = 5.0/3.0;
+
+    float rho[] = {1.0e-3, 0.1, 1.0e3, 1.0e3, 1.124};
+    float eps[] = {0.1, 1.e-3, 1.0e3, 1.0, 33.924};
+    float p[] = {6.6666666667e-5, 6.6666666667e-5, 666666.667, 666.6666667, 25.420384};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 5; i++) {
+        float new_p = p_from_rho_eps(rho[i], eps[i], gamma);
+        if ((abs((p[i] - new_p) / p[i]) > tol) && (abs(p[i] - new_p) > 0.1*tol)) {
+            printf("%f, %f\n", p[i], new_p);
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_hdot(bool * passed) {
+    *passed = true;
+
+    float phi[] = {1.0e-3, 1.e-3, 1.0e-3, 1.0, 100.0};
+    float old_phi[] = {1.e-3, 2.e-3, 2.0e-3, 1.1, 101.0};
+    float dt[] = {1.e-3, 1.e-3, 1.0, 1.0e-3, 0.1};
+    float hdot[] = {0.0, 999999.66666672146, 999.9996666667214, 72.406166096631111, 0.0};
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 5; i++) {
+        float new_hdot = h_dot(phi[i], old_phi[i], dt[i]);
+        if ((abs((hdot[i] - new_hdot) / hdot[i]) > tol) && (abs(hdot[i] - new_hdot) > 0.1*tol)) {
+            printf("%f, %f\n", hdot[i], new_hdot);
+            *passed = false;
+        }
+    }
+}
+
+__global__ void test_calc_As(bool * passed) {
+    *passed = true;
+
+    int nlayers = 2;
+    float gamma = 5.0/3.0;
+    float p_floor = 1.0;
+
+    float rhos[] = {1.0, 1.0,1.0,1.0, 1.0, 1.0e-3, 1.0, 1.0e-3, 1.0, 1.0e3};
+    float ps[] = {1.0, 1.0, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0,1.0, 1.0, 1.0};
+    float As[] = {1.0, 1.0, 0.5008743442, 0.7779506557, -3.515821195e-3};
+
+    float * A, *rho, *p;
+
+    A = (float *)malloc(nlayers * sizeof(float));
+    rho = (float *)malloc(nlayers * sizeof(float));
+    p = (float *)malloc(nlayers * sizeof(float));
+
+    const float tol = 1.0e-5;
+
+    for (int i = 0; i < 5; i++) {
+        for (int l = 0; l < nlayers; l++) {
+            rho[l] = rhos[i*nlayers+l];
+            p[l] = ps[i*nlayers+l];
+        }
+        calc_As(rho, p, A, p_floor, nlayers, gamma);
+        if ((abs((As[i] - A[0]) / As[i]) > tol) && (abs(As[i] - A[0]) > 0.1*tol)) {
+            printf("%f, %f\n", As[i], A[0]);
+            *passed = false;
+        }
+    }
+
+    free(As);
+    free(rho);
+    free(p);
+}
+
+__global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
+
+    int i = blockIdx.x * blockDim.y * blockDim.x + threadIdx.x + threadIdx.y * blockDim.x;
+    passed[i] = true;
+
+    float gamma = 5.0 / 3.0;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+
+    float * q_new_prim, *q_prim;
+    q_new_prim = (float *)malloc(5*sizeof(float));
+    q_prim = (float *)malloc(5*sizeof(float));
+
+    // Define some primitive variables (rho, u, v, w, eps)
+    for (int j = 0; j < 5; j++) {
+        q_prim[j] = q_prims[i*5+j];
+    }
+
+    // Define corresponding conserved variables
+    float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
+
+    float h = 1.0 + gamma * q_prim[4];
+    float p = (gamma - 1.0) * q_prim[0] * q_prim[4];
+
+    float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p};
+
+    cons_to_prim_comp_d(q_cons, q_new_prim, gamma, gamma_up);
+
+    const float tol = 1.0e-4;
+    for (int i = 0; i < 5; i++) {
+        if ((abs((q_prim[i] - q_new_prim[i]) / q_prim[i]) > tol) && (abs(q_prim[i] - q_new_prim[i]) > 0.01*tol)) {
+            printf("%f, %f\n", q_prim[i], q_new_prim[i]);
+            passed[i] = false;
+        }
+    }
+
+    free(q_new_prim);
+    free(q_prim);
+}

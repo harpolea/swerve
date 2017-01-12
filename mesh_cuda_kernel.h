@@ -210,4 +210,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices);
 
+__global__ void test_find_height(bool * passed);
+__global__ void test_find_pot(bool * passed);
+__global__ void test_rhoh_from_p(bool * passed);
+__global__ void test_p_from_rhoh(bool * passed);
+__global__ void test_p_from_rho_eps(bool * passed);
+__global__ void test_hdot(bool * passed);
+__global__ void test_calc_As(bool * passed);
+__global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims);
+
 #endif
