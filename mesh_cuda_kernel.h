@@ -218,5 +218,8 @@ __global__ void test_p_from_rho_eps(bool * passed);
 __global__ void test_hdot(bool * passed);
 __global__ void test_calc_As(bool * passed);
 __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims);
+__global__ void test_shallow_water_fluxes(bool * passed);
+__global__ void test_compressible_fluxes(bool * passed);
+__global__ void test_p_from_swe(bool * passed);
 
 #endif

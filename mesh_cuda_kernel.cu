@@ -686,7 +686,7 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
     // primitive variable conversion
 
     float sq = sqrt(pow(tau + p + D, 2) -
-        Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - 2.0*Sz*Sz*gamma_up[2] -
+        Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - 2.0*Sx*Sz*gamma_up[2] -
         Sy*Sy*gamma_up[4] - 2.0*Sy*Sz*gamma_up[5] - Sz*Sz*gamma_up[8]);
 
     //if (nan_check(sq)) cout << "sq is nan :(\n";
@@ -975,7 +975,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[1] = q[1] * qz;
         f[2] = q[2] * qz;
         f[3] = q[3] * qz + p;
-        f[4] = q[4] * qz + p * v;
+        f[4] = q[4] * qz + p * w;
     }
 
     free(q_prim);
@@ -3470,14 +3470,140 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
 
     cons_to_prim_comp_d(q_cons, q_new_prim, gamma, gamma_up);
 
-    const float tol = 1.0e-4;
-    for (int i = 0; i < 5; i++) {
-        if ((abs((q_prim[i] - q_new_prim[i]) / q_prim[i]) > tol) && (abs(q_prim[i] - q_new_prim[i]) > 0.01*tol)) {
-            printf("%f, %f\n", q_prim[i], q_new_prim[i]);
+    const float tol = 1.0e-3;
+    for (int j = 0; j < 5; j++) {
+        if ((abs((q_prim[j] - q_new_prim[j]) / q_prim[j]) > tol) && (abs(q_prim[j] - q_new_prim[j]) > 0.01*tol)) {
+            printf("%f, %f\n", q_prim[j], q_new_prim[j]);
             passed[i] = false;
         }
     }
 
+
     free(q_new_prim);
     free(q_prim);
+}
+
+__global__ void test_shallow_water_fluxes(bool * passed) {
+    *passed = true;
+
+    float gamma = 5.0 / 3.0;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+    float alpha = 0.9;
+    float beta[] = {0.1, -0.2};
+
+    float qs[] = {0.1,0.0,0.0,
+                  0.1,0.0,0.0,
+                  1.0e-3,0.5,0.0,
+                  1.0e-3,0.5,0.0,
+                  1.e3,0.5,0.5,
+                  1.e3,0.5,0.5};
+    int dirs[] = {0,1,0,1,0,1};
+    float fs[] = {-0.01111111,0.005, -0.0,
+                  0.02222222,  0.0        ,  0.005,
+                  0.00078889,  0.39444295,  0.0,
+                  2.22222222e-04,   1.11111111e-01,   0.0,
+                  -1.10706112e+02,   4.99999742e+05,  -5.53530559e-02,
+                  2.22627221e+02,   1.11313611e-01,   4.99999909e+05};
+    float * f, * q;
+    f = (float *)malloc(3*sizeof(float));
+    q = (float *)malloc(3*sizeof(float));
+
+    const float tol = 1.0e-5;
+    for (int i = 0; i < 6; i++) {
+        for (int n = 0; n < 3; n++) {
+            q[n] = qs[3*i+n];
+        }
+        shallow_water_fluxes(q, f, dirs[i], gamma_up, alpha, beta, gamma);
+        for (int n = 0; n < 3; n++) {
+            if ((abs((fs[3*i+n] - f[n]) / fs[3*i+n]) > tol) && (abs(fs[3*i+n] - f[n]) > 0.1*tol)) {
+                printf("%f, %f\n", fs[3*i+n], f[n]);
+                *passed = false;
+            }
+        }
+    }
+
+    free(f);
+    free(q);
+}
+
+__global__ void test_compressible_fluxes(bool * passed) {
+    *passed = true;
+
+    float gamma = 5.0 / 3.0;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+    float alpha = 0.9;
+    float beta[] = {0.1, -0.2, 0.3};
+
+    float qs[] = {1.,  0.,  0.,  0.,  1.,
+                  1.,  0.,  0.,  0.,  1.,
+                  1.13133438,  1.02393398,  1.02393398,  1.02393398,  1.61511222,
+                  1.13133438,  1.02393398,  1.02393398,  1.02393398,  1.61511222,
+                  0.00113133,  0.00102393, -0.00102393,  0.00102393,  0.00161511,
+                  0.00113133,  0.00102393, -0.00102393,  0.00102393,  0.00161511,
+                  0.01131334,  0.01023934, -0.01023934,  0.01023934,  0.01615112};
+    int dirs[] = {0,1,0,1,0,1,2};
+    float fs[] = {-0.11111111,  0.66666667, -0.0, -0.0, -0.11111111,
+                  0.22222222,  0.0,  0.66666667,  0.0,  0.22222222,
+                  0.14920997,  0.80171176,  0.13504509,  0.13504509,  0.41301469,
+                  0.52632143,  0.47635642,  1.14302308,  0.47635642,  0.95138543,
+                  0.00014921,  0.00080171, -0.00013505,  0.00013505,  0.00041301,
+                  -2.35061459e-05,  -2.12746488e-05,   6.87941315e-04, -2.12746488e-05,  -2.33557774e-04,
+                  -0.00102198, -0.00092496,  0.00092496,  0.00574171,  0.00054101};
+    float * f, * q;
+    f = (float *)malloc(5*sizeof(float));
+    q = (float *)malloc(5*sizeof(float));
+
+    const float tol = 1.0e-4;
+    for (int i = 0; i < 7; i++) {
+        for (int n = 0; n < 5; n++) {
+            q[n] = qs[5*i+n];
+        }
+        compressible_fluxes(q, f, dirs[i], gamma_up, alpha, beta, gamma);
+        for (int n = 0; n < 5; n++) {
+            if ((abs((fs[5*i+n] - f[n]) / fs[5*i+n]) > tol) && (abs(fs[5*i+n] - f[n]) > 0.1*tol)) {
+                printf("%f, %f\n", fs[5*i+n], f[n]);
+                *passed = false;
+            }
+        }
+    }
+
+    free(f);
+    free(q);
+}
+
+__global__ void test_p_from_swe(bool * passed) {
+    *passed = true;
+    float gamma = 5.0 / 3.0;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+
+    float qs[] = {1.0, 0.0, 0.0,
+                  1.0, 0.5, 0.5,
+                  1.0, 0.0, 0.0,
+                  1.0, 0.0, 0.0,
+                  5.0, 0.3, -0.3};
+    float rhos[] = {1.0, 1.0, 1.e-3, 1.0, 1.0e3};
+    float Ws[] = {1.0, 1.1853266680540011, 1.0, 1.0, 1.0029117558708742};
+    float As[] = {1.0, 1.0, 1.0, 1.e-3, 1.0};
+    float ps[] = {4.472997584, 2.896404957, 4.872597584, -0.3951270024, 103109.4291};
+
+    float * q;
+    q = (float *)malloc(3*sizeof(float));
+
+    const float tol = 1.0e-5;
+    for (int i = 0; i < 5; i++) {
+        for (int n = 0; n < 3; n++) {
+            q[n] = qs[i*3+n];
+        }
+        float p = p_from_swe(q, gamma_up, rhos[i], gamma, Ws[i], As[i]);
+
+        if ((abs((ps[i] - p) / ps[i]) > tol) && (abs(ps[i] - p) > 0.1*tol)) {
+            printf("%f, %f\n", ps[i], p);
+            *passed = false;
+        }
+    }
+
+    free(q);
 }
