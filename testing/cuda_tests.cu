@@ -74,16 +74,24 @@ bool test_swe_from_compressible() {
     int ky_offset = 0;
     float p_floor = 1.0;
     const int nxf = 5;
-    int nyf = 1;
-    int nz = 1;
+    const int nyf = 1;
+    const int nz = 1;
 
     float * gamma_up_d;
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
 
-    float q[] = {};
-    float q_swe[] = {};
-    float rho[] = {};
+    float q[] = {1.0,0.0,0.0,0.0,1.0,
+                 0.001,  0.   ,  0.   ,  0.   ,  0.001,
+                 1000.,     0.,     0.,     0.,  1000.,
+                 1.05245657,  0.59075458,  0.59075458,  0.59075458,  1.23464966,
+                 1.03406473,  0.2142144 ,  0.2142144 ,  0.        ,  0.03634062};
+    float q_swe[] = {0.57084654225605835, 0.0, 0.0,
+                     0.36678287056692627, 0.0, 0.0,
+                     2.9680319115487457, 0.0, 0.0,
+                     0.60079119580552265, 0.12646132865442583, 0.12646132865442583,
+                     0.51825397854150523, 0.10718163204763952, 0.10718163204763952};
+    float rho[] = {1.0, 1.0e-3, 1.0e3, 1.0, 1.0};
 
     float * q_d, *q_swe_new, * q_swe_d, *rho_d;
     cudaMalloc((void**)&q_d, 5*nxf*sizeof(float));
@@ -210,6 +218,13 @@ void run_cuda_tests() {
         cout << "p_from_swe passed!\n";
     } else {
         cout << "p_from_swe did not pass :(\n";
+    }
+
+    passed = test_swe_from_compressible();
+    if (passed) {
+        cout << "swe_from_compressible passed!\n";
+    } else {
+        cout << "swe_from_compressible did not pass :(\n";
     }
 
     cudaFree(passed_d);

@@ -156,7 +156,6 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
             return b;
         }
     }
-    //cout << "Maximum number of iterations exceeded in zbrent.\n";
     //printf("Maximum number of iterations exceeded in zbrent.\n");
     return x1;
 }
@@ -744,7 +743,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
                        float gamma, float * gamma_up) {
     // convert compressible conserved variables to primitive variables
 
-    const float TOL = 1.e-5;
+    const float TOL = 1.0e-5;
     float D = q_cons[0];
     float Sx = q_cons[1];
     float Sy = q_cons[2];
@@ -769,12 +768,12 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     // check sign change
     if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma, gamma_up) *
         f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma, gamma_up) > 0.0) {
-        pmin *= 0.1;
+        pmin = 0.0;
     }
 
     float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, Sz,
                     tau, gamma, gamma_up);
-    if (nan_check(p)){
+    if (nan_check(p) || p < 0.0 || p > 1.0e9){
         p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
             abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
     }
@@ -3470,7 +3469,7 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
 
     cons_to_prim_comp_d(q_cons, q_new_prim, gamma, gamma_up);
 
-    const float tol = 1.0e-3;
+    const float tol = 1.0e-4;
     for (int j = 0; j < 5; j++) {
         if ((abs((q_prim[j] - q_new_prim[j]) / q_prim[j]) > tol) && (abs(q_prim[j] - q_new_prim[j]) > 0.01*tol)) {
             printf("%f, %f\n", q_prim[j], q_new_prim[j]);
@@ -3606,4 +3605,45 @@ __global__ void test_p_from_swe(bool * passed) {
     }
 
     free(q);
+}
+
+__global__ void test_height_err(bool * passed) {
+    *passed = true;
+    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
+    float zmin = 1.0;
+    int nxf = 1;
+    int nyf = 1;
+    int nz = 2;
+    float dz = 0.1;
+    int x = 0;
+    int y = 0;
+
+    float qf_sw[] = {0.0};
+    float height_guess[] = {0.0};
+    float qc[] = {0.0};
+
+    float * qc_new, * qf;
+    qf = (float *)malloc(3*sizeof(float));
+    qc_new = (float *)malloc(3*sizeof(float));
+
+    const float tol = 1.0e-5;
+    for (int i = 0; i < 5; i++) {
+        for (int j = 0; j < 3; j++) {
+            qf[j] = qf_sw[i*3+j];
+        }
+
+        height_err(qc_new, qf, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_guess[i]);
+
+        for (int j = 0; j < 3; j++) {
+            if ((abs((qc[i*3+j] - qc_new[j]) / qc[i*3+j]) > tol) && (abs(qc[i*3+j] - qc_new[j]) > 0.1*tol)) {
+                printf("%f, %f\n", qc[i*3+j], qc_new[j]);
+                *passed = false;
+            }
+        }
+    }
+
+    free(qf);
+    free(qc_new);
+
 }
