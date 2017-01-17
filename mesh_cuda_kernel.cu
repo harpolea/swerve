@@ -1453,25 +1453,33 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         // save to q_swe
         q_swe[offset] = p;
 
-        printf("x: (%d, %d, %d), U: (%f, %f, %f), v: (%f,%f,%f), W: %f, p: %f\n", x, y, z, q_con[1],  q[offset*5+2],  q[offset*5+3], u, v, w, W, p);
+        //printf("x: (%d, %d, %d), U: (%f, %f, %f), v: (%f,%f,%f), W: %f, p: %f\n", x, y, z, q_con[1],  q[offset*5+2],  q[offset*5+3], u, v, w, W, p);
     }
 
     __syncthreads();
     float ph;
 
     if ((x < nxf) && (y < nyf) && (z < nz)) {
-        float * A, * ps;
+        float * A, * ps, *rhos;
         A = (float *)malloc(nz * sizeof(float));
         ps = (float *)malloc(nz * sizeof(float));
+        rhos = (float *)malloc(nz * sizeof(float));
         for (int i = 0; i < nz; i++) {
             ps[i] = q_swe[(i * nyf + y) * nxf + x];
+            if (sizeof(rho) > nz) {
+                // rho varies with position
+                rhos[i] = rho[(i * nyf + y) * nxf + x];
+            } else {
+                rhos[i] = rho[i];
+            }
         }
-        calc_As(rho, ps, A, p_floor, nz, gamma);
+        calc_As(rhos, ps, A, p_floor, nz, gamma);
 
         ph = phi_from_p(p, q_prim[0], gamma, A[z]);
 
         free(ps);
         free(A);
+        free(rhos);
 
         //printf("W: %f, ph: %f, tau: %f, eps: %f\n", W, ph, q_con[4], q_prim[4]);
     }

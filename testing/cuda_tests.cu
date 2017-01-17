@@ -75,37 +75,43 @@ bool test_swe_from_compressible() {
     float p_floor = 1.0;
     const int nxf = 5;
     const int nyf = 1;
-    const int nz = 1;
+    const int nz = 2;
 
     float * gamma_up_d;
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
 
     float q[] = {1.0,0.0,0.0,0.0,1.0,
-                 0.001,  0.   ,  0.   ,  0.   ,  0.001,
-                 1000.,     0.,     0.,     0.,  1000.,
-                 1.05245657,  0.59075458,  0.59075458,  0.59075458,  1.23464966,
-                 1.03406473,  0.2142144 ,  0.2142144 ,  0.        ,  0.03634062};
-    float q_swe[] = {0.57084654225605835, 0.0, 0.0,
-                     0.36678287056692627, 0.0, 0.0,
-                     2.9680319115487457, 0.0, 0.0,
-                     0.60079119580552265, 0.12646132865442583, 0.12646132865442583,
-                     0.51825397854150523, 0.10718163204763952, 0.10718163204763952};
-    float rho[] = {1.0, 1.0e-3, 1.0e3, 1.0, 1.0};
+                 0.001, 0.0, 0.0, 0.0, 0.001,
+                 1000., 0.0, 0.0, 0.0, 1000.,
+                 1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966,
+                 1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062, 1.0,0.0,0.0,0.0,1.0,
+                  0.001, 0.0, 0.0, 0.0, 0.001,
+                  1000., 0.0, 0.0, 0.0, 1000.,
+                  1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966,
+                  1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062};
+    float q_swe[] = {0.39233170120469052, 0.0, -0.0,
+                     -2.3707704103881642, -0.0, 0.0,
+                     3.1554338127975452, 0.0, -0.0,
+                     0.41291207788984285, 0.086914406123075383, 0.086914406123075383,
+                     0.00068880264357815526, 0.000142453303890117, 0.000142453303890117};
+    float rho[] = {1.0, 1.0e-3, 1.0e3, 1.0, 1.0,1.0, 1.0e-3, 1.0e3, 1.0, 1.0};
 
     float * q_d, *q_swe_new, * q_swe_d, *rho_d;
-    cudaMalloc((void**)&q_d, 5*nxf*sizeof(float));
-    q_swe_new = (float *)malloc(3*nxf*sizeof(float));
-    cudaMalloc((void**)&q_swe_d, 3*nxf*sizeof(float));
-    cudaMalloc((void**)&rho_d, nxf*sizeof(float));
-    cudaMemcpy(q_d, q, 5*nxf*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(rho_d, rho, nxf*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&q_d, 5*nxf*nz*sizeof(float));
+    q_swe_new = (float *)malloc(3*nxf*nz*sizeof(float));
+    cudaMalloc((void**)&q_swe_d, 3*nxf*nz*sizeof(float));
+    cudaMalloc((void**)&rho_d, nxf*nz*sizeof(float));
+    cudaMemcpy(q_d, q, 5*nxf*nz*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(rho_d, rho, nxf*nz*sizeof(float), cudaMemcpyHostToDevice);
 
-    swe_from_compressible<<<1,nxf>>>(q_d, q_swe_d, nxf, nyf, nz, gamma_up_d,
+    dim3 block(nxf, nyf, nz);
+
+    swe_from_compressible<<<1,block>>>(q_d, q_swe_d, nxf, nyf, nz, gamma_up_d,
                                    rho_d, gamma, kx_offset, ky_offset,
                                    p_floor);
 
-    cudaMemcpy(q_swe_new, q_swe_d, 3*nxf*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(q_swe_new, q_swe_d, 3*nxf*nz*sizeof(float), cudaMemcpyDeviceToHost);
 
     const float tol = 1.0e-5;
     for (int i = 0; i < nxf; i++) {
