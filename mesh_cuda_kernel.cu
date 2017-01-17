@@ -3442,7 +3442,6 @@ __global__ void test_calc_As(bool * passed) {
             *passed = false;
         }
     }
-
     free(As);
     free(rho);
     free(p);
@@ -3483,8 +3482,6 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
             passed[i] = false;
         }
     }
-
-
     free(q_new_prim);
     free(q_prim);
 }
@@ -3528,7 +3525,6 @@ __global__ void test_shallow_water_fluxes(bool * passed) {
             }
         }
     }
-
     free(f);
     free(q);
 }
@@ -3576,7 +3572,6 @@ __global__ void test_compressible_fluxes(bool * passed) {
             }
         }
     }
-
     free(f);
     free(q);
 }
@@ -3612,7 +3607,6 @@ __global__ void test_p_from_swe(bool * passed) {
             *passed = false;
         }
     }
-
     free(q);
 }
 
@@ -3654,11 +3648,8 @@ __global__ void test_height_err(bool * passed) {
         if ((abs((err[i] - err_new) / err[i]) > tol) && (abs(err[i] - err_new) > 0.1*tol)) {
             printf("%f, %f\n", err[i], err_new);
             *passed = false;
-
         }
     }
-
     free(qf);
     free(qc_new);
-
 }

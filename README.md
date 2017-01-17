@@ -17,6 +17,8 @@ or to use the custom input file `custom_input.txt`,
 
 This code outputs into an HDF5 file which can be viewed using the notebook `Plotting.ipynb` (inadvisable except for very small files) or using the python script `plot.py`.
 
+A version of the code which evolves a section of the domain using the compressible fluid equations on a finer grid can be compiled and run using `make mesh` and `./mesh`.
+
 ## Testing
 
 A test case can be compiled by executing
@@ -29,3 +31,10 @@ then
     ./flat
 
 This test case provides initial data that is flat with a static gravitational field and no burning. It then tests that this data remains unchanged after being evolved through 100 timesteps.
+
+Unit tests can be run by compiling the tests then running
+
+    cd testing
+    ./unit_tests
+
+This will run a set of tests on the majority of the individual functions used and output to screen whether each function tested has passed or failed.
