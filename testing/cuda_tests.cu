@@ -11,24 +11,6 @@ using namespace std;
 This does some unit tests on some of the functions in swerve.
 */
 
-
-/*__global__ void test_find_height(bool * passed) {
-
-    float ph[] = {1.0e-3, 1.0, 1.0e3};
-    float h[] = {10001.000333, 2.313035285, 1.0};
-
-    const float tol = 1.0e-5;
-
-    for (int i = 0; i < 3; i++) {
-        if ((abs((h[i] - find_height(ph[i])) / h[i]) > tol) && (abs(h[i] - find_height(ph[i])) > 0.01*tol)) {
-            printf("%f, %f\n", h[i], find_height(ph[i]));
-            *passed = false;
-        }
-    }
-
-    *passed = true;
-}*/
-
 bool test_cons_to_prim_comp_d_wrapper() {
     int ntests = 100;
     bool *passed_vec_d, *passed_vec;
@@ -186,7 +168,6 @@ void run_cuda_tests() {
         cout << "h_dot did not pass :(\n";
     }
 
-
     test_calc_As<<<1,1>>>(passed_d);
     cudaMemcpy(&passed, passed_d, sizeof(bool), cudaMemcpyDeviceToHost);
     if (passed) {
@@ -231,6 +212,14 @@ void run_cuda_tests() {
         cout << "swe_from_compressible passed!\n";
     } else {
         cout << "swe_from_compressible did not pass :(\n";
+    }
+
+    test_height_err<<<1,1>>>(passed_d);
+    cudaMemcpy(&passed, passed_d, sizeof(bool), cudaMemcpyDeviceToHost);
+    if (passed) {
+        cout << "height_err passed!\n";
+    } else {
+        cout << "height_err did not pass :(\n";
     }
 
     cudaFree(passed_d);

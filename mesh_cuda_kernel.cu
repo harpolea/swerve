@@ -1541,7 +1541,6 @@ __device__ float height_err(float * q_c_new, float * qf_sw, float zmin,
             qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2+1) * 3 + n]));
     }
     float W = W_swe(q_c_new, gamma_up);
-
     float actual_r = find_height(q_c_new[0] / W);
     return abs(height_guess - actual_r) / height_guess;
 }
@@ -3621,35 +3620,41 @@ __global__ void test_height_err(bool * passed) {
     *passed = true;
     float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
         0.0,  0.0,  0.0,  0.80999862};
-    float zmin = 1.0;
-    int nxf = 1;
-    int nyf = 1;
+    int nxf = 2;
+    int nyf = 2;
     int nz = 2;
-    float dz = 0.1;
     int x = 0;
     int y = 0;
 
-    float qf_sw[] = {0.0};
-    float height_guess[] = {0.0};
-    float qc[] = {0.0};
+    float qf_sw[] = {1.5, 0., 0.,1.5, 0.3, 0.3, 0.9, 0.3, 0.3,0.5, 0.3, 0.3,
+                     1.8, 0., 0.,1.8, 0.3, 0.3, 1.2, 0.3, 0.3,1.2, 0.3, 0.3};
+    float height_guess[] = {2.08, 2.08, 2.25, 2.5};
+    float dz[] = {0.048608831367993766, 0.048608831367993766, 0.19652970883766141,0.96441586954630232};
+    float zmin[] = {2.0561825616145182, 2.0561825616145182, 2.1995375441923506,2.1995375441923506};
+    float err[] = {0.011450691531481679, 0.0091817979903112083, 0.010620236758879761,0.10955821308299178};
 
     float * qc_new, * qf;
-    qf = (float *)malloc(3*sizeof(float));
+    qf = (float *)malloc(4*nz*3*sizeof(float));
     qc_new = (float *)malloc(3*sizeof(float));
 
     const float tol = 1.0e-5;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 4; i++) {
         for (int j = 0; j < 3; j++) {
-            qf[j] = qf_sw[i*3+j];
+            for (int k = 0; k < nz; k++){
+                qf[(k*4)*3+j] = qf_sw[(k*4+i)*3+j];
+                qf[(k*4+1)*3+j] = qf_sw[(k*4+i)*3+j];
+                qf[(k*4+2)*3+j] = qf_sw[(k*4+i)*3+j];
+                qf[(k*4+3)*3+j] = qf_sw[(k*4+i)*3+j];
+            }
         }
 
-        height_err(qc_new, qf, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_guess[i]);
+        float err_new = height_err(qc_new, qf, zmin[i], nxf, nyf, nz, dz[i], gamma_up, x, y, height_guess[i]);
 
-        for (int j = 0; j < 3; j++) {
-            if ((abs((qc[i*3+j] - qc_new[j]) / qc[i*3+j]) > tol) && (abs(qc[i*3+j] - qc_new[j]) > 0.1*tol)) {
-                printf("%f, %f\n", qc[i*3+j], qc_new[j]);
-                *passed = false;
-            }
+
+        if ((abs((err[i] - err_new) / err[i]) > tol) && (abs(err[i] - err_new) > 0.1*tol)) {
+            printf("%f, %f\n", err[i], err_new);
+            *passed = false;
+
         }
     }
 
