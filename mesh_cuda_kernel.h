@@ -28,7 +28,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
 
 void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim);
 
-void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size);
+void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size, bool do_z);
 
 __host__ __device__ float W_swe(float * q, float * gamma_up);
 

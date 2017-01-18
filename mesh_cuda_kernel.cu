@@ -433,7 +433,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
 
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
              MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-             int y_size) {
+             int y_size, bool do_z) {
     /*
     Enforce boundary conditions across processes / at edges of grid.
 
@@ -459,6 +459,8 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
         rank of MPI process and total number of MPI processes
     y_size : int
         size of grid in y direction running on each process (except the last one)
+    do_z : bool
+        true if need to implement bcs in vertical direction as well
     */
 
     // x boundaries
@@ -469,6 +471,21 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
                     grid[((z * ny + y) * nx + g) *vec_dim+i] = grid[((z * ny + y) * nx + ng) *vec_dim+i];
 
                     grid[((z * ny + y) * nx + (nx-1-g))*vec_dim+i] = grid[((z * ny + y) * nx + (nx-1-ng))*vec_dim+i];
+                }
+            }
+        }
+    }
+
+    // z boundaries
+    if (do_z) {
+        for (int g = 0; g < ng; g++) {
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
+
+                        grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                    }
                 }
             }
         }
@@ -1481,7 +1498,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         free(A);
         free(rhos);
 
-        //printf("W: %f, ph: %f, tau: %f, eps: %f\n", W, ph, q_con[4], q_prim[4]);
+        //printf("W: %f, ph: %f, tau: %f, eps: %f, A[z]: %f, p: %f, rho: %f\n", W, ph, q_con[4], q_prim[4], A[z], p, q_prim[0]);
     }
     __syncthreads();
     if ((x < nxf) && (y < nyf) && (z < nz)) {
@@ -2506,7 +2523,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -2517,7 +2534,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
     cudaMemcpy(Un_d, Up_h, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
@@ -2537,7 +2554,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -2549,7 +2566,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
     cudaMemcpy(Un_d, Up_h, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -2568,7 +2585,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -2580,7 +2597,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size);
+        bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
     for (int j = 0; j < nx*ny*nz*vec_dim; j++) {
@@ -2873,16 +2890,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            /*cout << "\nFine grid after prolonging\n\n";
+            cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5] << ',';
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
 
             // enforce boundaries
@@ -2890,7 +2907,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_fv(Uf_h, nxf, nyf, nz, ng, 5);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size);
+                bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size, true);
             }
 
             /*cout << "\nFine grid after prolonging\n\n";
@@ -2932,16 +2949,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size);
                 }*/
 
-                /*cout << "\nFine grid\n\n";
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
+                cout << "\nFine grid\n\n";
+                for (int y = 0; y < nyf; y++) {
+                    for (int x = 0; x < nxf; x++) {
                             cout << '(' << x << ',' << y << "): ";
                             for (int z = 0; z < nz; z++) {
                                 cout << Uf_h[(((z*nyf + y)*nxf)+x)*5] << ',';
                             }
                             cout << '\n';
                     }
-                }*/
+                }
 
                 cudaDeviceSynchronize();
 
@@ -2957,25 +2974,25 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            cout << "\nFine grid before restricting\n\n";
+            /*cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+3] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
-            cout << "\nCoarse grid before restricting\n\n";
+            /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
                 for (int y = 0; y < ny; y++) {
                     for (int x = 0; x < nx; x++) {
                             cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+3] << '\n';
                     }
                 }
-            }
+            }*/
 
             // restrict to coarse grid
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
@@ -2991,14 +3008,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
             // IT HAS NAN'D HERE
-            cout << "\nCoarse grid after restricting\n\n";
+            /*cout << "\nCoarse grid after restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
                 for (int y = 0; y < ny; y++) {
                     for (int x = 0; x < nx; x++) {
                             cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+3] << '\n';
                     }
                 }
-            }
+            }*/
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3012,7 +3029,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_fv(Uc_h, nx, ny, nlayers, ng, 3);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size);
+                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size, false);
             }
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
@@ -3248,7 +3265,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_fv(Uc_h, nx, ny, nlayers, ng, 3);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size);
+                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size, false);
             }
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
