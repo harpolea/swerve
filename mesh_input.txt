@@ -11,7 +11,7 @@ xmax    10.0
 ymin    0.0
 ymax    10.0
 zmin    2.1
-zmax    2.4
+zmax    2.6
 rho     0.5 0.5 0.5
 p_floor 1.0
 Q       0.0

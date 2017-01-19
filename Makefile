@@ -255,7 +255,7 @@ run: build
 clean:
 	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
 clean_test:
-	rm -f testing/flat testing/flat.o testing/unit_tests testing/unit_tests.o testing/cuda_tests_link.o testing/cuda_tests.o
+	rm -f testing/flat testing/unit_tests testing/*.o
 
 testing/flat.o: testing/flat.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
@@ -282,6 +282,7 @@ test: testing/flat
 test: testing/unit_tests
 
 clobber: clean
+clobber: clean_test
 
 mesh_cuda.o: mesh_cuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
