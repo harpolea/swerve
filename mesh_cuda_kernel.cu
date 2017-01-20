@@ -1289,8 +1289,23 @@ __global__ void intialise_fine(float * q_f, int nxf, int nyf, int nz,
         q_f[offset + 1] = 0.0;
         q_f[offset + 2] = 0.0;
     }
+}
 
+__device__ float slope_limit(float layer_frac, float dx, float left, float middle, float right, float aleft, float amiddle, float aright) {
+    // left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
+    float S_upwind = (layer_frac * (right - middle) +
+        (1.0 - layer_frac) * (aright - amiddle))/ dx;
+    float S_downwind = (layer_frac * (middle - left)
+        + (1.0 - layer_frac) * (amiddle - aleft))/ dx;
 
+    float S = 0.5 * (S_upwind + S_downwind);
+
+    float r = 1.0e6;
+    if (abs(S_downwind) > 1.0e-10) {
+        r = S_upwind / S_downwind;
+    }
+
+    return S * phi(r);
 }
 
 __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
@@ -1394,78 +1409,98 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             }
         }
 
-        free(q_swe);
+
         //printf("Layer frac: %f  ", layer_frac);
 
         //printf("z: %i, height: %f, neighbour_layer: %i, layer_frac: %f, \n", z, height, neighbour_layer, layer_frac);
 
-        for (int n = 0; n < 3; n++) {
-            // do some slope limiting
-            // x-dir
-            float S_upwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x+1) * 3 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 3 + n]) +
-                (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x+1)*3 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*3 + n]))/ dx;
-            float S_downwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 3 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x-1) * 3 + n])
-                + (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*3 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y)*nx+c_x-1)*3+n]))/ dx;
-
-            float Sx = 0.5 * (S_upwind + S_downwind);
-
-            float r = 1.0e6;
-            if (abs(S_downwind) > 1.0e-10) {
-                r = S_upwind / S_downwind;
+        // calculate W at height
+        int l = neighbour_layer;
+        float Ww[18];
+        for (int j = -1; j < 2; j++) {
+            for (int i = -1; i < 2; i++) {
+                for (int k = 0; k < 3; k++) {
+                    q_swe[k] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+k];
+                }
+                Ww[(j+1)*3+i+1] = W_swe(q_swe, gamma_up);
+                for (int k = 0; k < 3; k++) {
+                    q_swe[k] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+k];
+                }
+                Ww[(3+j+1)*3+i+1] = W_swe(q_swe, gamma_up);
             }
-
-            Sx *= phi(r);
-
-            // y-dir
-            S_upwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y+1) * nx + c_x) * 3 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 3 + n]) +
-                (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y+1) * nx + c_x)*3 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*3 + n])) / dy;
-            S_downwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 3 + n] -
-                q_comp[((neighbour_layer * ny + c_y-1) * nx + c_x) * 3 + n])
-                + (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*3 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y-1)*nx+c_x)*3+n])) / dy;
-
-            float Sy = 0.5 * (S_upwind + S_downwind);
-
-            r = 1.0e6;
-            if (abs(S_downwind) > 1.0e-10) {
-                r = S_upwind / S_downwind;
-            }
-
-            Sy *= phi(r);
-
-            // vertically interpolated component of q_comp
-            float interp_q_comp = layer_frac *
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 3 + n] +
-                (1.0 - layer_frac) *
-                q_comp[(((neighbour_layer-1) * ny + c_y) * nx + c_x) * 3 + n];
-
-            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3 + n] =
-                interp_q_comp - 0.25 * (dx * Sx + dy * Sy);
-
-            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3 + n] =
-                interp_q_comp + 0.25 * (dx * Sx - dy * Sy);
-
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3 + n] =
-                interp_q_comp + 0.25 * (-dx * Sx + dy * Sy);
-
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3 + n] =
-                interp_q_comp + 0.25 * (dx * Sx + dy * Sy);
-
         }
+
+        free(q_swe);
+
+        float Sx = slope_limit(layer_frac, dx, Ww[3], Ww[4], Ww[5], Ww[12], Ww[13], Ww[14]);
+        float Sy = slope_limit(layer_frac, dy, Ww[1], Ww[4], Ww[7], Ww[10], Ww[13], Ww[16]);
+
+        float interp_W_comp = layer_frac * Ww[4] + (1.0 - layer_frac) * Ww[13];
+
+        // Now calculate Phi W
+        float Phi = find_pot(height);
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] = Phi *
+            (interp_W_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] = Phi *
+            (interp_W_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] = Phi *
+            (interp_W_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] = Phi *
+            (interp_W_comp + 0.25 * (dx * Sx + dy * Sy));
+
+        // now need to do linear interpolation thing on u, v
+        float u[18];
+        float v[18];
+        for (int j = -1; j < 2; j++) {
+            for (int i = -1; i < 2; i++) {
+                u[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+1] /
+                                    (Phi * Ww[4] * Ww[4]);
+                v[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+2] /
+                                    (Phi * Ww[4] * Ww[4]);
+                u[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+1] /
+                                    (Phi * Ww[13] * Ww[13]);
+                v[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+2] /
+                                    (Phi * Ww[13] * Ww[13]);
+            }
+        }
+
+        Sx = slope_limit(layer_frac, dx, u[3], u[4], u[5], u[12], u[13], u[14]);
+        Sy = slope_limit(layer_frac, dy, u[1], u[4], u[7], u[10], u[13], u[16]);
+
+        float interp_uW_comp = layer_frac * u[4]*Ww[4] + (1.0 - layer_frac) * u[13]*Ww[13];
+
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+1] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
+            (interp_uW_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+1] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
+            (interp_uW_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+1] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
+            (interp_uW_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+1] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
+            (interp_uW_comp + 0.25 * (dx * Sx + dy * Sy));
+
+        Sx = slope_limit(layer_frac, dx, v[3], v[4], v[5], v[12], v[13], v[14]);
+        Sy = slope_limit(layer_frac, dy, v[1], v[4], v[7], v[10], v[13], v[16]);
+
+        float interp_vW_comp = layer_frac * v[4]*Ww[4] + (1.0 - layer_frac) * v[13]*Ww[13];
+
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+2] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
+            (interp_vW_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+2] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
+            (interp_vW_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+2] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
+            (interp_vW_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+2] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
+            (interp_vW_comp + 0.25 * (dx * Sx + dy * Sy));
+
+
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5+4]);
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
@@ -1760,15 +1795,15 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
 
         float W = W_swe(q_c_new, gamma_up);
         float r = find_height(q_c[coarse_index] / W);
-        float height_min = r - 0.25*dz;//0.94 * r;
-        float height_max = r + 0.25*dz;//1.06 * r;
+        float height_min = r - 0.1*dz;//0.94 * r;
+        float height_max = r + 0.1*dz;//1.06 * r;
 
         height_min = zbrent_height(height_min, height_max, rel_tol, q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y);
 
         // make sure calculate q_c_new using height_min
         float rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
 
-        if (abs(rel_err) > 1.0e-4) {
+        if (abs(rel_err) > 1.0e-5) {
             printf("rel_err too large, %f\n", rel_err);
             height_min = r;
             rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
