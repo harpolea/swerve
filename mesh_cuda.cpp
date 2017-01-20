@@ -84,7 +84,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
 
     // D, Sx, Sy, zeta
     U_coarse = new float[nx*ny*nlayers*3];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_fine = new float[nxf*nyf*nz*3];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
@@ -154,7 +154,6 @@ void Sea::invert_mat(float * M, int m, int n) {
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
             M[i*n+j] = B[i*2*n+n+j];
-
         }
     }
 
@@ -295,13 +294,13 @@ Sea::Sea(char * filename)
     Sea::invert_mat(gamma_up, 3, 3);
 
     U_coarse = new float[nx*ny*nlayers*3];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_fine = new float[nxf*nyf*nz*3];
 
     // initialise arrays
     for (int i = 0; i < nx*ny*nlayers*3; i++) {
         U_coarse[i] = 0.0;
     }
-    for (int i = 0; i < nxf*nyf*nz*5; i++) {
+    for (int i = 0; i < nxf*nyf*nz*3; i++) {
         U_fine[i] = 0.0;
     }
 
@@ -345,13 +344,13 @@ Sea::Sea(const Sea &seaToCopy)
     }
 
     U_coarse = new float[int(nx*ny*nlayers*3)];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_fine = new float[nxf*nyf*nz*3];
 
     for (int i = 0; i < nx*ny*nlayers*3;i++) {
         U_coarse[i] = seaToCopy.U_coarse[i];
     }
 
-    for (int i = 0; i < nxf*nyf*nz*5;i++) {
+    for (int i = 0; i < nxf*nyf*nz*3;i++) {
         U_fine[i] = seaToCopy.U_fine[i];
     }
 
