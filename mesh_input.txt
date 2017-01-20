@@ -1,8 +1,8 @@
-nx      50
-ny      50
-nz      5
+nx      20
+ny      20
+nz      3
 nlayers 3
-nt      10
+nt      1
 ng      2
 r       2
 df      0.4
@@ -11,7 +11,7 @@ xmax    10.0
 ymin    0.0
 ymax    10.0
 zmin    2.1
-zmax    2.6
+zmax    2.313035285
 rho     0.5 0.5 0.5
 p_floor 1.0
 Q       0.0

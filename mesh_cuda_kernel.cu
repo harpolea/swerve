@@ -281,7 +281,7 @@ __device__ float zbrent_height(const float x1, const float x2,
         }
 
         // test for convegence
-        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
+        if (fb == 0.0 || fs == 0.0 || abs(b-a)/b < tol) {
             return b;
         }
     }
@@ -1273,6 +1273,26 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
     }
 }
 
+__global__ void intialise_fine(float * q_f, int nxf, int nyf, int nz,
+                               float dz, float zmin,
+                               int kx_offset, int ky_offset) {
+    /*
+    Initialise fine grid. For now assume velocity is zero.
+    */
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int z = threadIdx.z;
+    int offset = ((z * nyf + y) * nxf + x) * 3;
+
+    if (x < nxf && y < nyf && z < nz) {
+        q_f[offset] = find_pot(zmin + (nz - 1 - z) * dz);
+        q_f[offset + 1] = 0.0;
+        q_f[offset + 2] = 0.0;
+    }
+
+
+}
+
 __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz, float dx, float dy, float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
@@ -1740,15 +1760,16 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
 
         float W = W_swe(q_c_new, gamma_up);
         float r = find_height(q_c[coarse_index] / W);
-        float height_min = 0.8 * r;
-        float height_max = 1.2 * r;
+        float height_min = r - 0.25*dz;//0.94 * r;
+        float height_max = r + 0.25*dz;//1.06 * r;
 
         height_min = zbrent_height(height_min, height_max, rel_tol, q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y);
 
         // make sure calculate q_c_new using height_min
         float rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
 
-        if (abs(rel_err) > 1.0e-2) {
+        if (abs(rel_err) > 1.0e-4) {
+            printf("rel_err too large, %f\n", rel_err);
             height_min = r;
             rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
         }
@@ -2945,6 +2966,38 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             printf("Error: %s\n", cudaGetErrorString(err));
         }
 
+        // initialise fine grid
+        int kx_offset = 0;
+        int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+        int k_offset = 0;
+        if (rank > 0) {
+            k_offset = cumulative_kernels[rank - 1];
+        }
+
+        for (int j = 0; j < kernels[rank].y; j++) {
+           kx_offset = 0;
+           for (int i = 0; i < kernels[rank].x; i++) {
+               intialise_fine<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(Uf_d,
+                      nxf, nyf, nz, dz, zmin, kx_offset, ky_offset);
+              kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
+           }
+           ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
+        }
+
+        cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*3*sizeof(float), cudaMemcpyDeviceToHost);
+
+        cout << "\nFine grid after initialising\n\n";
+        for (int y = 0; y < nyf; y++) {
+            for (int x = 0; x < nxf; x++) {
+                    cout << '(' << x << ',' << y << "): ";
+                    for (int z = 0; z < nz; z++) {
+                        cout << Uf_h[(((z*nyf + y)*nxf)+x)*3] << ',';
+                    }
+                    cout << '\n';
+            }
+        }
+
         // main loop
         for (int t = 0; t < nt; t++) {
 
@@ -2953,7 +3006,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // good here
-            /*cout << "\nCoarse grid before prolonging\n\n";
+            cout << "\nCoarse grid before prolonging\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -2962,7 +3015,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }*/
+            }
 
             //cout << "\n\nProlonging\n\n";
 
@@ -2984,12 +3037,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3+4] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3] << ',';
                         }
                         cout << '\n';
                 }
             }*/
-
 
             // enforce boundaries
             if (n_processes == 1) {
@@ -2999,16 +3051,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uf_h, nxf, nyf, nz, 3, ng, comm, status, rank, n_processes, y_size, false);
             }
 
-            /*cout << "\nFine grid after prolonging\n\n";
+            cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3+4] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3] << ',';
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*3*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3064,16 +3116,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            /*cout << "\nFine grid before restricting\n\n";
+            cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
                         for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3+4] << ',';
+                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3] << ',';
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
             /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
@@ -3098,7 +3150,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
             // IT HAS NAN'D HERE
-            /*cout << "\nCoarse grid after restricting\n\n";
+            cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3107,7 +3159,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }*/
+            }
 
             err = cudaGetLastError();
             if (err != cudaSuccess){

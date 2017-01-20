@@ -17,7 +17,6 @@ Compile with 'make mesh'
 
 */
 
-
 int main(int argc, char *argv[]) {
 
     // MPI variables
