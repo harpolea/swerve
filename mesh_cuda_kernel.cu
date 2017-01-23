@@ -1785,7 +1785,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
-        const float rel_tol = 1.0e-5;
+        //const float rel_tol = 1.0e-5;
 
         float * q_c_new;
         q_c_new = (float *)malloc(3 * sizeof(float));
@@ -1794,8 +1794,77 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         }
 
         float W = W_swe(q_c_new, gamma_up);
-        float r = find_height(q_c[coarse_index] / W);
-        float height_min = r - 0.1*dz;//0.94 * r;
+        float height_guess = find_height(q_c[coarse_index] / W);
+        //float r = find_height(q_c[coarse_index] / W);
+
+        int z_index = nz;
+        float z_frac = 0.0;
+
+        if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
+            //printf("hi :/\n");
+            z_index = 1;
+            float height = zmin + (nz - 1 - 1) * dz;
+            z_frac = -(height_guess - (height+dz)) / dz;
+        } else {
+
+            for (int i = 1; i < (nz-1); i++) {
+                float height = zmin + (nz - 1 - i) * dz;
+                if (height_guess > height) {
+                    z_index = i;
+                    z_frac = -(height_guess - (height+dz)) / dz;
+                    break;
+                }
+            }
+
+            if (z_index == nz) {
+                //printf("oops..\n");
+                z_index = nz - 1;
+                z_frac = 1.0;
+            }
+        }
+
+        int l = z_index;
+        float Ww[8];
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 2; i++) {
+                for (int k = 0; k < 3; k++) {
+                    q_c_new[k] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+k];
+                }
+                Ww[j*2+i] = W_swe(q_c_new, gamma_up);
+                for (int k = 0; k < 3; k++) {
+                    q_c_new[k] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+k];
+                }
+                Ww[(2+j)*2+i] = W_swe(q_c_new, gamma_up);
+            }
+        }
+
+        float interp_W = z_frac * 0.25 * (Ww[0] + Ww[1] + Ww[2] + Ww[3]) + (1.0 - z_frac) * 0.25 * (Ww[4] + Ww[5] + Ww[6] + Ww[7]);
+
+        float Phi = find_pot(height_guess);
+        // now need to do linear interpolation thing on u, v
+        float u[8];
+        float v[8];
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 2; i++) {
+                u[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+1] /
+                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                v[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+2] /
+                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                u[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+1] /
+                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+                v[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+2] /
+                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+            }
+        }
+
+        float interp_u = z_frac * 0.25 * (u[0] + u[1] + u[2] + u[3]) + (1.0 - z_frac) * 0.25 * (u[4] + u[5] + u[6] + u[7]);
+        float interp_v = z_frac * 0.25 * (v[0] + v[1] + v[2] + v[3]) + (1.0 - z_frac) * 0.25 * (v[4] + v[5] + v[6] + v[7]);
+
+        q_c[coarse_index] = Phi * interp_W;
+        q_c[coarse_index + 1] = q_c[coarse_index] * interp_W * interp_u;
+        q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
+
+        /*float height_min = r - 0.1*dz;//0.94 * r;
         float height_max = r + 0.1*dz;//1.06 * r;
 
         height_min = zbrent_height(height_min, height_max, rel_tol, q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y);
@@ -1807,13 +1876,13 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             printf("rel_err too large, %f\n", rel_err);
             height_min = r;
             rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
-        }
+        }*/
 
         //printf("counter, err: %d, %f phi: %f\n", counter, rel_err_min, q_c_new[0]);
 
-        for (int i = 0; i < 3; i++) {
-            q_c[coarse_index + i] = q_c_new[i];
-        }
+        //for (int i = 0; i < 3; i++) {
+        //    q_c[coarse_index + i] = q_c_new[i];
+        //}
 
         free(q_c_new);
     } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor

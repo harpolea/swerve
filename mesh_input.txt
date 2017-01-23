@@ -1,6 +1,6 @@
-nx      50
-ny      50
-nz      10
+nx      40
+ny      40
+nz      4
 nlayers 3
 nt      10
 ng      2
