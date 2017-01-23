@@ -1864,26 +1864,6 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         q_c[coarse_index + 1] = q_c[coarse_index] * interp_W * interp_u;
         q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
 
-        /*float height_min = r - 0.1*dz;//0.94 * r;
-        float height_max = r + 0.1*dz;//1.06 * r;
-
-        height_min = zbrent_height(height_min, height_max, rel_tol, q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y);
-
-        // make sure calculate q_c_new using height_min
-        float rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
-
-        if (abs(rel_err) > 1.0e-5) {
-            printf("rel_err too large, %f\n", rel_err);
-            height_min = r;
-            rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
-        }*/
-
-        //printf("counter, err: %d, %f phi: %f\n", counter, rel_err_min, q_c_new[0]);
-
-        //for (int i = 0; i < 3; i++) {
-        //    q_c[coarse_index + i] = q_c_new[i];
-        //}
-
         free(q_c_new);
     } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
@@ -3091,7 +3071,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
         cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*3*sizeof(float), cudaMemcpyDeviceToHost);
 
-        cout << "\nFine grid after initialising\n\n";
+        /*cout << "\nFine grid after initialising\n\n";
         for (int y = 0; y < nyf; y++) {
             for (int x = 0; x < nxf; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3100,7 +3080,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
             }
-        }
+        }*/
 
         // main loop
         for (int t = 0; t < nt; t++) {
@@ -3110,7 +3090,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // good here
-            cout << "\nCoarse grid before prolonging\n\n";
+            /*cout << "\nCoarse grid before prolonging\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3119,7 +3099,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
 
             //cout << "\n\nProlonging\n\n";
 
@@ -3155,7 +3135,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uf_h, nxf, nyf, nz, 3, ng, comm, status, rank, n_processes, y_size, false);
             }
 
-            cout << "\nFine grid after prolonging\n\n";
+            /*cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -3164,7 +3144,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*3*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3220,7 +3200,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            cout << "\nFine grid before restricting\n\n";
+            /*cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -3229,7 +3209,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
             /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
@@ -3253,8 +3233,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-            // IT HAS NAN'D HERE
-            cout << "\nCoarse grid after restricting\n\n";
+
+            /*cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3263,7 +3243,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
