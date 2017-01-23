@@ -187,7 +187,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
 
-    for i in range(start, len(D_2d[:,0,0,0])):
+    for i in range(start, len(D_2d[:,0,0,0])-1):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
 

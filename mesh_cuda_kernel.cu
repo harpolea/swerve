@@ -2920,7 +2920,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // good here
-            /*cout << "\nCoarse grid before prolonging\n\n";
+            cout << "\nCoarse grid before prolonging\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -2929,7 +2929,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }*/
+            }
 
             //cout << "\n\nProlonging\n\n";
 
@@ -2966,7 +2966,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size, true);
             }
 
-            /*cout << "\nFine grid after prolonging\n\n";
+            cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -2975,7 +2975,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3031,7 +3031,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            /*cout << "\nFine grid before restricting\n\n";
+            cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -3040,7 +3040,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }*/
+            }
 
             /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
@@ -3064,24 +3064,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
-            // IT HAS NAN'D HERE
-            /*cout << "\nCoarse grid after restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    cout << '(' << x << ',' << y << "): ";
-                    for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
-                    }
-                    cout << '\n';
-                }
-            }*/
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After copying\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
-
 
             // enforce boundaries
             if (n_processes == 1) {
@@ -3092,6 +3080,17 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+
+            cout << "\nCoarse grid after restricting\n\n";
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    cout << '(' << x << ',' << y << "): ";
+                    for (int z = 0; z < nlayers; z++) {
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
+                    }
+                    cout << '\n';
+                }
+            }
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3116,21 +3115,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
-            // update old_phi
-            for (int i = 0; i < nlayers*nx*ny; i++) {
-                pphi[i] = Uc_h[i*3];
-            }
-            cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
-
-            /*cout << "\nCoarse grid after rk3\n\n";
-            for (int z = 0; z < nlayers; z++) {
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+            cout << "\nCoarse grid after rk3\n\n";
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    cout << '(' << x << ',' << y << "): ";
+                    for (int z = 0; z < nlayers; z++) {
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
                     }
+                    cout << '\n';
                 }
-            }*/
-
+            }
             /*for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {

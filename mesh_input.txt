@@ -1,8 +1,8 @@
-nx      50
-ny      50
+nx      100
+ny      100
 nz      10
 nlayers 3
-nt      20
+nt      2
 ng      2
 r       2
 df      0.4
