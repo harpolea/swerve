@@ -160,135 +160,6 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
     return x1;
 }
 
-__device__ float zbrent_height(const float x1, const float x2,
-             const float tol, float * q_c_new, float * qf_sw, float zmin,
-             int nxf, int nyf, int nz, float dz,
-             float * gamma_up, int x, int y) {
-    /*
-    Using Brent's method, return the root of a function or functor func known
-    to lie between x1 and x2. The root will be regined until its accuracy is
-    tol.
-
-    Parameters
-    ----------
-    func : fptr
-        function pointer to shallow water or compressible flux function.
-    x1, x2 : const float
-        limits of root
-    tol : const float
-        tolerance to which root shall be calculated to
-    D, Sx, Sy, tau: float
-        conserved variables
-    gamma : float
-        adiabatic index
-    gamma_up : float *
-        spatial metric
-    */
-
-    const int ITMAX = 300;
-
-    float a = x1, b = x2;
-    float c, d=0.0, e=0.0;
-    float fa = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, a);
-    float fb = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, b);
-    float fc=0.0, fs, s;
-
-    if (fa * fb >= 0.0) {
-        //cout << "Root must be bracketed in zbrent.\n";
-        //printf("Root must be bracketed in zbrent.\n");
-        return x2;
-    }
-
-    if (abs(fa) < abs(fb)) {
-        // swap a, b
-        d = a;
-        a = b;
-        b = d;
-
-        d = fa;
-        fa = fb;
-        fb = d;
-    }
-
-    c = a;
-    fc = fa;
-
-    bool mflag = true;
-
-    for (int i = 0; i < ITMAX; i++) {
-        if (fa != fc && fb != fc) {
-            s = a*fb*fc / ((fa-fb) * (fa-fc)) + b*fa*fc / ((fb-fa)*(fb-fc)) +
-                c*fa*fb / ((fc-fa)*(fc-fb));
-        } else {
-            s = b - fb * (b-a) / (fb-fa);
-        }
-
-        // list of conditions
-        bool con1 = false;
-        if (0.25*(3.0 * a + b) < b) {
-            if (s < 0.25*(3.0 * a + b) || s > b) {
-                con1 = true;
-            }
-        } else if (s < b || s > 0.25*(3.0 * a + b)) {
-            con1 = true;
-        }
-        bool con2 = false;
-        if (mflag && abs(s-b) >= 0.5*abs(b-c)) {
-            con2 = true;
-        }
-        bool con3 = false;
-        if (!(mflag) && abs(s-b) >= 0.5 * abs(c-d)) {
-            con3 = true;
-        }
-        bool con4 = false;
-        if (mflag && abs(b-c) < tol) {
-            con4 = true;
-        }
-        bool con5 = false;
-        if (!(mflag) && abs(c-d) < tol) {
-            con5 = true;
-        }
-
-        if (con1 || con2 || con3 || con4 || con5) {
-            s = 0.5 * (a+b);
-            mflag = true;
-        } else {
-            mflag = false;
-        }
-
-        fs = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, s);
-
-        d = c;
-        c = b;
-        fc = fb;
-
-        if (fa * fs < 0.0) {
-            b = s;
-            fb = fs;
-        } else {
-            a = s;
-            fa = fs;
-        }
-
-        if (abs(fa) < abs(fb)) {
-            e = a;
-            a = b;
-            b = e;
-
-            e = fa;
-            fa = fb;
-            fb = e;
-        }
-
-        // test for convegence
-        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
-            return b;
-        }
-    }
-    //printf("Maximum number of iterations exceeded in zbrent.\n");
-    return x1;
-}
-
 void check_mpi_error(int mpi_err) {
     /*
     Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
@@ -1273,6 +1144,23 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
     }
 }
 
+__device__ float slope_limit(float layer_frac, float dx, float left, float middle, float right, float aleft, float amiddle, float aright) {
+    // left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
+    float S_upwind = (layer_frac * (right - middle) +
+        (1.0 - layer_frac) * (aright - amiddle))/ dx;
+    float S_downwind = (layer_frac * (middle - left)
+        + (1.0 - layer_frac) * (amiddle - aleft))/ dx;
+
+    float S = 0.5 * (S_upwind + S_downwind);
+
+    float r = 1.0e6;
+    if (abs(S_downwind) > 1.0e-10) {
+        r = S_upwind / S_downwind;
+    }
+
+    return S * phi(r);
+}
+
 __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz, float dx, float dy, float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
@@ -1374,10 +1262,91 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             }
         }
 
-        free(q_swe);
-        //printf("Layer frac: %f  ", layer_frac);
+       /*// calculate W at height
+       int l = neighbour_layer;
+       float Ww[18];
+       for (int j = -1; j < 2; j++) {
+           for (int i = -1; i < 2; i++) {
+               for (int k = 0; k < 3; k++) {
+                   q_swe[k] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+k];
+               }
+               Ww[(j+1)*3+i+1] = W_swe(q_swe, gamma_up);
+               for (int k = 0; k < 3; k++) {
+                   q_swe[k] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+k];
+               }
+               Ww[(3+j+1)*3+i+1] = W_swe(q_swe, gamma_up);
+           }
+       }*/
 
-        //printf("z: %i, height: %f, neighbour_layer: %i, layer_frac: %f, \n", z, height, neighbour_layer, layer_frac);
+        free(q_swe);
+
+        /*float Sx = slope_limit(layer_frac, dx, Ww[3], Ww[4], Ww[5], Ww[12], Ww[13], Ww[14]);
+        float Sy = slope_limit(layer_frac, dy, Ww[1], Ww[4], Ww[7], Ww[10], Ww[13], Ww[16]);
+
+        float interp_W_comp = layer_frac * Ww[4] + (1.0 - layer_frac) * Ww[13];
+
+        // Now calculate Phi W
+        float Phi = find_pot(height);
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] = Phi *
+            (interp_W_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] = Phi *
+            (interp_W_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] = Phi *
+            (interp_W_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] = Phi *
+            (interp_W_comp + 0.25 * (dx * Sx + dy * Sy));
+
+        // now need to do linear interpolation thing on u, v
+        float u[18];
+        float v[18];
+        for (int j = -1; j < 2; j++) {
+            for (int i = -1; i < 2; i++) {
+                u[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+1] /
+                                    (Phi * Ww[4] * Ww[4]);
+                v[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+2] /
+                                    (Phi * Ww[4] * Ww[4]);
+                u[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+1] /
+                                    (Phi * Ww[13] * Ww[13]);
+                v[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+2] /
+                                    (Phi * Ww[13] * Ww[13]);
+            }
+        }
+
+        Sx = slope_limit(layer_frac, dx, u[3], u[4], u[5], u[12], u[13], u[14]);
+        Sy = slope_limit(layer_frac, dy, u[1], u[4], u[7], u[10], u[13], u[16]);
+
+        float interp_uW_comp = layer_frac * u[4]*Ww[4] + (1.0 - layer_frac) * u[13]*Ww[13];
+
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+1] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
+            (interp_uW_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+1] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
+            (interp_uW_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+1] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
+            (interp_uW_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+1] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
+            (interp_uW_comp + 0.25 * (dx * Sx + dy * Sy));
+
+        Sx = slope_limit(layer_frac, dx, v[3], v[4], v[5], v[12], v[13], v[14]);
+        Sy = slope_limit(layer_frac, dy, v[1], v[4], v[7], v[10], v[13], v[16]);
+
+        float interp_vW_comp = layer_frac * v[4]*Ww[4] + (1.0 - layer_frac) * v[13]*Ww[13];
+
+        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+2] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
+            (interp_vW_comp - 0.25 * (dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+2] =
+            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
+            (interp_vW_comp + 0.25 * (dx * Sx - dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+2] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
+            (interp_vW_comp + 0.25 * (-dx * Sx + dy * Sy));
+        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+2] =
+            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
+            (interp_vW_comp + 0.25 * (dx * Sx + dy * Sy));*/
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1446,20 +1415,11 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 interp_q_comp + 0.25 * (dx * Sx + dy * Sy);
 
         }
+
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5+4]);
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
         //printf("(%d, %d, %d): %f, \n", 2*x, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5]);
         //printf("(%d, %d, %d): %f, \n", 2*x+1, 2*y+1, z, q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 5]);
-    }
-
-    // going to get rid of tau < 0 (slightly hacky?)
-    if ((x < nxf) && (y < nyf) && (z < nz)) {
-        if (q_f[((z * nyf + y) * nxf + x) * 5 + 4] < 0.0) {
-            //printf("tau < 0 (%d, %d, %d): %f, \n", x, y, z, q_f[((z * nyf + y) * nxf + x) * 5 + 4]);
-            q_f[((z * nyf + y) * nxf + x) * 5 + 4] = 0.0;
-        }
-
-        //printf("(%d, %d, %d): %f, \n", x, y, z, q_f[((z * nyf + y) * nxf + x) * 5 + 4]);
     }
 }
 
@@ -1649,61 +1609,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     free(q_prim);
 }
 
-__device__ float height_err(float * q_c_new, float * qf_sw, float zmin,
-                            int nxf, int nyf, int nz, float dz,
-                            float * gamma_up, int x, int y,
-                            float height_guess) {
-    int z_index = nz;
-    float z_frac = 0.0;
-
-    if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
-        //printf("hi :/\n");
-        z_index = 1;
-        float height = zmin + (nz - 1 - 1) * dz;
-        z_frac = -(height_guess - (height+dz)) / dz;
-    } else {
-
-        for (int i = 1; i < (nz-1); i++) {
-            float height = zmin + (nz - 1 - i) * dz;
-            if (height_guess > height) {
-                z_index = i;
-                z_frac = -(height_guess - (height+dz)) / dz;
-                break;
-            }
-        }
-
-        if (z_index == nz) {
-            //printf("oops..\n");
-            z_index = nz - 1;
-            z_frac = 1.0;
-        }
-    }
-
-    //printf("height: %f, z_height: %f, z_index: %i, z_frac: %f\n", height_guess, zmin + (nz - 1 - z_index) * dz, z_index, z_frac);
-
-    // interpolate between compressible cells nearest to SWE layer.
-    for (int n = 0; n < 3; n++) {
-        q_c_new[n] =
-            0.25 * (z_frac *
-            (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 3 + n] +
-            qf_sw[((z_index * nyf + y*2) * nxf + x*2+1) * 3 + n] +
-            qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 3 + n] +
-            qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 3 + n]) +
-            (1.0 - z_frac) *
-            (qf_sw[(((z_index-1) * nyf + y*2) * nxf + x*2) * 3 + n] +
-            qf_sw[(((z_index-1) * nyf + y*2) * nxf + x*2+1) * 3 + n] +
-            qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2) * 3 + n] +
-            qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2+1) * 3 + n]));
-    }
-    //printf("height: %f, z_height: %f, z_index: %i, z_frac: %f, phi: %f\n", height_guess, zmin + (nz - 1 - z_index) * dz, z_index, z_frac, q_c_new[0]);
-    //printf("phi: %f\n", q_c_new[0]);
-    float W = W_swe(q_c_new, gamma_up);
-    float actual_r = find_height(q_c_new[0] / W);
-    float err = (height_guess - actual_r) / height_guess;
-    if (nan_check(err)) err = 1.e6;
-    return err;
-}
-
 __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                                      int nx, int ny, int nlayers,
                                      int nxf, int nyf, int nz,
@@ -1739,7 +1644,6 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
-        const float rel_tol = 1.0e-5;
 
         float * q_c_new;
         q_c_new = (float *)malloc(3 * sizeof(float));
@@ -1749,24 +1653,78 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
 
         float W = W_swe(q_c_new, gamma_up);
         float r = find_height(q_c[coarse_index] / W);
-        float height_min = 0.8 * r;
-        float height_max = 1.2 * r;
+        float height_guess = find_height(q_c[coarse_index] / W);
+        //float r = find_height(q_c[coarse_index] / W);
 
-        height_min = zbrent_height(height_min, height_max, rel_tol, q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y);
+        int z_index = nz;
+        float z_frac = 0.0;
 
-        // make sure calculate q_c_new using height_min
-        float rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
+        if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
+            //printf("hi :/\n");
+            z_index = 1;
+            float height = zmin + (nz - 1 - 1) * dz;
+            z_frac = -(height_guess - (height+dz)) / dz;
+        } else {
 
-        if (abs(rel_err) > 1.0e-2) {
-            height_min = r;
-            rel_err = height_err(q_c_new, qf_sw, zmin, nxf, nyf, nz, dz, gamma_up, x, y, height_min);
+            for (int i = 1; i < (nz-1); i++) {
+                float height = zmin + (nz - 1 - i) * dz;
+                if (height_guess > height) {
+                    z_index = i;
+                    z_frac = -(height_guess - (height+dz)) / dz;
+                    break;
+                }
+            }
+
+            if (z_index == nz) {
+                //printf("oops..\n");
+                z_index = nz - 1;
+                z_frac = 1.0;
+            }
         }
 
-        //printf("counter, err: %d, %f phi: %f\n", counter, rel_err_min, q_c_new[0]);
-
-        for (int i = 0; i < 3; i++) {
-            q_c[coarse_index + i] = q_c_new[i];
+        int l = z_index;
+        float Ww[8];
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 2; i++) {
+                for (int k = 0; k < 3; k++) {
+                    q_c_new[k] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+k];
+                }
+                Ww[j*2+i] = W_swe(q_c_new, gamma_up);
+                for (int k = 0; k < 3; k++) {
+                    q_c_new[k] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+k];
+                }
+                Ww[(2+j)*2+i] = W_swe(q_c_new, gamma_up);
+            }
         }
+
+        float interp_W = z_frac * 0.25 * (Ww[0] + Ww[1] + Ww[2] + Ww[3]) +
+            (1.0 - z_frac) * 0.25 * (Ww[4] + Ww[5] + Ww[6] + Ww[7]);
+
+        float Phi = find_pot(height_guess);
+        // now need to do linear interpolation thing on u, v
+        float u[8];
+        float v[8];
+        for (int j = 0; j < 2; j++) {
+            for (int i = 0; i < 2; i++) {
+                u[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+1] /
+                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                v[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+2] /
+                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                u[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+1] /
+                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+                v[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+2] /
+                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+            }
+        }
+
+        float interp_u = z_frac * 0.25 * (u[0] + u[1] + u[2] + u[3]) +
+            (1.0 - z_frac) * 0.25 * (u[4] + u[5] + u[6] + u[7]);
+        float interp_v = z_frac * 0.25 * (v[0] + v[1] + v[2] + v[3]) +
+            (1.0 - z_frac) * 0.25 * (v[4] + v[5] + v[6] + v[7]);
+
+        q_c[coarse_index] = Phi * interp_W;
+        q_c[coarse_index + 1] = q_c[coarse_index] * interp_W * interp_u;
+        q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
 
         free(q_c_new);
     } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
@@ -3107,7 +3065,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
             // IT HAS NAN'D HERE
-            cout << "\nCoarse grid after restricting\n\n";
+            /*cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3116,7 +3074,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3726,48 +3684,4 @@ __global__ void test_p_from_swe(bool * passed) {
         }
     }
     free(q);
-}
-
-__global__ void test_height_err(bool * passed) {
-    *passed = true;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        0.0,  0.0,  0.0,  0.80999862};
-    int nxf = 2;
-    int nyf = 2;
-    int nz = 2;
-    int x = 0;
-    int y = 0;
-
-    float qf_sw[] = {1.5, 0., 0.,1.5, 0.3, 0.3, 0.9, 0.3, 0.3,0.5, 0.3, 0.3,
-                     1.8, 0., 0.,1.8, 0.3, 0.3, 1.2, 0.3, 0.3,1.2, 0.3, 0.3};
-    float height_guess[] = {2.08, 2.08, 2.25, 2.5};
-    float dz[] = {0.048608831367993766, 0.048608831367993766, 0.19652970883766141,0.96441586954630232};
-    float zmin[] = {2.0561825616145182, 2.0561825616145182, 2.1995375441923506,2.1995375441923506};
-    float err[] = {0.011450691531481679, 0.0091817979903112083, 0.010620236758879761,0.10955821308299178};
-
-    float * qc_new, * qf;
-    qf = (float *)malloc(4*nz*3*sizeof(float));
-    qc_new = (float *)malloc(3*sizeof(float));
-
-    const float tol = 1.0e-5;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 3; j++) {
-            for (int k = 0; k < nz; k++){
-                qf[(k*4)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+1)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+2)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+3)*3+j] = qf_sw[(k*4+i)*3+j];
-            }
-        }
-
-        float err_new = height_err(qc_new, qf, zmin[i], nxf, nyf, nz, dz[i], gamma_up, x, y, height_guess[i]);
-
-
-        if ((abs((err[i] - err_new) / err[i]) > tol) && (abs(err[i] - err_new) > 0.1*tol)) {
-            printf("%f, %f\n", err[i], err_new);
-            *passed = false;
-        }
-    }
-    free(qf);
-    free(qc_new);
 }

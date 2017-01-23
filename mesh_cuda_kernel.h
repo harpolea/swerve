@@ -101,11 +101,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int kx_offset, int ky_offset,
                                       float p_floor);
 
-__device__ float height_err(float * q_c_new, float * qf_sw, float zmin,
-                          int nxf, int nyf, int nz, float dz,
-                          float * gamma_up, int x, int y,
-                          float height_guess);
-
 __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                                    int nx, int ny, int nlayers,
                                    int nxf, int nyf, int nz,
@@ -221,6 +216,5 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims);
 __global__ void test_shallow_water_fluxes(bool * passed);
 __global__ void test_compressible_fluxes(bool * passed);
 __global__ void test_p_from_swe(bool * passed);
-__global__ void test_height_err(bool * passed);
 
 #endif
