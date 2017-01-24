@@ -1788,6 +1788,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
             swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor);
+
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -2472,7 +2473,7 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                       nx, ny, nz, vec_dim, alpha, gamma,
                       dz, dt, kx_offset, ky_offset);
            }
-          kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
+           kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
@@ -2498,7 +2499,7 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                        dz, dt, kx_offset, ky_offset);
             }
 
-           kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
+            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
@@ -2771,9 +2772,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     }
 
     for (int i = k_offset; i < cumulative_kernels[rank]; i++) {
-        printf("blocks: (%i, %i) , threads: (%i, %i)\n",
-               blocks[i].x, blocks[i].y,
-               threads[i].x, threads[i].y);
+        printf("blocks: (%i, %i, %i) , threads: (%i, %i, %i)\n",
+               blocks[i].x, blocks[i].y, blocks[i].z,
+               threads[i].x, threads[i].y, threads[i].z);
     }
 
     // gpu variables
@@ -3098,6 +3099,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
+            // NOTE: **ALL** the weirdness is happening within here only.
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
@@ -3114,6 +3116,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+
+            // update old_phi
+            for (int i = 0; i < nlayers*nx*ny; i++) {
+                pphi[i] = Uc_h[i*3];
+            }
+            cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
+
 
             cout << "\nCoarse grid after rk3\n\n";
             for (int y = 0; y < ny; y++) {
