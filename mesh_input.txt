@@ -1,5 +1,5 @@
-nx      80
-ny      80
+nx      200
+ny      200
 nz      10
 nlayers 3
 nt      200
@@ -23,4 +23,4 @@ gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
 periodic f
 burning f
 dprint  1
-outfile ../../Documents/Work/swerve/mpi_mesh.h5
+outfile ../../Documents/Work/swerve/iridis_mesh.h5

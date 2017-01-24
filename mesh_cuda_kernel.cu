@@ -9,8 +9,6 @@
 
 using namespace std;
 
-// TODO: This file is becoming way too long - move a load of the functions
-
 unsigned int nextPow2(unsigned int x)
 {
     --x;

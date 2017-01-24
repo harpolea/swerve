@@ -278,6 +278,94 @@ bool test_p_from_swe() {
     return true;
 }
 
+bool test_getNumKernels() {
+    int maxBlocks = 10;
+    int maxThreads = 10;
+
+    int nxs[] = {5, 10, 5};
+    int nys[] = {5, 10, 20};
+    int nzs[] = {1, 1, 1};
+    int ngs[] = {2, 2, 2};
+    int n_processes[] = {1, 1, 1};
+    int kernels_list[][2] = {{1, 1},
+                             {2, 2},
+                             {1, 3}};
+
+    for (int i = 0; i < 3; i++) {
+        maxBlocks = 10;
+        maxThreads = 10;
+        dim3 *kernels = new dim3[n_processes[i]];
+        int *cumulative_kernels = new int[n_processes[i]];
+
+        getNumKernels(nxs[i], nys[i], nzs[i], ngs[i], n_processes[i], &maxBlocks, &maxThreads, kernels, cumulative_kernels);
+
+        for (int j = 0; j < n_processes[i]; j++) {
+            if (kernels_list[i][0] != kernels[j].x ||
+                kernels_list[i][1] != kernels[j].y) {
+
+                cout << "kernels_list: " << kernels_list[i][0] << ','
+                    << kernels_list[i][1] <<
+                "  kernels: " << kernels[j].x << ',' << kernels[j].y << '\n';
+                return false;
+            }
+        }
+        delete[] kernels;
+        delete[] cumulative_kernels;
+    }
+    return true;
+}
+
+bool test_getNumBlocksAndThreads() {
+    int maxBlocks = 10;
+    int maxThreads = 10;
+
+    int total_kernels[] = {1, 4, 4};
+
+    int nxs[] = {5, 10, 5};
+    int nys[] = {5, 10, 20};
+    int nzs[] = {1, 1, 1};
+    int ngs[] = {2, 2, 2};
+    int n_processes[] = {1, 1, 1};
+    int kernels_list[][2] = {{1, 1},
+                             {2, 2},
+                             {1, 3}};
+    int blocks_list[][4][2] = {{{2, 2},{2, 2},{2, 2},{2, 2}},
+                             {{3, 3},{2, 3}, {3, 2}, {2, 2}},
+                             {{2, 3}, {2, 3}, {2, 4}, {1, 1}}};
+    int threads_list[][4][2] = {{{3, 3}, {3, 3}, {3, 3}, {3, 3}},
+                             {{3, 3}, {3, 3}, {3, 3}, {3, 3}},
+                             {{3, 3}, {3, 3}, {3, 3}, {1, 1}}};
+
+    for (int i = 0; i < 3; i++) {
+        dim3 kernels(kernels_list[i][0], kernels_list[i][1], 1);
+        dim3 *blocks = new dim3[total_kernels[i]];
+        dim3 *threads = new dim3[total_kernels[i]];
+
+        getNumBlocksAndThreads(nxs[i], nys[i], nzs[i], ngs[i], maxBlocks, maxThreads, n_processes[i], &kernels, blocks, threads);
+
+        for (int j = 0; j < total_kernels[i]; j++) {
+            if (blocks_list[i][j][0] != blocks[j].x ||
+                blocks_list[i][j][1] != blocks[j].y ||
+                threads_list[i][j][0] != threads[j].x ||
+                threads_list[i][j][1] != threads[j].y) {
+
+                cout << "blocks_list: " << blocks_list[i][j][0] << ','
+                    << blocks_list[i][j][1] <<
+                "  blocks: " << blocks[j].x << ',' << blocks[j].y <<
+                "  threads_list: " << threads_list[i][j][0] << ','
+                    << threads_list[i][j][1] <<
+                "  threads: " << threads[j].x << ',' << threads[j].y << '\n';
+                return false;
+            }
+        }
+
+        delete[] blocks;
+        delete[] threads;
+    }
+
+    return true;
+}
+
 int main(int argc, char *argv[]) {
 
     srand(time(0));
@@ -343,6 +431,20 @@ int main(int argc, char *argv[]) {
         cout << "p_from_swe passed!\n";
     } else {
         cout << "p_from_swe did not pass :(\n";
+    }
+
+    passed = test_getNumKernels();
+    if (passed) {
+        cout << "getNumKernels passed!\n";
+    } else {
+        cout << "getNumKernels did not pass :(\n";
+    }
+
+    passed = test_getNumBlocksAndThreads();
+    if (passed) {
+        cout << "getNumBlocksAndThreads passed!\n";
+    } else {
+        cout << "getNumBlocksAndThreads did not pass :(\n";
     }
 
     run_cuda_tests();

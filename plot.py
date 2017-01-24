@@ -207,4 +207,4 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 if __name__ == '__main__':
     #quick_plot(filename="../../Documents/Work/swerve/mpi")
 
-    mesh_plot(filename="../../Documents/Work/swerve/mpi_mesh")
+    mesh_plot(filename="../../Documents/Work/swerve/iridis_mesh")

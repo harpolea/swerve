@@ -21,11 +21,11 @@ A version of the code which evolves a section of the domain using the compressib
 
 ## Testing
 
-A test case can be compiled by executing
+A set of tests can be compiled by executing
 
     make test
 
-then
+then a test case can be run:
 
     cd testing
     ./flat
