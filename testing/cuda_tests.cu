@@ -214,13 +214,5 @@ void run_cuda_tests() {
         cout << "swe_from_compressible did not pass :(\n";
     }
 
-    test_height_err<<<1,1>>>(passed_d);
-    cudaMemcpy(&passed, passed_d, sizeof(bool), cudaMemcpyDeviceToHost);
-    if (passed) {
-        cout << "height_err passed!\n";
-    } else {
-        cout << "height_err did not pass :(\n";
-    }
-
     cudaFree(passed_d);
 }

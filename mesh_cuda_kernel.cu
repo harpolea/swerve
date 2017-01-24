@@ -338,8 +338,8 @@ void getNumKernels(int nx, int ny, int nz, int ng, int n_processes, int *maxBloc
     // calculate number of kernels needed
 
     if (nx*ny*nz > *maxBlocks * *maxThreads) {
-        int kernels_x = int(ceil(float(nx) / (sqrt(float(*maxThreads * *maxBlocks)/nz))));
-        int kernels_y = int(ceil(float(ny) / (sqrt(float(*maxThreads * *maxBlocks)/nz))));
+        int kernels_x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nz)-2*ng)));
+        int kernels_y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nz)-2*ng)));
 
         // easiest (but maybe not most balanced way) is to split kernels into strips
         // not enough kernels to fill all processes. This would be inefficient if ny > nx, so need to fix this to look in the y direction if this is the case.
@@ -438,7 +438,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
             }
         }
         // kernels_x-1
-        int nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
+        int nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
 
         for (int j = 0; j < (kernels_y-1); j++) {
 
@@ -456,7 +456,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
         }
 
         // kernels_y-1
-        int ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
+        int ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
 
         for (int i = 0; i < (kernels_x-1); i++) {
 
@@ -473,8 +473,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
         }
 
         // recalculate
-        nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
-        ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
+        nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
+        ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -2228,12 +2228,12 @@ __global__ void evolve_fv_fluxes(float * F,
                 qx_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qx_minus_half[((z * ny + y) * nx + x+1) * vec_dim + i]);
 
-            if (abs(fx_m) > 1.0e2 && abs(fx_m) > 1.0e3 * abs(fx_p)) {
+            /*if (abs(fx_m) > 1.0e2 && abs(fx_m) > 1.0e3 * abs(fx_p)) {
                 fx_m = fx_p;
             }
             if (abs(fx_p) > 1.0e2 && abs(fx_p) > 1.0e3 * abs(fx_m)) {
                 fx_p = fx_m;
-            }
+            }*/
             // y-boundary
             // from j-1
             fy_m = 0.5 * (
@@ -2248,18 +2248,18 @@ __global__ void evolve_fv_fluxes(float * F,
                 qy_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qy_minus_half[((z * ny + y+1) * nx + x) * vec_dim + i]);
 
-            if (abs(fy_m) > 1.0e2 && abs(fy_m) > 1.0e3 * abs(fy_p)) {
+            /*if (abs(fy_m) > 1.0e2 && abs(fy_m) > 1.0e3 * abs(fy_p)) {
                 fy_m = fy_p;
             }
             if (abs(fy_p) > 1.0e2 && abs(fy_p) > 1.0e3 * abs(fy_m)) {
                 fy_p = fy_m;
-            }
+            }*/
 
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 -alpha * ((fx_p - fx_m)/dx + (fy_p - fy_m)/dy);
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e3) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e5) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
         }
         //printf("fxm, fxp: %f, %f fym, fyp: %f, %f F(tau): %f\n", fx_m, fx_p, fy_m, fy_p, F[((z * ny + y) * nx + x)*vec_dim +4]);
     }
@@ -3116,17 +3116,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            /*cout << "\nFine grid after prolonging\n\n";
-            for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                        cout << '(' << x << ',' << y << "): ";
-                        for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*3] << ',';
-                        }
-                        cout << '\n';
-                }
-            }*/
-
             // enforce boundaries
             if (n_processes == 1) {
                 bcs_fv(Uf_h, nxf, nyf, nz, ng, 3);
@@ -3292,11 +3281,13 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
             /*cout << "\nCoarse grid after rk3\n\n";
-            for (int z = 0; z < nlayers; z++) {
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+1] << '\n';
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    cout << '(' << x << ',' << y << "): ";
+                    for (int z = 0; z < nlayers; z++) {
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
                     }
+                    cout << '\n';
                 }
             }*/
 
@@ -3853,48 +3844,4 @@ __global__ void test_p_from_swe(bool * passed) {
         }
     }
     free(q);
-}
-
-__global__ void test_height_err(bool * passed) {
-    *passed = true;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        0.0,  0.0,  0.0,  0.80999862};
-    int nxf = 2;
-    int nyf = 2;
-    int nz = 2;
-    int x = 0;
-    int y = 0;
-
-    float qf_sw[] = {1.5, 0., 0.,1.5, 0.3, 0.3, 0.9, 0.3, 0.3,0.5, 0.3, 0.3,
-                     1.8, 0., 0.,1.8, 0.3, 0.3, 1.2, 0.3, 0.3,1.2, 0.3, 0.3};
-    float height_guess[] = {2.08, 2.08, 2.25, 2.5};
-    float dz[] = {0.048608831367993766, 0.048608831367993766, 0.19652970883766141,0.96441586954630232};
-    float zmin[] = {2.0561825616145182, 2.0561825616145182, 2.1995375441923506,2.1995375441923506};
-    float err[] = {0.011450691531481679, 0.0091817979903112083, 0.010620236758879761,0.10955821308299178};
-
-    float * qc_new, * qf;
-    qf = (float *)malloc(4*nz*3*sizeof(float));
-    qc_new = (float *)malloc(3*sizeof(float));
-
-    const float tol = 1.0e-5;
-    for (int i = 0; i < 4; i++) {
-        for (int j = 0; j < 3; j++) {
-            for (int k = 0; k < nz; k++){
-                qf[(k*4)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+1)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+2)*3+j] = qf_sw[(k*4+i)*3+j];
-                qf[(k*4+3)*3+j] = qf_sw[(k*4+i)*3+j];
-            }
-        }
-
-        float err_new = height_err(qc_new, qf, zmin[i], nxf, nyf, nz, dz[i], gamma_up, x, y, height_guess[i]);
-
-
-        if ((abs((err[i] - err_new) / err[i]) > tol) && (abs(err[i] - err_new) > 0.1*tol)) {
-            printf("%f, %f\n", err[i], err_new);
-            *passed = false;
-        }
-    }
-    free(qf);
-    free(qc_new);
 }
