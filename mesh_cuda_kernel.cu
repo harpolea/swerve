@@ -209,8 +209,8 @@ void getNumKernels(int nx, int ny, int nz, int ng, int n_processes, int *maxBloc
     // calculate number of kernels needed
 
     if (nx*ny*nz > *maxBlocks * *maxThreads) {
-        int kernels_x = int(ceil(float(nx) / (sqrt(float(*maxThreads * *maxBlocks)/nz))));
-        int kernels_y = int(ceil(float(ny) / (sqrt(float(*maxThreads * *maxBlocks)/nz))));
+        int kernels_x = int(ceil(float(nx-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nz)-2*ng)));
+        int kernels_y = int(ceil(float(ny-2*ng) / (sqrt(float(*maxThreads * *maxBlocks)/nz)-2*ng)));
 
         // easiest (but maybe not most balanced way) is to split kernels into strips
         // not enough kernels to fill all processes. This would be inefficient if ny > nx, so need to fix this to look in the y direction if this is the case.
@@ -309,7 +309,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
             }
         }
         // kernels_x-1
-        int nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
+        int nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
 
         for (int j = 0; j < (kernels_y-1); j++) {
 
@@ -327,7 +327,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
         }
 
         // kernels_y-1
-        int ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
+        int ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
 
         for (int i = 0; i < (kernels_x-1); i++) {
 
@@ -344,8 +344,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
         }
 
         // recalculate
-        nx_remaining = nx - (threads[0].x * blocks[0].x) * (kernels_x - 1);
-        ny_remaining = ny - (threads[0].y * blocks[0].y) * (kernels_y - 1);
+        nx_remaining = nx - (threads[0].x * blocks[0].x - 2*ng) * (kernels_x - 1);
+        ny_remaining = ny - (threads[0].y * blocks[0].y - 2*ng) * (kernels_y - 1);
 
         // (kernels_x-1, kernels_y-1)
         threads[(kernels_y-1)*kernels_x + kernels_x-1].x =
@@ -2091,12 +2091,6 @@ __global__ void evolve_fv_fluxes(float * F,
                 qx_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qx_minus_half[((z * ny + y) * nx + x+1) * vec_dim + i]);
 
-            if (abs(fx_m) > 1.0e2 && abs(fx_m) > 1.0e3 * abs(fx_p)) {
-                fx_m = fx_p;
-            }
-            if (abs(fx_p) > 1.0e2 && abs(fx_p) > 1.0e3 * abs(fx_m)) {
-                fx_p = fx_m;
-            }
             // y-boundary
             // from j-1
             fy_m = 0.5 * (
@@ -2111,18 +2105,11 @@ __global__ void evolve_fv_fluxes(float * F,
                 qy_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qy_minus_half[((z * ny + y+1) * nx + x) * vec_dim + i]);
 
-            if (abs(fy_m) > 1.0e2 && abs(fy_m) > 1.0e3 * abs(fy_p)) {
-                fy_m = fy_p;
-            }
-            if (abs(fy_p) > 1.0e2 && abs(fy_p) > 1.0e3 * abs(fy_m)) {
-                fy_p = fy_m;
-            }
-
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 -alpha * ((fx_p - fx_m)/dx + (fy_p - fy_m)/dy);
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e3) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e5) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
         }
         //printf("fxm, fxp: %f, %f fym, fyp: %f, %f F(tau): %f\n", fx_m, fx_p, fy_m, fy_p, F[((z * ny + y) * nx + x)*vec_dim +4]);
     }
@@ -2176,19 +2163,12 @@ __global__ void evolve_z_fluxes(float * F,
                 qz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i]);
 
-            if (abs(fz_m) > 1.0e2 && abs(fz_m) > 1.0e3 * abs(fz_p)) {
-                fz_m = fz_p;
-            }
-            if (abs(fz_p) > 1.0e2 && abs(fz_p) > 1.0e3 * abs(fz_m)) {
-                fz_p = fz_m;
-            }
-
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 F[((z * ny + y) * nx + x)*vec_dim + i]
                 - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e3) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e5) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
         }
     }
 }
@@ -2921,7 +2901,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
             // good here
-            cout << "\nCoarse grid before prolonging\n\n";
+            /*cout << "\nCoarse grid before prolonging\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -2930,7 +2910,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
 
             //cout << "\n\nProlonging\n\n";
 
@@ -2967,7 +2947,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size, true);
             }
 
-            cout << "\nFine grid after prolonging\n\n";
+            /*cout << "\nFine grid after prolonging\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -2976,7 +2956,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3032,7 +3012,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             //cout << "\n\nRestricting\n\n";
             // probably good here
-            cout << "\nFine grid before restricting\n\n";
+            /*cout << "\nFine grid before restricting\n\n";
             for (int y = 0; y < nyf; y++) {
                 for (int x = 0; x < nxf; x++) {
                         cout << '(' << x << ',' << y << "): ";
@@ -3041,7 +3021,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                         }
                         cout << '\n';
                 }
-            }
+            }*/
 
             /*cout << "\nCoarse grid before restricting\n\n";
             for (int z = 0; z < nlayers; z++) {
@@ -3082,7 +3062,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
 
-            cout << "\nCoarse grid after restricting\n\n";
+            /*cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3091,7 +3071,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3124,7 +3104,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
 
-            cout << "\nCoarse grid after rk3\n\n";
+            /*cout << "\nCoarse grid after rk3\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
@@ -3133,7 +3113,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }
+            }*/
             /*for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
