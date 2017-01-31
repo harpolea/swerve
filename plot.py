@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 from matplotlib import animation, cm
 from numpy.linalg import inv
 from mpl_toolkits.mplot3d import Axes3D
