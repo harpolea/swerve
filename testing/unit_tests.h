@@ -16,5 +16,7 @@ bool test_f_of_p();
 bool test_p_from_swe();
 bool test_getNumKernels();
 bool test_getNumBlocksAndThreads();
+bool test_getNumKernels();
+bool test_getNumBlocksAndThreads();
 
 #endif

@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+plt.switch_backend('agg')
 from matplotlib import animation, cm
 from numpy.linalg import inv
 from mpl_toolkits.mplot3d import Axes3D
@@ -169,6 +170,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     Sx = table[:,:,:,:,1]
     Sy = table[:,:,:,:,2]
 
+    v = np.sqrt(Sx**2 + Sy**2)
+
     heights = find_height(D_2d, Sx, Sy, gamma_up)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
@@ -195,8 +198,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        ax.set_zlim(2.0,2.6)
-        for l in range(1,nlayers):
+        #ax.set_zlim(2.0,2.6)
+        for l in range(0,1):
             ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)
 
@@ -207,4 +210,4 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 if __name__ == '__main__':
     #quick_plot(filename="../../Documents/Work/swerve/mpi")
 
-    mesh_plot(filename="../../Documents/Work/swerve/iridis_mesh")
+    mesh_plot(filename="../../Documents/Work/swerve/mpi_mesh")

@@ -9,6 +9,8 @@
 
 using namespace std;
 
+// TODO: This file is becoming way too long - move a load of the functions
+
 unsigned int nextPow2(unsigned int x)
 {
     --x;
@@ -1145,9 +1147,9 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
 __device__ float slope_limit(float layer_frac, float dx, float left, float middle, float right, float aleft, float amiddle, float aright) {
     // left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
     float S_upwind = (layer_frac * (right - middle) +
-        (1.0 - layer_frac) * (aright - amiddle))/ dx;
+        (1.0 - layer_frac) * (aright - amiddle));
     float S_downwind = (layer_frac * (middle - left)
-        + (1.0 - layer_frac) * (amiddle - aleft))/ dx;
+        + (1.0 - layer_frac) * (amiddle - aleft));
 
     float S = 0.5 * (S_upwind + S_downwind);
 
@@ -1286,13 +1288,13 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         // Now calculate Phi W
         float Phi = find_pot(height);
         q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] = Phi *
-            (interp_W_comp - 0.25 * (dx * Sx + dy * Sy));
+            (interp_W_comp - 0.25 * (Sx + Sy));
         q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] = Phi *
-            (interp_W_comp + 0.25 * (dx * Sx - dy * Sy));
+            (interp_W_comp + 0.25 * (Sx - Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] = Phi *
-            (interp_W_comp + 0.25 * (-dx * Sx + dy * Sy));
+            (interp_W_comp + 0.25 * (-Sx + Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] = Phi *
-            (interp_W_comp + 0.25 * (dx * Sx + dy * Sy));
+            (interp_W_comp + 0.25 * (Sx + Sy));
 
         // now need to do linear interpolation thing on u, v
         float u[18];
@@ -1317,16 +1319,16 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
         q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+1] =
             q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
-            (interp_uW_comp - 0.25 * (dx * Sx + dy * Sy));
+            (interp_uW_comp - 0.25 * (Sx + Sy));
         q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+1] =
             q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
-            (interp_uW_comp + 0.25 * (dx * Sx - dy * Sy));
+            (interp_uW_comp + 0.25 * (Sx - Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+1] =
             q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
-            (interp_uW_comp + 0.25 * (-dx * Sx + dy * Sy));
+            (interp_uW_comp + 0.25 * (-Sx + Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+1] =
             q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
-            (interp_uW_comp + 0.25 * (dx * Sx + dy * Sy));
+            (interp_uW_comp + 0.25 * (Sx + Sy));
 
         Sx = slope_limit(layer_frac, dx, v[3], v[4], v[5], v[12], v[13], v[14]);
         Sy = slope_limit(layer_frac, dy, v[1], v[4], v[7], v[10], v[13], v[16]);
@@ -1335,16 +1337,16 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
         q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+2] =
             q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
-            (interp_vW_comp - 0.25 * (dx * Sx + dy * Sy));
+            (interp_vW_comp - 0.25 * (Sx + Sy));
         q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+2] =
             q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
-            (interp_vW_comp + 0.25 * (dx * Sx - dy * Sy));
+            (interp_vW_comp + 0.25 * (Sx - Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+2] =
             q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
-            (interp_vW_comp + 0.25 * (-dx * Sx + dy * Sy));
+            (interp_vW_comp + 0.25 * (-Sx + Sy));
         q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+2] =
             q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
-            (interp_vW_comp + 0.25 * (dx * Sx + dy * Sy));*/
+            (interp_vW_comp + 0.25 * (Sx + Sy));*/
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1354,13 +1356,13 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 5 + n]) +
                 (1.0 - layer_frac) *
                 (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x+1)*5 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*5 + n]))/ dx;
+                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*5 + n]));
             float S_downwind = (layer_frac *
                 (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 5 + n] -
                 q_comp[((neighbour_layer * ny + c_y) * nx + c_x-1) * 5 + n])
                 + (1.0 - layer_frac) *
                 (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*5 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y)*nx+c_x-1)*5+n]))/ dx;
+                q_comp[(((neighbour_layer-1)*ny + c_y)*nx+c_x-1)*5+n]));
 
             float Sx = 0.5 * (S_upwind + S_downwind);
 
@@ -1377,13 +1379,13 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 5 + n]) +
                 (1.0 - layer_frac) *
                 (q_comp[(((neighbour_layer-1)*ny + c_y+1) * nx + c_x)*5 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*5 + n])) / dy;
+                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*5 + n]));
             S_downwind = (layer_frac *
                 (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 5 + n] -
                 q_comp[((neighbour_layer * ny + c_y-1) * nx + c_x) * 5 + n])
                 + (1.0 - layer_frac) *
                 (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*5 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y-1)*nx+c_x)*5+n])) / dy;
+                q_comp[(((neighbour_layer-1)*ny + c_y-1)*nx+c_x)*5+n]));
 
             float Sy = 0.5 * (S_upwind + S_downwind);
 
@@ -1401,16 +1403,16 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 q_comp[(((neighbour_layer-1) * ny + c_y) * nx + c_x) * 5 + n];
 
             q_f[((z * nyf + 2*y) * nxf + 2*x) * 5 + n] =
-                interp_q_comp - 0.25 * (dx * Sx + dy * Sy);
+                interp_q_comp - 0.25 * (Sx + Sy);
 
             q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 5 + n] =
-                interp_q_comp + 0.25 * (dx * Sx - dy * Sy);
+                interp_q_comp + 0.25 * (Sx - Sy);
 
             q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 5 + n] =
-                interp_q_comp + 0.25 * (-dx * Sx + dy * Sy);
+                interp_q_comp + 0.25 * (-Sx + Sy);
 
             q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 5 + n] =
-                interp_q_comp + 0.25 * (dx * Sx + dy * Sy);
+                interp_q_comp + 0.25 * (Sx + Sy);
 
         }
 
@@ -1865,9 +1867,9 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         // x-direction
         for (int i = 0; i < vec_dim; i++) {
             float S_upwind = (Un_d[((z * ny + y) * nx + x+1) * vec_dim + i] -
-                Un_d[((z * ny + y) * nx + x) * vec_dim + i]) / dx;
+                Un_d[((z * ny + y) * nx + x) * vec_dim + i]);
             float S_downwind = (Un_d[((z * ny + y) * nx + x) * vec_dim + i] -
-                Un_d[((z * ny + y) * nx + x-1) * vec_dim + i]) / dx;
+                Un_d[((z * ny + y) * nx + x-1) * vec_dim + i]);
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e6;
@@ -1879,8 +1881,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
             S *= phi(r);
 
-            q_p[i] = Un_d[offset + i] + S * 0.5 * dx;
-            q_m[i] = Un_d[offset + i] - S * 0.5 * dx;
+            q_p[i] = Un_d[offset + i] + S * 0.5;
+            q_m[i] = Un_d[offset + i] - S * 0.5;
         }
 
         // fluxes
@@ -1902,10 +1904,10 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         // y-direction
         for (int i = 0; i < vec_dim; i++) {
             float S_upwind = (Un_d[((z * ny + y+1) * nx + x) * vec_dim + i] -
-                Un_d[((z * ny + y) * nx + x) * vec_dim + i]) / dy;
+                Un_d[((z * ny + y) * nx + x) * vec_dim + i]);
             float S_downwind = (Un_d[((z * ny + y) * nx + x) * vec_dim + i] -
                 Un_d[((z * ny + y-1) * nx + x) * vec_dim + i]);
-            float S = 0.5 * (S_upwind + S_downwind) / dy; // S_av
+            float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e6;
 
@@ -1916,8 +1918,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
             S *= phi(r);
 
-            q_p[i] = Un_d[offset + i] + S * 0.5 * dy;
-            q_m[i] = Un_d[offset + i] - S * 0.5 * dy;
+            q_p[i] = Un_d[offset + i] + S * 0.5;
+            q_m[i] = Un_d[offset + i] - S * 0.5;
         }
 
         // fluxes
@@ -1992,9 +1994,9 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         // z-direction
         for (int i = 0; i < vec_dim; i++) {
             float S_upwind = (Un_d[(((z+1) * ny + y) * nx + x) * vec_dim + i] -
-                Un_d[((z * ny + y) * nx + x) * vec_dim + i]) / dz;
+                Un_d[((z * ny + y) * nx + x) * vec_dim + i]);
             float S_downwind = (Un_d[((z * ny + y) * nx + x) * vec_dim + i] -
-                Un_d[(((z-1) * ny + y) * nx + x) * vec_dim + i]) / dz;
+                Un_d[(((z-1) * ny + y) * nx + x) * vec_dim + i]);
             float S = 0.5 * (S_upwind + S_downwind); // S_av
 
             float r = 1.0e6;
@@ -2006,8 +2008,8 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
 
             S *= phi(r);
 
-            q_p[i] = Un_d[offset + i] + S * 0.5 * dz;
-            q_m[i] = Un_d[offset + i] - S * 0.5 * dz;
+            q_p[i] = Un_d[offset + i] + S * 0.5;
+            q_m[i] = Un_d[offset + i] - S * 0.5;
         }
 
         // fluxes
@@ -2103,11 +2105,13 @@ __global__ void evolve_fv_fluxes(float * F,
                 qy_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qy_minus_half[((z * ny + y+1) * nx + x) * vec_dim + i]);
 
+            float old_F = F[((z * ny + y) * nx + x)*vec_dim + i];
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 -alpha * ((fx_p - fx_m)/dx + (fy_p - fy_m)/dy);
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e5) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
+            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
         //printf("fxm, fxp: %f, %f fym, fyp: %f, %f F(tau): %f\n", fx_m, fx_p, fy_m, fy_p, F[((z * ny + y) * nx + x)*vec_dim +4]);
     }
@@ -2161,12 +2165,15 @@ __global__ void evolve_z_fluxes(float * F,
                 qz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
                 qz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i]);
 
-            F[((z * ny + y) * nx + x)*vec_dim + i] =
-                F[((z * ny + y) * nx + x)*vec_dim + i]
-                - alpha * (fz_p - fz_m) / dz;
+            float old_F = F[((z * ny + y) * nx + x)*vec_dim + i];
+            // NOTE: UNCOMMENT ME
+            //F[((z * ny + y) * nx + x)*vec_dim + i] =
+            //    F[((z * ny + y) * nx + x)*vec_dim + i]
+            //    - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e5) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
+            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
     }
 }
@@ -3111,7 +3118,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                     cout << '\n';
                 }
-            }*/
+            }
             /*for (int j = 0; j < kernels[rank].y; j++) {
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {

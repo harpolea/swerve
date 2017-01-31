@@ -407,7 +407,7 @@ void Sea::print_inputs() {
     cout << "rho \t\t\t" << rho[0] << ',' << rho[1]<< "\n";
     cout << "mu \t\t\t" << mu << '\n';
     cout << "alpha \t\t\t" << alpha << '\n';
-    cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ")\n";
+    cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ',' << beta[2] << ")\n";
     cout << "gamma_down \t\t((" << gamma_down[0] << ',' << gamma_down[1] << ',' << gamma_down[2] << "),(" << gamma_down[3] << ',' << gamma_down[4] << ',' << gamma_down[5] << "),(" << gamma_down[6] << ',' << gamma_down[7] << ',' << gamma_down[8] << "))\n";
     cout << "burning \t\t" << burning << '\n';
     cout << "outfile \t\t" << outfile << "\n\n";
