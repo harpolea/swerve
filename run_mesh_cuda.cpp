@@ -53,24 +53,58 @@ int main(int argc, char *argv[]) {
     float * D0 = new float[sea.nx*sea.ny*sea.nlayers];
     float * Sx0 = new float[sea.nx*sea.ny*sea.nlayers];
     float * Sy0 = new float[sea.nx*sea.ny*sea.nlayers];
+    float * Sz0 = new float[sea.nx*sea.ny*sea.nlayers];
+    float * tau = new float[sea.nx*sea.ny*sea.nlayers];
 
     // set initial data
 
     for (int y = 0; y < sea.ny; y++) {
         for (int x = 0; x < sea.nx; x++) {
-            D0[y * sea.nx + x] = 1.0 - 0.1 *
+            //D0[y * sea.nx + x] = 1.0 - 0.1 *
+              //  exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            //D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
+              //  exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            //D0[(2*sea.ny + y) * sea.nx + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);
+
+            // define A at sea floor
+            float A_floor = 1.0;
+            float p_floor = 1.0;
+
+            float A1 = A_floor * (sea.gamma/(sea.gamma-1.0) * p_floor + sea.rho[1]) / (sea.gamma/(sea.gamma-1.0) * p_floor + 2.0 * sea.rho[1] - sea.rho[2]);
+
+            float ph0 = 1.0 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
+            float ph1 = 1.1 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(2*sea.ny + y) * sea.nx + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);
+            float ph2 = -0.5 * log(1.0 - 2.0 / sea.zmin);
+
+            float p2 = p_floor;
+            float p1 = (sea.gamma - 1.0) * (A1 * exp(sea.gamma * ph1 /
+                (sea.gamma - 1.0)) - sea.rho[1]) / sea.gamma;
+
+            float A0 = A1 * (sea.gamma/(sea.gamma-1.0) * p1 + sea.rho[0]) / (sea.gamma/(sea.gamma-1.0) * p1 + 2.0 * sea.rho[0] - sea.rho[1]);
+
+            float p0 = (sea.gamma - 1.0) * (A0 * exp(sea.gamma * ph1 /
+                (sea.gamma - 1.0)) - sea.rho[0]) / sea.gamma;
+
+            float rhoh0 = sea.rho[0] + sea.gamma * p0 / (sea.gamma - 1.0);
+            float rhoh1 = sea.rho[1] + sea.gamma * p1 / (sea.gamma - 1.0);
+            float rhoh2 = sea.rho[2] + sea.gamma * p2 / (sea.gamma - 1.0);
+
+            tau[y * sea.nx + x] = rhoh0 - p0 - sea.rho[0];
+            tau[(sea.ny + y) * sea.nx + x] = rhoh1 - p1 - sea.rho[1];
+            tau[(2*sea.ny + y) * sea.nx + x] = rhoh2 - p2 - sea.rho[2];
+
             for (int z = 0; z < sea.nlayers; z++) {
+                D0[(z * sea.ny + y) * sea.nx + x] = sea.rho[z];
                 Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
                 Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
+                Sz0[(z * sea.ny + y) * sea.nx + x] = 0.0;
             }
         }
     }
 
-    sea.initial_data(D0, Sx0, Sy0);
+    sea.initial_data(D0, Sx0, Sy0, Sz0, tau);
 
     if (rank == 0) {
         sea.print_inputs();
@@ -80,6 +114,8 @@ int main(int argc, char *argv[]) {
     delete[] D0;
     delete[] Sx0;
     delete[] Sy0;
+    delete[] Sz0;
+    delete[] tau;
 
     sea.run(comm, &status, rank, size);
 

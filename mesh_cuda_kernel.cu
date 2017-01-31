@@ -1198,155 +1198,10 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         int c_y = y + matching_indices_d[2];
 
         // height of this layer
-        float height = zmin + dz * (nz - z - 1.0);
-        float * q_swe;
-        q_swe = (float *)malloc(3 * sizeof(float));
-        for (int i = 0; i < 3; i++) {
-            q_swe[i] = q_c[(c_y*nx+c_x)*3+i];
-        }
-        float W = W_swe(q_swe, gamma_up);
-        float r = find_height(q_c[(c_y * nx + c_x) * 3]/W);
-        // Heights are sane here?
-        //printf("z = %i, heights = %f, %f\n", z, height, r);
-        float prev_r = r;
+        float dz_c = dz * (nz - 1) / (nlayers - 1);
 
-        int neighbour_layer = nlayers; // SWE layer just below compressible layer
-        float layer_frac = 0.0; // fraction of distance between SWE layers that compressible is at
-
-        if (height > r) { // compressible layer above top SWE layer
-            neighbour_layer = 1;
-            //if ((height - r) > dz) {
-                //layer_frac = 0.0; // just copy across as another compressible layer between this and top SWE layer
-            //} else {
-            for (int i = 0; i < 3; i++) {
-                q_swe[i] = q_c[((ny+c_y)*nx+c_x)*3+i];
-            }
-            W = W_swe(q_swe, gamma_up);
-            r = find_height(q_c[((ny + c_y) * nx + c_x) * 3] / W);
-            layer_frac = (height - prev_r) / (r - prev_r);
-            //printf("Layer frac: %f  ", layer_frac);
-            //}
-        } else {
-
-            // find heights of SWE layers - if height of SWE layer is above it, stop.
-            for (int l = 1; l < nlayers-1; l++) {
-                prev_r = r;
-                for (int i = 0; i < 3; i++) {
-                    q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*3+i];
-                }
-                W = W_swe(q_swe, gamma_up);
-                r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3] / W);
-                if (height > r) {
-                    neighbour_layer = l;
-                    layer_frac = (height - prev_r)/ (r - prev_r);
-                    break;
-                }
-            }
-
-            if (neighbour_layer == nlayers) {
-                // lowest compressible beneath lowest SWE layer
-                neighbour_layer = nlayers - 1;
-                if (z == (nz-1)) {
-                    layer_frac = 1.0;
-                } else {
-                    prev_r = r;
-                    int l = neighbour_layer;
-                    for (int i = 0; i < 3; i++) {
-                        q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*3+i];
-                    }
-                    W = W_swe(q_swe, gamma_up);
-                    r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 3] / W);
-                    layer_frac = (height - prev_r) / (r - prev_r);
-                    //printf("Lower layer frac: %f  ", layer_frac);
-                }
-            }
-        }
-
-       /*// calculate W at height
-       int l = neighbour_layer;
-       float Ww[18];
-       for (int j = -1; j < 2; j++) {
-           for (int i = -1; i < 2; i++) {
-               for (int k = 0; k < 3; k++) {
-                   q_swe[k] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+k];
-               }
-               Ww[(j+1)*3+i+1] = W_swe(q_swe, gamma_up);
-               for (int k = 0; k < 3; k++) {
-                   q_swe[k] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+k];
-               }
-               Ww[(3+j+1)*3+i+1] = W_swe(q_swe, gamma_up);
-           }
-       }*/
-
-        free(q_swe);
-
-        /*float Sx = slope_limit(layer_frac, dx, Ww[3], Ww[4], Ww[5], Ww[12], Ww[13], Ww[14]);
-        float Sy = slope_limit(layer_frac, dy, Ww[1], Ww[4], Ww[7], Ww[10], Ww[13], Ww[16]);
-
-        float interp_W_comp = layer_frac * Ww[4] + (1.0 - layer_frac) * Ww[13];
-
-        // Now calculate Phi W
-        float Phi = find_pot(height);
-        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] = Phi *
-            (interp_W_comp - 0.25 * (Sx + Sy));
-        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] = Phi *
-            (interp_W_comp + 0.25 * (Sx - Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] = Phi *
-            (interp_W_comp + 0.25 * (-Sx + Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] = Phi *
-            (interp_W_comp + 0.25 * (Sx + Sy));
-
-        // now need to do linear interpolation thing on u, v
-        float u[18];
-        float v[18];
-        for (int j = -1; j < 2; j++) {
-            for (int i = -1; i < 2; i++) {
-                u[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+1] /
-                                    (Phi * Ww[4] * Ww[4]);
-                v[(j+1)*3+i+1] = q_c[((l*ny+c_y+j)*nx+c_x+i)*3+2] /
-                                    (Phi * Ww[4] * Ww[4]);
-                u[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+1] /
-                                    (Phi * Ww[13] * Ww[13]);
-                v[(3+j+1)*3+i+1] = q_c[(((l-1)*ny+c_y+j)*nx+c_x+i)*3+2] /
-                                    (Phi * Ww[13] * Ww[13]);
-            }
-        }
-
-        Sx = slope_limit(layer_frac, dx, u[3], u[4], u[5], u[12], u[13], u[14]);
-        Sy = slope_limit(layer_frac, dy, u[1], u[4], u[7], u[10], u[13], u[16]);
-
-        float interp_uW_comp = layer_frac * u[4]*Ww[4] + (1.0 - layer_frac) * u[13]*Ww[13];
-
-        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+1] =
-            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
-            (interp_uW_comp - 0.25 * (Sx + Sy));
-        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+1] =
-            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
-            (interp_uW_comp + 0.25 * (Sx - Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+1] =
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
-            (interp_uW_comp + 0.25 * (-Sx + Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+1] =
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
-            (interp_uW_comp + 0.25 * (Sx + Sy));
-
-        Sx = slope_limit(layer_frac, dx, v[3], v[4], v[5], v[12], v[13], v[14]);
-        Sy = slope_limit(layer_frac, dy, v[1], v[4], v[7], v[10], v[13], v[16]);
-
-        float interp_vW_comp = layer_frac * v[4]*Ww[4] + (1.0 - layer_frac) * v[13]*Ww[13];
-
-        q_f[((z * nyf + 2*y) * nxf + 2*x) * 3+2] =
-            q_f[((z * nyf + 2*y) * nxf + 2*x) * 3] *
-            (interp_vW_comp - 0.25 * (Sx + Sy));
-        q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3+2] =
-            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 3] *
-            (interp_vW_comp + 0.25 * (Sx - Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3+2] =
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 3] *
-            (interp_vW_comp + 0.25 * (-Sx + Sy));
-        q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3+2] =
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 3] *
-            (interp_vW_comp + 0.25 * (Sx + Sy));*/
+        int neighbour_layer = int(ceil(dz * z / dz_c));
+        float layer_frac = -(z * dz - (dz_c * neighbour_layer)) / dz_c; // fraction of distance between coarse layers that fine is at
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1469,7 +1324,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         k_offset = cumulative_kernels[rank - 1];
     }
 
-    for (int j = 0; j < kernels[rank].y; j++) {
+    /*for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
             compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, p_floor);
@@ -1480,12 +1335,12 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
             threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
 
-    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;*/
 
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset);
+           prolong_reconstruct<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, q_fd, q_cd, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1645,98 +1500,35 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
 
-        float * q_c_new;
-        q_c_new = (float *)malloc(3 * sizeof(float));
-        for (int i = 0; i < 3; i++) {
-            q_c_new[i] = q_c[coarse_index+i];
-        }
 
-        float W = W_swe(q_c_new, gamma_up);
-        float r = find_height(q_c[coarse_index] / W);
-        float height_guess = find_height(q_c[coarse_index] / W);
         //float r = find_height(q_c[coarse_index] / W);
-
-        int z_index = nz;
-        float z_frac = 0.0;
-
-        if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
-            //printf("hi :/\n");
-            z_index = 1;
-            float height = zmin + (nz - 1 - 1) * dz;
-            z_frac = -(height_guess - (height+dz)) / dz;
-        } else {
-
-            for (int i = 1; i < (nz-1); i++) {
-                float height = zmin + (nz - 1 - i) * dz;
-                if (height_guess > height) {
-                    z_index = i;
-                    z_frac = -(height_guess - (height+dz)) / dz;
-                    break;
-                }
-            }
-
-            if (z_index == nz) {
-                //printf("oops..\n");
-                z_index = nz - 1;
-                z_frac = 1.0;
-            }
+        float dz_c = dz * (nz - 1) / (nlayers - 1);
+        int z_index = int(ceil(dz_c * z / dz));
+        float z_frac = -(z * dz_c - (dz * z_index)) / dz;
+        for (int n = 0; n < 5; n++) {
+            q_c[coarse_index + n] = 0.25 * (z_frac *
+                (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2) * nxf + x*2+1) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 5 + n]) +
+                (1.0 - z_frac) *
+                (qf_sw[(((z_index-1) * nyf + y*2) * nxf + x*2) * 5 + n] +
+                qf_sw[(((z_index-1) * nyf + y*2) * nxf + x*2+1) * 5 + n] +
+                qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2) * 5 + n] +
+                qf_sw[(((z_index-1) * nyf + y*2+1) * nxf + x*2+1) * 5 + n]));
         }
 
-        int l = z_index;
-        float Ww[8];
-        for (int j = 0; j < 2; j++) {
-            for (int i = 0; i < 2; i++) {
-                for (int k = 0; k < 3; k++) {
-                    q_c_new[k] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+k];
-                }
-                Ww[j*2+i] = W_swe(q_c_new, gamma_up);
-                for (int k = 0; k < 3; k++) {
-                    q_c_new[k] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+k];
-                }
-                Ww[(2+j)*2+i] = W_swe(q_c_new, gamma_up);
-            }
-        }
 
-        float interp_W = z_frac * 0.25 * (Ww[0] + Ww[1] + Ww[2] + Ww[3]) +
-            (1.0 - z_frac) * 0.25 * (Ww[4] + Ww[5] + Ww[6] + Ww[7]);
-
-        float Phi = find_pot(height_guess);
-        // now need to do linear interpolation thing on u, v
-        float u[8];
-        float v[8];
-        for (int j = 0; j < 2; j++) {
-            for (int i = 0; i < 2; i++) {
-                u[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+1] /
-                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
-                v[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*3+2] /
-                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
-                u[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+1] /
-                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
-                v[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*3+2] /
-                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
-            }
-        }
-
-        float interp_u = z_frac * 0.25 * (u[0] + u[1] + u[2] + u[3]) +
-            (1.0 - z_frac) * 0.25 * (u[4] + u[5] + u[6] + u[7]);
-        float interp_v = z_frac * 0.25 * (v[0] + v[1] + v[2] + v[3]) +
-            (1.0 - z_frac) * 0.25 * (v[4] + v[5] + v[6] + v[7]);
-
-        q_c[coarse_index] = Phi * interp_W;
-        q_c[coarse_index + 1] = q_c[coarse_index] * interp_W * interp_u;
-        q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
-
-        free(q_c_new);
     } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
         int z_index = nz-1;
-        for (int n = 0; n < 3; n++) {
+        for (int n = 0; n < 5; n++) {
             q_c[coarse_index + n] = 0.25 *
-                (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 3 + n] +
-                qf_sw[((z_index * nyf + y*2) * nxf + x*2+1) * 3 + n] +
-                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 3 + n] +
-                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 3 + n]);
+                (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2) * nxf + x*2+1) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 5 + n] +
+                qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 5 + n]);
         }
     }
 }
@@ -1784,7 +1576,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         k_offset = cumulative_kernels[rank - 1];
     }
 
-    for (int j = 0; j < kernels[rank].y; j++) {
+    /*for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
             swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor);
@@ -1796,7 +1588,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
             threads[k_offset + j * kernels[rank].x].y - 2*ng;
     }
 
-    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;*/
 
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
@@ -2167,12 +1959,12 @@ __global__ void evolve_z_fluxes(float * F,
 
             float old_F = F[((z * ny + y) * nx + x)*vec_dim + i];
             // NOTE: UNCOMMENT ME
-            //F[((z * ny + y) * nx + x)*vec_dim + i] =
-            //    F[((z * ny + y) * nx + x)*vec_dim + i]
-            //    - alpha * (fz_p - fz_m) / dz;
+            F[((z * ny + y) * nx + x)*vec_dim + i] =
+                F[((z * ny + y) * nx + x)*vec_dim + i]
+                - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
     }
@@ -2781,7 +2573,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 3*sizeof(float));
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
-    cudaMalloc((void**)&Uc_d, nx*ny*nlayers*3*sizeof(float));
+    cudaMalloc((void**)&Uc_d, nx*ny*nlayers*5*sizeof(float));
     cudaMalloc((void**)&Uf_d, nxf*nyf*nz*5*sizeof(float));
     cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
     //cudaMalloc((void**)&Q_d, nlayers*nx*ny*sizeof(float));
@@ -2789,14 +2581,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*5*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
     //cudaMemcpy(Q_d, Q, nlayers*nx*ny*sizeof(float), cudaMemcpyHostToDevice);
 
     float *Upc_d, *Uc_half_d, *Upf_d, *Uf_half_d, *old_phi_d;//*sum_phs_d;
-    cudaMalloc((void**)&Upc_d, nx*ny*nlayers*3*sizeof(float));
-    cudaMalloc((void**)&Uc_half_d, nx*ny*nlayers*3*sizeof(float));
+    cudaMalloc((void**)&Upc_d, nx*ny*nlayers*5*sizeof(float));
+    cudaMalloc((void**)&Uc_half_d, nx*ny*nlayers*5*sizeof(float));
     cudaMalloc((void**)&Upf_d, nxf*nyf*nz*5*sizeof(float));
     cudaMalloc((void**)&Uf_half_d, nxf*nyf*nz*5*sizeof(float));
     cudaMalloc((void**)&old_phi_d, nlayers*nx*ny*sizeof(float));
@@ -2805,14 +2597,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // need to fill old_phi with current phi to initialise
     float *pphi = new float[nlayers*nx*ny];
     for (int i = 0; i < nlayers*nx*ny; i++) {
-        pphi[i] = Uc_h[i*3];
+        pphi[i] = Uc_h[i*5];
     }
     cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
 
     float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *qz_p_d, *qz_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d, *fz_p_d, *fz_m_d;
-    float *Upc_h = new float[nx*ny*nlayers*3];
-    float *Fc_h = new float[nx*ny*nlayers*3];
+    float *Upc_h = new float[nx*ny*nlayers*5];
+    float *Fc_h = new float[nx*ny*nlayers*5];
 
     float *Upf_h = new float[nxf*nyf*nz*5];
     float *Ff_h = new float[nxf*nyf*nz*5];
@@ -2822,7 +2614,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         Upf_h[j] = 0.0;
     }
 
-    int grid_size = max(nx*ny*nlayers*3, nxf*nyf*nz*5);
+    int grid_size = max(nx*ny*nlayers*5, nxf*nyf*nz*5);
 
     cudaMalloc((void**)&qx_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&qx_m_d, grid_size*sizeof(float));
@@ -2840,7 +2632,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     float * q_comp_d;
     cudaMalloc((void**)&q_comp_d, nx*ny*nlayers*5*sizeof(float));
     float * qf_swe;
-    cudaMalloc((void**)&qf_swe, nxf*nyf*nz*3*sizeof(float));
+    cudaMalloc((void**)&qf_swe, nxf*nyf*nz*5*sizeof(float));
 
     int * matching_indices_d;
     cudaMalloc((void**)&matching_indices_d, 4*sizeof(int));
@@ -2863,12 +2655,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             // create dataspace
             int ndims = 5;
-            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nlayers), (ny), hsize_t(nx), 3};
+            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nlayers), (ny), hsize_t(nx), 5};
             file_space = H5Screate_simple(ndims, dims, NULL);
 
             hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
             H5Pset_layout(plist, H5D_CHUNKED);
-            hsize_t chunk_dims[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 3};
+            hsize_t chunk_dims[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 5};
             H5Pset_chunk(plist, ndims, chunk_dims);
 
             // create dataset
@@ -2882,7 +2674,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // select a hyperslab
             file_space = H5Dget_space(dset);
             hsize_t start[] = {0, 0, 0, 0, 0};
-            hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 3};
+            hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 5};
             H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
             // write to dataset
             printf("Printing t = %i\n", 0);
@@ -2911,7 +2703,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
                     for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*5] << ',';
                     }
                     cout << '\n';
                 }
@@ -3032,7 +2824,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             for (int z = 0; z < nlayers; z++) {
                 for (int y = 0; y < ny; y++) {
                     for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*3+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*3+3] << '\n';
+                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*5+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*5+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*5+3] << '\n';
                     }
                 }
             }*/
@@ -3049,7 +2841,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*5*sizeof(float), cudaMemcpyDeviceToHost);
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
@@ -3059,20 +2851,20 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             // enforce boundaries
             if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, nlayers, ng, 3);
+                bcs_fv(Uc_h, nx, ny, nlayers, ng, 5);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size, false);
+                bcs_mpi(Uc_h, nx, ny, nlayers, 5, ng, comm, status, rank, n_processes, y_size, true);
             }
 
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*5*sizeof(float), cudaMemcpyHostToDevice);
 
             /*cout << "\nCoarse grid after restricting\n\n";
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
                     for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*5] << ',';
                     }
                     cout << '\n';
                 }
@@ -3089,22 +2881,22 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                nx, ny, nlayers, 3, ng, alpha, gamma,
+                nx, ny, nlayers, 5, ng, alpha, gamma,
                 dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
-                h_shallow_water_fluxes, false);
+                h_compressible_fluxes, true);
 
             err = cudaGetLastError();
             if (err != cudaSuccess){
-                cout << "Done coarse rk3\n";
+                cout << "Done coarse rk5\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*5*sizeof(float), cudaMemcpyHostToDevice);
 
             // update old_phi
             for (int i = 0; i < nlayers*nx*ny; i++) {
-                pphi[i] = Uc_h[i*3];
+                pphi[i] = Uc_h[i*5];
             }
             cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -3114,7 +2906,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 for (int x = 0; x < nx; x++) {
                     cout << '(' << x << ',' << y << "): ";
                     for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*3] << ',';
+                        cout << Uc_h[(((z*ny + y)*nx)+x)*5] << ',';
                     }
                     cout << '\n';
                 }
@@ -3158,14 +2950,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
 
             // boundaries
-            /*cudaMemcpy(Uc_h, Uc_d, nx*ny*3*sizeof(float), cudaMemcpyDeviceToHost);
+            /*cudaMemcpy(Uc_h, Uc_d, nx*ny*5*sizeof(float), cudaMemcpyDeviceToHost);
             if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, ng, 3);
+                bcs_fv(Uc_h, nx, ny, ng, 5);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, 3, ng, comm, status, rank, n_processes, y_size);
+                bcs_mpi(Uc_h, nx, ny, 5, ng, comm, status, rank, n_processes, y_size);
             }
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*3*sizeof(float), cudaMemcpyHostToDevice);*/
+            cudaMemcpy(Uc_d, Uc_h, nx*ny*5*sizeof(float), cudaMemcpyHostToDevice);*/
 
             int mpi_err;
 
@@ -3174,10 +2966,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     printf("Printing t = %i\n", t+1);
 
                     if (n_processes > 1) { // only do MPI stuff if needed
-                        float * buf = new float[nx*ny*nlayers*3];
+                        float * buf = new float[nx*ny*nlayers*5];
                         int tag = 0;
                         for (int source = 1; source < n_processes; source++) {
-                            mpi_err = MPI_Recv(buf, nx*ny*nlayers*3, MPI_FLOAT, source, tag, comm, &status);
+                            mpi_err = MPI_Recv(buf, nx*ny*nlayers*5, MPI_FLOAT, source, tag, comm, &status);
 
                             check_mpi_error(mpi_err);
 
@@ -3187,8 +2979,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                             for (int z = 0; z < nlayers; z++) {
                                 for (int y = ky_offset; y < ny; y++) {
                                     for (int x = 0; x < nx; x++) {
-                                        for (int i = 0; i < 3; i++) {
-                                            Uc_h[((z * ny + y) * nx + x) * 3 + i] = buf[((z * ny + y) * nx + x) * 3 + i];
+                                        for (int i = 0; i < 5; i++) {
+                                            Uc_h[((z * ny + y) * nx + x) * 5 + i] = buf[((z * ny + y) * nx + x) * 5 + i];
                                         }
                                     }
                                 }
@@ -3202,7 +2994,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     // select a hyperslab
                     file_space = H5Dget_space(dset);
                     hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                    hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 3};
+                    hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 5};
                     H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
                     // write to dataset
                     H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Uc_h);
@@ -3210,7 +3002,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     H5Sclose(file_space);
                 } else { // send data to rank 0
                     int tag = 0;
-                    mpi_err = MPI_Ssend(Uc_h, ny*nx*nlayers*3, MPI_FLOAT, 0, tag, comm);
+                    mpi_err = MPI_Ssend(Uc_h, ny*nx*nlayers*5, MPI_FLOAT, 0, tag, comm);
                     check_mpi_error(mpi_err);
                 }
             }
@@ -3263,10 +3055,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                nx, ny, nlayers, 3, ng, alpha, gamma,
+                nx, ny, nlayers, 5, ng, alpha, gamma,
                 dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
-                h_shallow_water_fluxes, false);
+                h_compressible_fluxes, true);
 
             /*int k_offset = 0;
             if (rank > 0) {
@@ -3307,14 +3099,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             cudaDeviceSynchronize();
 
             // boundaries
-            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*3*sizeof(float), cudaMemcpyDeviceToHost);
+            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*5*sizeof(float), cudaMemcpyDeviceToHost);
             if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, nlayers, ng, 3);
+                bcs_fv(Uc_h, nx, ny, nlayers, ng, 5);
             } else {
                 int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 3, ng, comm, status, rank, n_processes, y_size, false);
+                bcs_mpi(Uc_h, nx, ny, nlayers, 5, ng, comm, status, rank, n_processes, y_size, true);
             }
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*3*sizeof(float), cudaMemcpyHostToDevice);
+            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*5*sizeof(float), cudaMemcpyHostToDevice);
 
             cudaError_t err = cudaGetLastError();
 

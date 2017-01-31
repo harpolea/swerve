@@ -19,7 +19,7 @@ public:
 
     Sea(const Sea &); // copy constructor
 
-    void initial_data(float * D0, float * Sx0, float * Sy0);
+    void initial_data(float * D0, float * Sx0, float * Sy0, float * Sz0, float * tau);
 
     void bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim);
 
@@ -44,6 +44,8 @@ public:
     float *ys;
     float *U_coarse;
     float *U_fine;
+    float *rho;
+    float gamma;
 
 private:
 
@@ -59,11 +61,9 @@ private:
     float dt;
     float df;
 
-    float *rho;
     float p_floor;
     float Q;
     float mu; // friction
-    float gamma;
 
     float alpha;
     float beta[3];

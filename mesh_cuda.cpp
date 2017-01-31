@@ -83,7 +83,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     nyf = int(r * df * ny);
 
     // D, Sx, Sy, zeta
-    U_coarse = new float[nx*ny*nlayers*3];
+    U_coarse = new float[nx*ny*nlayers*5];
     U_fine = new float[nxf*nyf*nz*5];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
@@ -294,11 +294,11 @@ Sea::Sea(char * filename)
     }
     Sea::invert_mat(gamma_up, 3, 3);
 
-    U_coarse = new float[nx*ny*nlayers*3];
+    U_coarse = new float[nx*ny*nlayers*5];
     U_fine = new float[nxf*nyf*nz*5];
 
     // initialise arrays
-    for (int i = 0; i < nx*ny*nlayers*3; i++) {
+    for (int i = 0; i < nx*ny*nlayers*5; i++) {
         U_coarse[i] = 0.0;
     }
     for (int i = 0; i < nxf*nyf*nz*5; i++) {
@@ -344,10 +344,10 @@ Sea::Sea(const Sea &seaToCopy)
         beta[i] = seaToCopy.beta[i];
     }
 
-    U_coarse = new float[int(nx*ny*nlayers*3)];
+    U_coarse = new float[int(nx*ny*nlayers*5)];
     U_fine = new float[nxf*nyf*nz*5];
 
-    for (int i = 0; i < nx*ny*nlayers*3;i++) {
+    for (int i = 0; i < nx*ny*nlayers*5;i++) {
         U_coarse[i] = seaToCopy.U_coarse[i];
     }
 
@@ -378,17 +378,19 @@ Sea::~Sea() {
 }
 
 // set the initial data
-void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
+void Sea::initial_data(float * D0, float * Sx0, float * Sy0, float * Sz0, float * tau) {
     /*
     Initialise D, Sx, Sy and Q.
     */
     for (int i = 0; i < nx*ny*nlayers; i++) {
-        U_coarse[i*3] = D0[i];
-        U_coarse[i*3+1] = Sx0[i];
-        U_coarse[i*3+2] = Sy0[i];
+        U_coarse[i*5] = D0[i];
+        U_coarse[i*5+1] = Sx0[i];
+        U_coarse[i*5+2] = Sy0[i];
+        U_coarse[i*5+3] = Sz0[i];
+        U_coarse[i*5+4] = tau[i];
     }
 
-    bcs(U_coarse, nx, ny, nlayers, 3);
+    bcs(U_coarse, nx, ny, nlayers, 5);
 
     cout << "Set initial data.\n";
 }
