@@ -68,23 +68,22 @@ int main(int argc, char *argv[]) {
 
             // define A at sea floor
             float A_floor = 1.0;
-            float p_floor = 1.0;
 
-            float A1 = A_floor * (sea.gamma/(sea.gamma-1.0) * p_floor + sea.rho[1]) / (sea.gamma/(sea.gamma-1.0) * p_floor + 2.0 * sea.rho[1] - sea.rho[2]);
-
-            float ph0 = 1.0 - 0.1 *
-                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            float ph1 = 1.1 - 0.1 *
-                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            float ph0 = -0.5 * log(1.0 - 2.0 / sea.zmax);
+            float ph1 = -0.5 * log(1.0 - 2.0 / (0.5 * (sea.zmax + sea.zmin)));
             float ph2 = -0.5 * log(1.0 - 2.0 / sea.zmin);
 
-            float p2 = p_floor;
+            float p2 = (sea.gamma - 1.0) * (A_floor * exp(sea.gamma * ph2 /
+                (sea.gamma - 1.0)) - sea.rho[2]) / sea.gamma;
+
+            float A1 = A_floor * (sea.gamma/(sea.gamma-1.0) * p2 + sea.rho[1]) / (sea.gamma/(sea.gamma-1.0) * p2 + 2.0 * sea.rho[1] - sea.rho[2]);
+
             float p1 = (sea.gamma - 1.0) * (A1 * exp(sea.gamma * ph1 /
                 (sea.gamma - 1.0)) - sea.rho[1]) / sea.gamma;
 
             float A0 = A1 * (sea.gamma/(sea.gamma-1.0) * p1 + sea.rho[0]) / (sea.gamma/(sea.gamma-1.0) * p1 + 2.0 * sea.rho[0] - sea.rho[1]);
 
-            float p0 = (sea.gamma - 1.0) * (A0 * exp(sea.gamma * ph1 /
+            float p0 = (sea.gamma - 1.0) * (A0 * exp(sea.gamma * ph0 /
                 (sea.gamma - 1.0)) - sea.rho[0]) / sea.gamma;
 
             float rhoh0 = sea.rho[0] + sea.gamma * p0 / (sea.gamma - 1.0);

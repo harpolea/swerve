@@ -477,7 +477,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     }
 
     // z boundaries
-    if (do_z) {
+    /*if (do_z) {
         for (int g = 0; g < ng; g++) {
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
@@ -489,7 +489,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
                 }
             }
         }
-    }
+    }*/
 
     // interior cells between processes
 
@@ -2243,13 +2243,13 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
                   dx, dy, dt, kx_offset, ky_offset);
-           if (do_z) {
+           /*if (do_z) {
                evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
                       qz_p_d, qz_m_d,
                       fz_p_d, fz_m_d,
                       nx, ny, nz, vec_dim, alpha, gamma,
                       dz, dt, kx_offset, ky_offset);
-           }
+           }*/
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
@@ -2267,14 +2267,14 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   nx, ny, nz, vec_dim, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
 
-            if (do_z) {
+            /*if (do_z) {
                 evolve_z_fluxes<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
                        F_d,
                        qz_p_d, qz_m_d,
                        fz_p_d, fz_m_d,
                        nx, ny, nz, vec_dim, alpha,
                        dz, dt, kx_offset, ky_offset);
-            }
+            }*/
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -2764,24 +2764,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             // evolve fine grid through two subcycles
-            for (int i = 0; i < 2; i++) {
+            //for (int i = 0; i < 2; i++) {
 
-                rk3(kernels, threads, blocks, cumulative_kernels,
+                /*rk3(kernels, threads, blocks, cumulative_kernels,
                         beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
                         qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                         fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                         nxf, nyf, nz, 5, ng, alpha, gamma,
                         dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
                         comm, status, rank, n_processes,
-                        h_compressible_fluxes, true);
-
-                // enforce boundaries is done within rk3
-                /*if (n_processes == 1) {
-                    bcs_fv(Uf_h, nxf, nyf, nz, ng, 5);
-                } else {
-                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                    bcs_mpi(Uf_h, nxf, nyf, nz, 5, ng, comm, status, rank, n_processes, y_size);
-                }*/
+                        h_compressible_fluxes, true);*/
 
                 /*cout << "\nFine grid\n\n";
                 for (int y = 0; y < nyf; y++) {
@@ -2795,12 +2787,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     }
                 }*/
 
-                cudaDeviceSynchronize();
+                //cudaDeviceSynchronize();
 
                 // copy to device
-                cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
+                //cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
-            }
+            //}
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "Before restricting\n";
@@ -2830,11 +2822,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }*/
 
             // restrict to coarse grid
-            restrict_grid(kernels, threads, blocks, cumulative_kernels,
-                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
-                          dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-                          p_floor);
+            //restrict_grid(kernels, threads, blocks, cumulative_kernels,
+            //              Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
+            //              dz, zmin, matching_indices_d,
+            //              rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+            //              p_floor);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After restricting\n";
@@ -2876,7 +2868,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            // NOTE: **ALL** the weirdness is happening within here only.
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,

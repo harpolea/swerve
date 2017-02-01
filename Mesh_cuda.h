@@ -40,6 +40,7 @@ public:
     int ng;
 
     float zmin;
+    float zmax;
     float *xs;
     float *ys;
     float *U_coarse;

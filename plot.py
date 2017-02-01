@@ -169,10 +169,11 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     D_2d = table[:,:,:,:,0]
     Sx = table[:,:,:,:,1]
     Sy = table[:,:,:,:,2]
+    tau = table[:,:,:,:,4]
 
     v = np.sqrt(Sx**2 + Sy**2)
 
-    heights = find_height(D_2d, Sx, Sy, gamma_up)
+    #heights = find_height(D_2d, Sx, Sy, gamma_up)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
@@ -199,8 +200,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
         #ax.set_zlim(2.0,2.6)
-        for l in range(1,2):
-            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
+        for l in range(nlayers-1):
+            ax.plot_surface(X,Y,tau[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)
 
     # close hdf5 file

@@ -33,11 +33,11 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax,
-        float _zmin, float zmax, float * _rho, float _p_floor,
+        float _zmin, float _zmax, float * _rho, float _p_floor,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), nt(_nt), r(_r), df(_df), p_floor(_p_floor), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), p_floor(_p_floor), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -320,7 +320,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), p_floor(seaToCopy.p_floor), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), p_floor(seaToCopy.p_floor), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
 
     xs = new float[nx];
