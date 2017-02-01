@@ -429,6 +429,17 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
             }
         }
     }
+    for (int g = 0; g < ng; g++) {
+        for (int y = 0; y < ny; y++) {
+            for (int x = 0; x < nx; x++) {
+                for (int i = 0; i < vec_dim; i++) {
+                    grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
+
+                    grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                }
+            }
+        }
+    }
 }
 
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
@@ -1197,11 +1208,18 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         int c_x = x + matching_indices_d[0];
         int c_y = y + matching_indices_d[2];
 
-        // height of this layer
         float dz_c = dz * (nz - 1) / (nlayers - 1);
 
         int neighbour_layer = int(ceil(dz * z / dz_c));
-        float layer_frac = -(z * dz - (dz_c * neighbour_layer)) / dz_c; // fraction of distance between coarse layers that fine is at
+        float layer_frac = 1.0 - (dz_c * neighbour_layer - z * dz) / dz_c; // fraction of distance between coarse layers that fine is at
+
+        // hack for if layers coincide
+        if (fmod(dz * z / dz_c, 1.0f) < 1.0e-5) {
+            neighbour_layer = int(round(dz * z / dz_c));
+            layer_frac = 1.0;
+        }
+
+        //printf("layer height: %f, neighbour_layer: %d, layer_frac: %f\n", zmin + dz * (nz-1-z), neighbour_layer, layer_frac);
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1485,13 +1503,22 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z < nlayers-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
-              x+matching_indices[0]) * 3;
-
+              x+matching_indices[0]) * 5;
 
         //float r = find_height(q_c[coarse_index] / W);
         float dz_c = dz * (nz - 1) / (nlayers - 1);
         int z_index = int(ceil(dz_c * z / dz));
-        float z_frac = -(z * dz_c - (dz * z_index)) / dz;
+        float z_frac = 1.0 - (dz * z_index - z * dz_c ) / dz;
+
+        // hack for if layers coincide
+        if (fmod(dz_c * z / dz, 1.0f) < 1.0e-5) {
+            z_index = int(round(dz_c * z / dz));
+            z_frac = 1.0;
+        }
+
+
+        //printf("layer height: %f, z_index: %d, z_frac: %f\n", zmin + dz_c * (nlayers-1-z), z_index, z_frac);
+
         for (int n = 0; n < 5; n++) {
             q_c[coarse_index + n] = 0.25 * (z_frac *
                 (qf_sw[((z_index * nyf + y*2) * nxf + x*2) * 5 + n] +
@@ -1508,7 +1535,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
 
     } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
-              x+matching_indices[0]) * 3;
+              x+matching_indices[0]) * 5;
         int z_index = nz-1;
         for (int n = 0; n < 5; n++) {
             q_c[coarse_index + n] = 0.25 *
@@ -1563,24 +1590,10 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         k_offset = cumulative_kernels[rank - 1];
     }
 
-    /*for (int j = 0; j < kernels[rank].y; j++) {
-       kx_offset = 0;
-       for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor);
-
-            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
-                threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-       }
-       ky_offset += blocks[k_offset + j * kernels[rank].x].y *
-            threads[k_offset + j * kernels[rank].x].y - 2*ng;
-    }
-
-    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;*/
-
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nx, ny, nlayers, nxf, nyf, nz, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset);
+           restrict_interpolate<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nx, ny, nlayers, nxf, nyf, nz, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1957,7 +1970,7 @@ __global__ void evolve_z_fluxes(float * F,
                 - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) {
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) {
                 //printf("F has nan'd: %f, fz_p: %f, fz_m: %f, old_F: %f\n", F[((z * ny + y) * nx + x)*vec_dim + i], fz_p, fz_m, old_F);
                 F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             }
@@ -2765,16 +2778,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }
 
             // evolve fine grid through two subcycles
-            //for (int i = 0; i < 2; i++) {
+            for (int i = 0; i < 2; i++) {
 
-                /*rk3(kernels, threads, blocks, cumulative_kernels,
+                rk3(kernels, threads, blocks, cumulative_kernels,
                         beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
                         qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                         fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                         nxf, nyf, nz, 5, ng, alpha, gamma,
                         dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
                         comm, status, rank, n_processes,
-                        h_compressible_fluxes, true);*/
+                        h_compressible_fluxes, true);
 
                 /*cout << "\nFine grid\n\n";
                 for (int y = 0; y < nyf; y++) {
@@ -2791,9 +2804,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 //cudaDeviceSynchronize();
 
                 // copy to device
-                //cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
+                cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
-            //}
+            }
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "Before restricting\n";
@@ -2823,11 +2836,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             }*/
 
             // restrict to coarse grid
-            //restrict_grid(kernels, threads, blocks, cumulative_kernels,
-            //              Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
-            //              dz, zmin, matching_indices_d,
-            //              rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-            //              p_floor);
+            restrict_grid(kernels, threads, blocks, cumulative_kernels,
+                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
+                          dz, zmin, matching_indices_d,
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+                          p_floor);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After restricting\n";
