@@ -172,7 +172,7 @@ Sea::Sea(char * filename)
 
     string variableName;
     float value;
-    float xmin, xmax, ymin, ymax, zmax;
+    float xmin, xmax, ymin, ymax;
 
     while (inputFile >> variableName) {
 
@@ -479,5 +479,5 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     */
     cuda_run(beta, gamma_up, U_coarse, U_fine, rho, p_floor, mu,
              nx, ny, nlayers, nxf, nyf, nz, ng, nt,
-             alpha, gamma, zmin, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
+             alpha, gamma, zmin, zmax, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 }

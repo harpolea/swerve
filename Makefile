@@ -253,7 +253,7 @@ run: build
 	$(EXEC) ./gr_cuda
 
 clean:
-	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
+	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_link.o run_mesh_cuda.o *.gch
 clean_test:
 	rm -f testing/flat testing/unit_tests testing/*.o
 

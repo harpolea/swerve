@@ -477,7 +477,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     }
 
     // z boundaries
-    /*if (do_z) {
+    if (do_z) {
         for (int g = 0; g < ng; g++) {
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
@@ -489,7 +489,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
                 }
             }
         }
-    }*/
+    }
 
     // interior cells between processes
 
@@ -1324,19 +1324,6 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         k_offset = cumulative_kernels[rank - 1];
     }
 
-    /*for (int j = 0; j < kernels[rank].y; j++) {
-       kx_offset = 0;
-       for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, p_floor);
-            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
-                threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-       }
-       ky_offset += blocks[k_offset + j * kernels[rank].x].y *
-            threads[k_offset + j * kernels[rank].x].y - 2*ng;
-    }
-
-    ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;*/
-
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
@@ -1781,7 +1768,8 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
     q_m = (float *)malloc(vec_dim * sizeof(float));
     f = (float *)malloc(vec_dim * sizeof(float));
 
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z > 0) && (z < (nz-1))) {
+
+    if ((x >= 0) && (x < nx) && (y >= 0) && (y < ny) && (z > 0) && (z < (nz-1))) {
 
         // z-direction
         for (int i = 0; i < vec_dim; i++) {
@@ -1819,7 +1807,10 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
             qz_minus_half[offset + i] = q_m[i];
             fz_minus_half[offset + i] = f[i];
         }
+
     }
+
+    //printf("fz_minus_half: %f, fz_plus_half: %f\n", fz_minus_half[offset+4], fz_plus_half[offset+4]);
 
     free(q_p);
     free(q_m);
@@ -1868,6 +1859,7 @@ __global__ void evolve_fv_fluxes(float * F,
 
     // do fluxes
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z < nz)) {
+
         for (int i = 0; i < vec_dim; i++) {
             // x-boundary
             // from i-1
@@ -1904,6 +1896,7 @@ __global__ void evolve_fv_fluxes(float * F,
             // hack?
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e10) F[((z * ny + y) * nx + x)*vec_dim + i] = 0.0;
         }
         //printf("fxm, fxp: %f, %f fym, fyp: %f, %f F(tau): %f\n", fx_m, fx_p, fy_m, fy_p, F[((z * ny + y) * nx + x)*vec_dim +4]);
     }
@@ -1941,7 +1934,7 @@ __global__ void evolve_z_fluxes(float * F,
     int z = threadIdx.z;
 
     // do fluxes
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z > 0) && (z < (nz-1))) {
+    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z > 1) && (z < (nz-2))) {
         for (int i = 0; i < vec_dim; i++) {
             // z-boundary
             // from i-1
@@ -1964,8 +1957,12 @@ __global__ void evolve_z_fluxes(float * F,
                 - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) {
+                //printf("F has nan'd: %f, fz_p: %f, fz_m: %f, old_F: %f\n", F[((z * ny + y) * nx + x)*vec_dim + i], fz_p, fz_m, old_F);
+                F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            }
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            //printf("F has nan'd: %f, fz_p: %f, fz_m: %f, old_F: %f\n", F[((z * ny + y) * nx + x)*vec_dim + i], fz_p, fz_m, old_F);
         }
     }
 }
@@ -2238,18 +2235,24 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           evolve_fv<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
+           evolve_fv<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
+                  beta_d, gamma_up_d, Un_d, h_flux_func,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
                   dx, dy, dt, kx_offset, ky_offset);
-           /*if (do_z) {
-               evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
-                      qz_p_d, qz_m_d,
-                      fz_p_d, fz_m_d,
-                      nx, ny, nz, vec_dim, alpha, gamma,
-                      dz, dt, kx_offset, ky_offset);
-           }*/
+
+          cudaError_t err = cudaGetLastError();
+
+          if (err != cudaSuccess)
+              printf("Error: %s\n", cudaGetErrorString(err));
+
+           evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
+                  beta_d, gamma_up_d, Un_d, h_flux_func,
+                  qz_p_d, qz_m_d,
+                  fz_p_d, fz_m_d,
+                  nx, ny, nz, vec_dim, alpha, gamma,
+                  dz, dt, kx_offset, ky_offset);
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
@@ -2267,14 +2270,12 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   nx, ny, nz, vec_dim, alpha,
                   dx, dy, dt, kx_offset, ky_offset);
 
-            /*if (do_z) {
-                evolve_z_fluxes<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
-                       F_d,
-                       qz_p_d, qz_m_d,
-                       fz_p_d, fz_m_d,
-                       nx, ny, nz, vec_dim, alpha,
-                       dz, dt, kx_offset, ky_offset);
-            }*/
+            evolve_z_fluxes<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
+                   F_d,
+                   qz_p_d, qz_m_d,
+                   fz_p_d, fz_m_d,
+                   nx, ny, nz, vec_dim, alpha,
+                   dz, dt, kx_offset, ky_offset);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -2444,7 +2445,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float * rho, float p_floor, float mu,
          int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
-         int nt, float alpha, float gamma, float zmin,
+         int nt, float alpha, float gamma, float zmin, float zmax,
          float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
@@ -2868,12 +2869,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
+            float dz_c = (zmax - zmin) / (nlayers - 1);
+
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                 fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                 nx, ny, nlayers, 5, ng, alpha, gamma,
-                dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
+                dx, dy, dz_c, dt, Upc_h, Fc_h, Uc_h,
                 comm, status, rank, n_processes,
                 h_compressible_fluxes, true);
 

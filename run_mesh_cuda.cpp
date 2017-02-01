@@ -70,13 +70,27 @@ int main(int argc, char *argv[]) {
             float A_floor = 1.0;
 
             float ph0 = -0.5 * log(1.0 - 2.0 / sea.zmax);
-            float ph1 = -0.5 * log(1.0 - 2.0 / (0.5 * (sea.zmax + sea.zmin)));
-            float ph2 = -0.5 * log(1.0 - 2.0 / sea.zmin);
+            float ph1 = -0.5 * log(1.0 - 2.0 / (0.25 * (3*sea.zmax + sea.zmin)));
+            float ph2 = -0.5 * log(1.0 - 2.0 / (0.5 * (sea.zmax + sea.zmin)));
+            float ph3 = -0.5 * log(1.0 - 2.0 / (0.25 * (sea.zmax + 3.*sea.zmin)));
+            float ph4 = -0.5 * log(1.0 - 2.0 / sea.zmin);
 
-            float p2 = (sea.gamma - 1.0) * (A_floor * exp(sea.gamma * ph2 /
+            //cout << "phs: " << ph0 << ' ' << ph1 << ' ' << ph2 << ' ' << ph3 << ' ' << ph4 << '\n';
+
+            float p4 = (sea.gamma - 1.0) * (A_floor * exp(sea.gamma * ph4 /
+                (sea.gamma - 1.0)) - sea.rho[4]) / sea.gamma;
+
+            float A3 = A_floor * (sea.gamma/(sea.gamma-1.0) * p4 + sea.rho[3]) / (sea.gamma/(sea.gamma-1.0) * p4 + 2.0 * sea.rho[3] - sea.rho[4]);
+
+            float p3 = (sea.gamma - 1.0) * (A3 * exp(sea.gamma * ph3 /
+                (sea.gamma - 1.0)) - sea.rho[3]) / sea.gamma;
+
+            float A2 = A3 * (sea.gamma/(sea.gamma-1.0) * p3 + sea.rho[2]) / (sea.gamma/(sea.gamma-1.0) * p3 + 2.0 * sea.rho[2] - sea.rho[3]);
+
+            float p2 = (sea.gamma - 1.0) * (A2 * exp(sea.gamma * ph2 /
                 (sea.gamma - 1.0)) - sea.rho[2]) / sea.gamma;
 
-            float A1 = A_floor * (sea.gamma/(sea.gamma-1.0) * p2 + sea.rho[1]) / (sea.gamma/(sea.gamma-1.0) * p2 + 2.0 * sea.rho[1] - sea.rho[2]);
+            float A1 = A2 * (sea.gamma/(sea.gamma-1.0) * p2 + sea.rho[1]) / (sea.gamma/(sea.gamma-1.0) * p2 + 2.0 * sea.rho[1] - sea.rho[2]);
 
             float p1 = (sea.gamma - 1.0) * (A1 * exp(sea.gamma * ph1 /
                 (sea.gamma - 1.0)) - sea.rho[1]) / sea.gamma;
@@ -89,10 +103,18 @@ int main(int argc, char *argv[]) {
             float rhoh0 = sea.rho[0] + sea.gamma * p0 / (sea.gamma - 1.0);
             float rhoh1 = sea.rho[1] + sea.gamma * p1 / (sea.gamma - 1.0);
             float rhoh2 = sea.rho[2] + sea.gamma * p2 / (sea.gamma - 1.0);
+            float rhoh3 = sea.rho[3] + sea.gamma * p3 / (sea.gamma - 1.0);
+            float rhoh4 = sea.rho[4] + sea.gamma * p4 / (sea.gamma - 1.0);
 
             tau[y * sea.nx + x] = rhoh0 - p0 - sea.rho[0];
             tau[(sea.ny + y) * sea.nx + x] = rhoh1 - p1 - sea.rho[1];
             tau[(2*sea.ny + y) * sea.nx + x] = rhoh2 - p2 - sea.rho[2];
+            tau[(3*sea.ny + y) * sea.nx + x] = rhoh3 - p3 - sea.rho[3];
+            tau[(4*sea.ny + y) * sea.nx + x] = rhoh4 - p4 - sea.rho[4];
+
+            //cout << tau[y * sea.nx + x] << ' ' << tau[(sea.ny + y) * sea.nx + x] << ' ' << tau[(2*sea.ny + y) * sea.nx + x] << ' ' << tau[(3*sea.ny + y) * sea.nx + x] << ' ' << tau[(4*sea.ny + y) * sea.nx + x] << '\n';
+
+            tau[(2*sea.ny + y) * sea.nx + x] += 0.1 * exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0); 
 
             for (int z = 0; z < sea.nlayers; z++) {
                 D0[(z * sea.ny + y) * sea.nx + x] = sea.rho[z];

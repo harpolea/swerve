@@ -1,8 +1,8 @@
 nx      100
 ny      100
 nz      10
-nlayers 3
-nt      10
+nlayers 5
+nt      250
 ng      2
 r       2
 df      0.4
@@ -12,7 +12,7 @@ ymin    0.0
 ymax    10.0
 zmin    2.1
 zmax    2.6
-rho     0.5 0.5 0.5
+rho     0.5 0.5 0.5 0.5 0.5
 p_floor 1.0
 Q       0.0
 mu      0.0
@@ -22,5 +22,5 @@ beta    0.0 0.0 0.0
 gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
 periodic f
 burning f
-dprint  1
+dprint  2
 outfile ../../Documents/Work/swerve/mpi_mesh.h5
