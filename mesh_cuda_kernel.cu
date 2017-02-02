@@ -429,13 +429,16 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
             }
         }
     }
-    for (int g = 0; g < ng; g++) {
-        for (int y = 0; y < ny; y++) {
-            for (int x = 0; x < nx; x++) {
-                for (int i = 0; i < vec_dim; i++) {
-                    grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
+    // HACK: don't want to enforce these for coarse grid
+    if (nz > 5) {
+        for (int g = 0; g < ng; g++) {
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
 
-                    grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                        grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                    }
                 }
             }
         }
@@ -1219,7 +1222,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             layer_frac = 1.0;
         }
 
-        //printf("layer height: %f, neighbour_layer: %d, layer_frac: %f\n", zmin + dz * (nz-1-z), neighbour_layer, layer_frac);
+        printf("layer height: %f, neighbour_layer: %d, neighbour_height: %f, layer_frac: %f\n", zmin + dz * (nz-1-z), neighbour_layer, zmin + dz_c * (nlayers - 1 - neighbour_layer), layer_frac);
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1500,7 +1503,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z < nlayers-1)) {
+    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z > 1) && (z < nlayers-2)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 5;
@@ -1517,7 +1520,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         }
 
 
-        //printf("layer height: %f, z_index: %d, z_frac: %f\n", zmin + dz_c * (nlayers-1-z), z_index, z_frac);
+        //printf("layer height: %f, z_index: %d, z_height: %f, z_frac: %f\n", zmin + dz_c * (nlayers-1-z), z_index, zmin + dz * (nz - 1 - z_index), z_frac);
 
         for (int n = 0; n < 5; n++) {
             q_c[coarse_index + n] = 0.25 * (z_frac *
@@ -1533,7 +1536,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         }
 
 
-    } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
+    } /*else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 5;
         int z_index = nz-1;
@@ -1544,7 +1547,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                 qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 5 + n] +
                 qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 5 + n]);
         }
-    }
+    }*/
 }
 
 void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
