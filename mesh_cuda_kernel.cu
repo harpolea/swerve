@@ -430,7 +430,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
         }
     }
     // HACK: don't want to enforce these for coarse grid
-    if (nz > 5) {
+    /*if (nz > 5) {
         for (int g = 0; g < ng; g++) {
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
@@ -442,7 +442,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
                 }
             }
         }
-    }
+    }*/
 }
 
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
@@ -1222,7 +1222,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             layer_frac = 1.0;
         }
 
-        printf("layer height: %f, neighbour_layer: %d, neighbour_height: %f, layer_frac: %f\n", zmin + dz * (nz-1-z), neighbour_layer, zmin + dz_c * (nlayers - 1 - neighbour_layer), layer_frac);
+        //printf("layer height: %f, neighbour_layer: %d, neighbour_height: %f, layer_frac: %f\n", zmin + dz * (nz-1-z), neighbour_layer, zmin + dz_c * (nlayers - 1 - neighbour_layer), layer_frac);
 
         for (int n = 0; n < 5; n++) {
             // do some slope limiting
@@ -1874,7 +1874,7 @@ __global__ void evolve_fv_fluxes(float * F,
     float fx_m, fx_p, fy_m, fy_p;
 
     // do fluxes
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z < nz)) {
+    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (z < nz)) {
 
         for (int i = 0; i < vec_dim; i++) {
             // x-boundary
@@ -1949,18 +1949,20 @@ __global__ void evolve_z_fluxes(float * F,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
+    float fz_m, fz_p;
+
     // do fluxes
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z > 1) && (z < (nz-2))) {
+    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (z > 1) && (z < (nz-2))) {
         for (int i = 0; i < vec_dim; i++) {
             // z-boundary
             // from i-1
-            float fz_m = 0.5 * (
+            fz_m = 0.5 * (
                 fz_plus_half[(((z-1) * ny + y) * nx + x) * vec_dim + i] +
                 fz_minus_half[((z * ny + y) * nx + x) * vec_dim + i] +
                 qz_plus_half[(((z-1) * ny + y) * nx + x) * vec_dim + i] -
                 qz_minus_half[((z * ny + y) * nx + x) * vec_dim + i]);
             // from i+1
-            float fz_p = 0.5 * (
+            fz_p = 0.5 * (
                 fz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] +
                 fz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i] +
                 qz_plus_half[((z * ny + y) * nx + x) * vec_dim + i] -
@@ -1971,6 +1973,7 @@ __global__ void evolve_z_fluxes(float * F,
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 F[((z * ny + y) * nx + x)*vec_dim + i]
                 - alpha * (fz_p - fz_m) / dz;
+            //printf("z flux: %f\n", - alpha * (fz_p - fz_m) / dz);
 
             // hack?
             if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) {
@@ -1978,7 +1981,7 @@ __global__ void evolve_z_fluxes(float * F,
                 F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             }
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
-            //printf("F has nan'd: %f, fz_p: %f, fz_m: %f, old_F: %f\n", F[((z * ny + y) * nx + x)*vec_dim + i], fz_p, fz_m, old_F);
+            //printf("F: %f, fz_p: %f, fz_m: %f, old_F: %f, Fz: %f, alpha: %f, dz: %f\n", F[((z * ny + y) * nx + x)*vec_dim + i], fz_p, fz_m, old_F, - alpha * (fz_p - fz_m) / dz, alpha, dz);
         }
     }
 }

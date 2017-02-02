@@ -114,14 +114,18 @@ int main(int argc, char *argv[]) {
 
             //cout << tau[y * sea.nx + x] << ' ' << tau[(sea.ny + y) * sea.nx + x] << ' ' << tau[(2*sea.ny + y) * sea.nx + x] << ' ' << tau[(3*sea.ny + y) * sea.nx + x] << ' ' << tau[(4*sea.ny + y) * sea.nx + x] << '\n';
 
-            tau[(2*sea.ny + y) * sea.nx + x] += 0.1 * exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0); 
+
 
             for (int z = 0; z < sea.nlayers; z++) {
                 D0[(z * sea.ny + y) * sea.nx + x] = sea.rho[z];
                 Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
                 Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
                 Sz0[(z * sea.ny + y) * sea.nx + x] = 0.0;
+                float h = sea.zmin + (sea.nlayers - 1 - z) * (sea.zmax - sea.zmin) / (sea.nlayers - 1.0);
+                tau[(z * sea.ny + y) * sea.nx + x] = 0.75 + (h - sea.zmin) * (148.5 - 0.75) / 0.5;
             }
+
+            tau[(2*sea.ny + y) * sea.nx + x] += 10.0 * exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
         }
     }
 
