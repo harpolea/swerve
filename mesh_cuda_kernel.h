@@ -38,7 +38,7 @@ __device__ float find_height(float ph);
 
 __device__ float find_pot(float r);
 
-__device__ float rhoh_from_p(float p, float rho, float gamma);
+__device__ __host__ float rhoh_from_p(float p, float rho, float gamma);
 
 __device__ float p_from_rhoh(float rhoh, float rho, float gamma);
 
@@ -49,6 +49,8 @@ __device__ __host__ float phi_from_p(float p, float rho, float gamma, float A);
 __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
                                  float Sz, float tau, float gamma,
                                  float * gamma_up);
+
+float dpdr(float p, float rr, float rho);
 
 __device__ float h_dot(float phi, float old_phi, float dt);
 

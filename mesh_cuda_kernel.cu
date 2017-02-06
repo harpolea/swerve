@@ -6,6 +6,7 @@
 #include <helper_functions.h>
 #include "Mesh_cuda.h"
 #include "mesh_cuda_kernel.h"
+#include <math.h>
 
 using namespace std;
 
@@ -687,7 +688,7 @@ __device__ float find_pot(float r) {
     return -0.5 * log(1.0 - 2.0 * M / r);
 }
 
-__device__ float rhoh_from_p(float p, float rho, float gamma) {
+__device__ __host__ float rhoh_from_p(float p, float rho, float gamma) {
     // calculate rhoh using p for gamma law equation of state
     return rho + gamma * p / (gamma - 1.0);
 }
@@ -725,6 +726,13 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
     float eps = (sq - p * (tau + p + D) / sq - D) / D;
 
     return (gamma - 1.0) * rho * eps - p;
+}
+
+float dpdr(float p, float rr, float rho) {
+    float M = 47.5;
+    float r = 500 + rr;
+
+    return -(rho + p) * (M + 4 * M_PI * r*r*r * p) / ((1.0 - 2.0 * M / r) * r*r);
 }
 
 __device__ float h_dot(float phi, float old_phi, float dt) {
@@ -1518,7 +1526,6 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             z_index = int(round(dz_c * z / dz));
             z_frac = 1.0;
         }
-
 
         //printf("layer height: %f, z_index: %d, z_height: %f, z_frac: %f\n", zmin + dz_c * (nlayers-1-z), z_index, zmin + dz * (nz - 1 - z_index), z_frac);
 
@@ -2775,6 +2782,51 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 }
             }*/
 
+            // NOTE: hack to enforce TOV in tau
+            // TODO: hide this away in a function!
+            cons_to_prim_comp(Uf_h, Upf_h, nxf, nyf, nz, gamma, gamma_up);
+            for (int y = 0; y < nyf; y++) {
+                for (int x = 0; x < nxf; x++) {
+                    for (int z = ng-1; z >=0; z--) {
+                        float u = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+1];
+                        float v = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+2];
+                        float w = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+3];
+
+                        float h = zmin + (nz - 1 - (z+1)) * (zmax - zmin) / (nz - 1.0);
+                        float p = p_from_rho_eps(rho[z+1], Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+4], gamma);
+                        float dp_dr = dpdr(p, h, rho[z+1]);
+
+                        float new_p = p - dp_dr * dz;
+                        float W = 1.0 / sqrt(1.0 -
+                                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                        float new_tau = rhoh_from_p(new_p, rho[z], gamma)*W*W - p - rho[z]*W;
+
+                        Uf_h[(((z*nyf + y)*nxf)+x)*5+4] = new_tau;
+                    }
+                    for (int z = nz-1-ng; z < nz; z++) {
+                        float u = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+1];
+                        float v = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+2];
+                        float w = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+3];
+
+                        float h = zmin + (nz - 1 - (z-1)) * (zmax - zmin) / (nz - 1.0);
+                        float p = p_from_rho_eps(rho[z-1], Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+4], gamma);
+                        float dp_dr = dpdr(p, h, rho[z-1]);
+
+                        float new_p = p + dp_dr * dz;
+                        float W = 1.0 / sqrt(1.0 -
+                                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                        float new_tau = rhoh_from_p(new_p, rho[z], gamma)*W*W - p - rho[z]*W;
+
+                        Uf_h[(((z*nyf + y)*nxf)+x)*5+4] = new_tau;
+                    }
+                }
+            }
+
+
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
             err = cudaGetLastError();
@@ -2808,6 +2860,48 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 }*/
 
                 //cudaDeviceSynchronize();
+                // NOTE: hack to enforce TOV in tau
+                cons_to_prim_comp(Uf_h, Upf_h, nxf, nyf, nz, gamma, gamma_up);
+                for (int y = 0; y < nyf; y++) {
+                    for (int x = 0; x < nxf; x++) {
+                        for (int z = ng-1; z >=0; z--) {
+                            float u = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+1];
+                            float v = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+2];
+                            float w = Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+3];
+
+                            float h = zmin + (nz - 1 - (z+1)) * (zmax - zmin) / (nz - 1.0);
+                            float p = p_from_rho_eps(rho[0], Upf_h[((((z+1)*nyf + y)*nxf)+x)*5+4], gamma);
+                            float dp_dr = dpdr(p, h, rho[0]);
+
+                            float new_p = p - dp_dr * dz;
+                            float W = 1.0 / sqrt(1.0 -
+                                    u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                    2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                    2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                            float new_tau = rhoh_from_p(new_p, rho[0], gamma)*W*W - p - rho[0]*W;
+
+                            Uf_h[(((z*nyf + y)*nxf)+x)*5+4] = new_tau;
+                        }
+                        for (int z = nz-1-ng; z < nz; z++) {
+                            float u = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+1];
+                            float v = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+2];
+                            float w = Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+3];
+
+                            float h = zmin + (nz - 1 - (z-1)) * (zmax - zmin) / (nz - 1.0);
+                            float p = p_from_rho_eps(rho[0], Upf_h[((((z-1)*nyf + y)*nxf)+x)*5+4], gamma);
+                            float dp_dr = dpdr(p, h, rho[0]);
+
+                            float new_p = p + dp_dr * dz;
+                            float W = 1.0 / sqrt(1.0 -
+                                    u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                    2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                    2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                            float new_tau = rhoh_from_p(new_p, rho[0], gamma)*W*W - p - rho[0]*W;
+
+                            Uf_h[(((z*nyf + y)*nxf)+x)*5+4] = new_tau;
+                        }
+                    }
+                }
 
                 // copy to device
                 cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
@@ -2904,6 +2998,48 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cout << "Done coarse rk5\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
+
+            /*cons_to_prim_comp(Uc_h, Upc_h, nx, ny, nlayers, gamma, gamma_up);
+            for (int y = 0; y < ny; y++) {
+                for (int x = 0; x < nx; x++) {
+                    for (int z = ng-1; z >=0; z--) {
+                        float u = Upc_h[((((z+1)*ny + y)*nx)+x)*5+1];
+                        float v = Upc_h[((((z+1)*ny + y)*nx)+x)*5+2];
+                        float w = Upc_h[((((z+1)*ny + y)*nx)+x)*5+3];
+
+                        float h = zmin + (nlayers - 1 - (z+1)) * (zmax - zmin) / (nlayers - 1.0);
+                        float p = p_from_rho_eps(rho[0], Upc_h[((((z+1)*ny + y)*nx)+x)*5+4], gamma);
+                        float dp_dr = dpdr(p, h, rho[0]);
+
+                        float new_p = p - dp_dr * dz_c;
+                        float W = 1.0 / sqrt(1.0 -
+                                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                        float new_tau = rhoh_from_p(new_p, rho[0], gamma)*W*W - p - rho[0]*W;
+
+                        Uc_h[(((z*ny + y)*nx)+x)*5+4] = new_tau;
+                    }
+                    for (int z = nlayers-1-ng; z < nlayers; z++) {
+                        float u = Upc_h[((((z-1)*ny + y)*nx)+x)*5+1];
+                        float v = Upc_h[((((z-1)*ny + y)*nx)+x)*5+2];
+                        float w = Upc_h[((((z-1)*ny + y)*nx)+x)*5+3];
+
+                        float h = zmin + (nlayers - 1 - (z-1)) * (zmax - zmin) / (nlayers - 1.0);
+                        float p = p_from_rho_eps(rho[0], Upc_h[((((z-1)*ny + y)*nx)+x)*5+4], gamma);
+                        float dp_dr = dpdr(p, h, rho[0]);
+
+                        float new_p = p + dp_dr * dz_c;
+                        float W = 1.0 / sqrt(1.0 -
+                                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
+                                2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
+                                2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                        float new_tau = rhoh_from_p(new_p, rho[0], gamma)*W*W - p - rho[0]*W;
+
+                        Uc_h[(((z*ny + y)*nx)+x)*5+4] = new_tau;
+                    }
+                }
+            }*/
 
             cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*5*sizeof(float), cudaMemcpyHostToDevice);
 
