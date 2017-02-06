@@ -725,8 +725,8 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }
 
-__device__ void calc_As(float * rhos, float * ps, float * A,
-                        float p_floor, int nlayers, float gamma) {
+__device__ void calc_As(float * rhos, float * phis, float * A,
+                        int nlayers, float gamma) {
     // Calculates the As used to calculate the pressure given Phi, given
     // the pressure at the sea floor
     /*
@@ -738,21 +738,18 @@ __device__ void calc_As(float * rhos, float * ps, float * A,
         Vector of Phi for different layers
     A : float array
         vector of As for layers
-    phi_floor : float
-        Phi at sea floor
     nlayers : int
         number of layers
     gamma : float
         adiabatic index
     */
 
-    const float A_floor = 1.0;
+    // define A at sea surface using condition that p = 0
+    A[0] = rhos[0] * exp(-gamma * phis[0] / (gamma-1.0));
 
-    // define A at sea floor
-    A[nlayers-1] = A_floor;
-
-    for (int n = nlayers-2; n >= 0; n--) {
-        A[n] = A[n+1] * (gamma/(gamma-1.) * ps[n+1] + rhos[n]) / (gamma/(gamma-1.0) * ps[n+1] + 2.0 * rhos[n] - rhos[n+1]);
+    for (int n = 0; n < (nlayers-1); n++) {
+        A[n+1] = A[n] +
+            exp(-gamma * phis[n+1] / (gamma - 1.0)) * (rhos[n+1] - rhos[n]);
     }
 }
 
@@ -1118,7 +1115,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
             phis[i] = q[((i * ny + y) * nx + x) * 3];
         }
 
-        calc_As(rho, phis, A, p_floor, nz, gamma);
+        calc_As(rho, phis, A, nz, gamma);
 
         float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
         float rhoh = rhoh_from_p(p, rho[z], gamma);
@@ -1570,12 +1567,12 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     float ph;
 
     if ((x < nxf) && (y < nyf) && (z < nz)) {
-        float * A, * ps, *rhos;
+        float * A, * phis, *rhos;
         A = (float *)malloc(nz * sizeof(float));
-        ps = (float *)malloc(nz * sizeof(float));
+        phis = (float *)malloc(nz * sizeof(float));
         rhos = (float *)malloc(nz * sizeof(float));
         for (int i = 0; i < nz; i++) {
-            ps[i] = q_swe[((i * nyf + y) * nxf + x)*3];
+            phis[i] = q_swe[((i * nyf + y) * nxf + x)*3];
             if (sizeof(rho) > nz) {
                 // rho varies with position
                 rhos[i] = rho[(i * nyf + y) * nxf + x];
@@ -1583,14 +1580,14 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                 rhos[i] = rho[i];
             }
         }
-        calc_As(rhos, ps, A, p_floor, nz, gamma);
+        calc_As(rhos, phis, A, nz, gamma);
 
         // NOTE: hack to get this to not nan
         if (nan_check(A[z]) || A[z] < 0.0) A[z] = 1.0;
 
         ph = phi_from_p(p, q_prim[0], gamma, A[z]);
 
-        free(ps);
+        free(phis);
         free(A);
         free(rhos);
 
@@ -1640,7 +1637,8 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z < nlayers-1)) {
+    // note we're not going to restrict the top layer
+    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z > 0) && (z < nlayers-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
@@ -2167,12 +2165,12 @@ __global__ void evolve_z_fluxes(float * F,
 
             float old_F = F[((z * ny + y) * nx + x)*vec_dim + i];
             // NOTE: UNCOMMENT ME
-            //F[((z * ny + y) * nx + x)*vec_dim + i] =
-            //    F[((z * ny + y) * nx + x)*vec_dim + i]
-            //    - alpha * (fz_p - fz_m) / dz;
+            F[((z * ny + y) * nx + x)*vec_dim + i] =
+                F[((z * ny + y) * nx + x)*vec_dim + i]
+                - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
     }
@@ -3477,11 +3475,13 @@ __global__ void test_hdot(bool * passed) {
 }
 
 __global__ void test_calc_As(bool * passed) {
+    /*
+    TODO: FIX THIS TEST
+    */
     *passed = true;
 
     int nlayers = 2;
     float gamma = 5.0/3.0;
-    float p_floor = 1.0;
 
     float rhos[] = {1.0, 1.0,1.0,1.0, 1.0, 1.0e-3, 1.0, 1.0e-3, 1.0, 1.0e3};
     float ps[] = {1.0, 1.0, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0,1.0, 1.0, 1.0};
@@ -3500,7 +3500,7 @@ __global__ void test_calc_As(bool * passed) {
             rho[l] = rhos[i*nlayers+l];
             p[l] = ps[i*nlayers+l];
         }
-        calc_As(rho, p, A, p_floor, nlayers, gamma);
+        calc_As(rho, p, A, nlayers, gamma);
         if ((abs((As[i] - A[0]) / As[i]) > tol) && (abs(As[i] - A[0]) > 0.1*tol)) {
             printf("%f, %f\n", As[i], A[0]);
             *passed = false;

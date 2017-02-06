@@ -58,8 +58,8 @@ int main(int argc, char *argv[]) {
 
     for (int y = 0; y < sea.ny; y++) {
         for (int x = 0; x < sea.nx; x++) {
-            D0[y * sea.nx + x] = 1.0 - 0.1 *
-                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+            D0[y * sea.nx + x] = -0.5 * log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
+                //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
             D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
             D0[(2*sea.ny + y) * sea.nx + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);

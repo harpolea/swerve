@@ -52,8 +52,8 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
 
 __device__ float h_dot(float phi, float old_phi, float dt);
 
-__device__ void calc_As(float * rhos, float * ps, float * A,
-                        float p_floor, int nlayers, float gamma);
+__device__ void calc_As(float * rhos, float * phis, float * A,
+                        int nlayers, float gamma);
 
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
                        float gamma, float * gamma_up);

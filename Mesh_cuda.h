@@ -39,7 +39,9 @@ public:
     int nlayers;
     int ng;
 
+    float dz;
     float zmin;
+    float zmax;
     float *xs;
     float *ys;
     float *U_coarse;
@@ -55,7 +57,7 @@ private:
 
     float dx;
     float dy;
-    float dz;
+
     float dt;
     float df;
 
