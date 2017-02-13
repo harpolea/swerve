@@ -217,6 +217,12 @@ ifeq ($(SAMPLE_ENABLED),0)
 EXEC ?= @echo "[@]"
 endif
 
+# enable scorep
+#PREP ?= scorep
+#NVCC := $(PREP) nvcc
+#HOST_COMPILER := $(PREP) $(HOST_COMPILER)
+#export SCOREP_CUDA_ENABLE=yes
+
 ################################################################################
 
 # Target rules
@@ -291,7 +297,7 @@ run_mesh_cuda.o: run_mesh_cuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
 
 mesh_cuda_kernel.o: mesh_cuda_kernel.cu
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -g -o $@ -dc $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -g -o $@ -c $<
 
 mesh_link.o: mesh_cuda_kernel.o
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -g -o $@ -dlink $<

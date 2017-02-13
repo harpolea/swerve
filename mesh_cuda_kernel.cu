@@ -726,7 +726,7 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
 }
 
 __device__ void calc_As(float * rhos, float * phis, float * A,
-                        int nlayers, float gamma) {
+                        int nlayers, float gamma, float surface_phi, float surface_rho) {
     // Calculates the As used to calculate the pressure given Phi, given
     // the pressure at the sea floor
     /*
@@ -742,10 +742,16 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
         number of layers
     gamma : float
         adiabatic index
+    surface_phi : float
+        phi at surface
+    surface_rho : float
+        density at surface
     */
 
+
     // define A at sea surface using condition that p = 0
-    A[0] = rhos[0] * exp(-gamma * phis[0] / (gamma-1.0));
+    float A_surface = surface_rho * exp(-gamma * surface_phi / (gamma-1.0));
+    A[0] = A_surface + exp(-gamma * phis[0] / (gamma-1.0)) * (rhos[0] - surface_rho);
 
     for (int n = 0; n < (nlayers-1); n++) {
         A[n+1] = A[n] +
@@ -1115,7 +1121,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
             phis[i] = q[((i * ny + y) * nx + x) * 3];
         }
 
-        calc_As(rho, phis, A, nz, gamma);
+        calc_As(rho, phis, A, nz, gamma, phis[0], rho[0]);
 
         float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
         float rhoh = rhoh_from_p(p, rho[z], gamma);
@@ -1141,7 +1147,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
     }
 }
 
-__device__ float slope_limit(float layer_frac, float dx, float left, float middle, float right, float aleft, float amiddle, float aright) {
+__device__ float slope_limit(float layer_frac, float left, float middle, float right, float aleft, float amiddle, float aright) {
     // left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
     float S_upwind = (layer_frac * (right - middle) +
         (1.0 - layer_frac) * (aright - amiddle));
@@ -1493,11 +1499,12 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void swe_from_compressible(float * q, float * q_swe,
+                                      int nx, int ny,
                                       int nxf, int nyf, int nz,
                                       float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset,
-                                      float p_floor) {
+                                      float p_floor, float * qc, int * matching_indices) {
     /*
     Calculates the SWE state vector from the compressible variables.
 
@@ -1515,6 +1522,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         density and adiabatic index
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
+    qc : float *
+        coarse grid
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -1535,7 +1544,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     q_prim = (float *)malloc(5 * sizeof(float));
 
     if ((x < nxf) && (y < nyf) && (z < nz)) {
-
         for (int i = 0; i < 5; i++) {
             q_con[i] = q[offset*5 + i];
         }
@@ -1577,10 +1585,33 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                 // rho varies with position
                 rhos[i] = rho[(i * nyf + y) * nxf + x];
             } else {
-                rhos[i] = rho[i];
+                // HACK: rho is only nlayers long - need to find a way to define on fine grid too
+                rhos[i] = rho[0];
             }
         }
-        calc_As(rhos, phis, A, nz, gamma);
+
+        int c_x = round(x*0.5) + matching_indices[0];
+        int c_y = round(y*0.5) + matching_indices[2];
+        float interp_q_comp = qc[(c_y * nx + c_x) * 3];
+
+        float Sx = slope_limit(1.0, qc[(c_y * nx + c_x-1) * 3], qc[(c_y * nx + c_x) * 3], qc[(c_y * nx + c_x+1) * 3], 0.0, 0.0, 0.0);
+        float Sy = slope_limit(1.0, qc[((c_y-1) * nx + c_x) * 3], qc[(c_y * nx + c_x) * 3], qc[((c_y+1) * nx + c_x) * 3], 0.0, 0.0, 0.0);
+
+        float phi_surface = interp_q_comp;
+        if (x % 2 == 1) {
+            phi_surface += 0.25 * Sx;
+        } else {
+            phi_surface -= 0.25 * Sx;
+        }
+
+        if (y % 2 == 1) {
+            phi_surface += 0.25 * Sy;
+        } else {
+            phi_surface -= 0.25 * Sy;
+        }
+        // TODO; this will not work as this function uses fact p = 0 on
+        // surface layer, which is not true for compressible code
+        calc_As(rhos, phis, A, nz, gamma, phi_surface, rho[0]);
 
         // NOTE: hack to get this to not nan
         if (nan_check(A[z]) || A[z] < 0.0) A[z] = 1.0;
@@ -1785,7 +1816,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor);
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nx, ny, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor, q_cd, matching_indices);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -3500,7 +3531,7 @@ __global__ void test_calc_As(bool * passed) {
             rho[l] = rhos[i*nlayers+l];
             p[l] = ps[i*nlayers+l];
         }
-        calc_As(rho, p, A, nlayers, gamma);
+        calc_As(rho, p, A, nlayers, gamma, p[0], rho[0]);
         if ((abs((As[i] - A[0]) / As[i]) > tol) && (abs(As[i] - A[0]) > 0.1*tol)) {
             printf("%f, %f\n", As[i], A[0]);
             *passed = false;
