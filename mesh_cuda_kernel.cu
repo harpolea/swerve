@@ -477,7 +477,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     }
 
     // z boundaries
-    if (do_z) {
+    /*if (do_z) {
         for (int g = 0; g < ng; g++) {
             for (int y = 0; y < ny; y++) {
                 for (int x = 0; x < nx; x++) {
@@ -489,7 +489,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
                 }
             }
         }
-    }
+    }*/
 
     // interior cells between processes
 
@@ -790,6 +790,10 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
         f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma, gamma_up) > 0.0) {
         pmin = 0.0;
     }
+    if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma, gamma_up) *
+        f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma, gamma_up) > 0.0) {
+        pmax *= 10.0;
+    }
 
     float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, Sz,
                     tau, gamma, gamma_up);
@@ -799,6 +803,10 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     }
 
     float sq = sqrt(pow(tau + p + D, 2) - Ssq);
+    if (nan_check(sq)) {
+        //printf("\n\n\n sq is nan!!!! %f, %f, %f, %f, %f, %f\n\n\n", pow(tau + p + D, 2), p, Ssq, Sx, Sy, Sz);
+        sq = tau + p + D;
+    }
     float eps = (sq - p * (tau + p + D)/sq - D) / D;
     float h = 1.0 + gamma * eps;
     float W = sqrt(1.0 + Ssq / (D*D*h*h));
@@ -1669,7 +1677,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int z = threadIdx.z;
 
     // note we're not going to restrict the top layer
-    if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z > 0) && (z < nlayers-1)) {
+    if ((x > 1) && (x < int(round(nxf*0.5))-1) && (y > 1) && (y < int(round(nyf*0.5))-1) && (z > 1) && (z < nlayers-2)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
@@ -1756,7 +1764,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
 
         free(q_c_new);
-    } else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
+    } /*else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor
         int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
               x+matching_indices[0]) * 3;
         int z_index = nz-1;
@@ -1767,7 +1775,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                 qf_sw[((z_index * nyf + y*2+1) * nxf + x*2) * 3 + n] +
                 qf_sw[((z_index * nyf + y*2+1) * nxf + x*2+1) * 3 + n]);
         }
-    }
+    }*/
 }
 
 void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
@@ -1928,7 +1936,10 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         for (int i = 0; i < vec_dim; i++) {
             qx_minus_half[offset + i] = q_m[i];
             fx_minus_half[offset + i] = f[i];
+            //if (nan_check(q_p[i]) || nan_check(q_m[i]) || nan_check(fx_plus_half[offset + i]) || nan_check(fx_minus_half[offset + i])) printf("(%d, %d, %d) i: %d, qx_p: %f, qx_m: %f, fx_p: %f, fx_m: %f\n", x, y, z, i, q_p[i], q_m[i], fx_plus_half[offset + i], fx_minus_half[offset + i]);
         }
+
+
 
         // y-direction
         for (int i = 0; i < vec_dim; i++) {
@@ -1965,6 +1976,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         for (int i = 0; i < vec_dim; i++) {
             qy_minus_half[offset + i] = q_m[i];
             fy_minus_half[offset + i] = f[i];
+            //if (nan_check(q_p[i]) || nan_check(q_m[i])) printf("(%d, %d, %d) i: %d, qy_p: %f, qy_m: %f\n", x, y, z, i, q_p[i], q_m[i]);
         }
     }
 
@@ -2042,6 +2054,8 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         }
 
         // fluxes
+        //if (abs(q_p[1]) > 0.2 || abs(q_p[2]) > 0.2 || abs(q_p[3]) > 0.2)
+        //printf("(%d, %d, %d) Sx, Sy, Sz: (%f %f %f)\n", x, y, z, q_p[1], q_p[2], q_p[3]);
 
         flux_func(q_p, f, 2, gamma_up_d, alpha, beta_d, gamma);
 
@@ -2104,7 +2118,7 @@ __global__ void evolve_fv_fluxes(float * F,
     float fx_m, fx_p, fy_m, fy_p;
 
     // do fluxes
-    if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z < nz)) {
+    if ((x > 1) && (x < (nx-2)) && (y > 1) && (y < (ny-2)) && (z < nz)) {
         for (int i = 0; i < vec_dim; i++) {
             // x-boundary
             // from i-1
@@ -2140,7 +2154,10 @@ __global__ void evolve_fv_fluxes(float * F,
 
             // hack?
             //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) {
+                //printf("nan :( (%d, %d, %d) i: %d, fx_p: %f, fx_m: %f, fy_p: %f, fy_m: %f\n", x, y, z, i, fx_p, fx_m, fy_p, fy_m);
+                F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            }
         }
         //printf("fxm, fxp: %f, %f fym, fyp: %f, %f F(tau): %f\n", fx_m, fx_p, fy_m, fy_p, F[((z * ny + y) * nx + x)*vec_dim +4]);
     }
@@ -2195,14 +2212,14 @@ __global__ void evolve_z_fluxes(float * F,
                 qz_minus_half[(((z+1) * ny + y) * nx + x) * vec_dim + i]);
 
             float old_F = F[((z * ny + y) * nx + x)*vec_dim + i];
-            // NOTE: UNCOMMENT ME
+
             F[((z * ny + y) * nx + x)*vec_dim + i] =
                 F[((z * ny + y) * nx + x)*vec_dim + i]
                 - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
-            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
+            if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
     }
 }
@@ -2604,6 +2621,24 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
 
+    if (do_z) {
+        // HACK:
+        // going to do some hacky data sanitisation here
+        for (int x = 0; x < nx * ny * nz; x++) {
+            if (abs(Up_h[x*5]) > 1.0e2) {
+                Up_h[x*5] = 0.5;
+            }
+            if (abs(Up_h[x*5+4]) > 1.0e3 || Up_h[x*5+4] < 0.0) {
+                Up_h[x*5+4] = Up_h[x*5];
+            }
+            for (int i = 1; i < 4; i++) {
+                if (abs(Up_h[x*5+i]) > Up_h[x*5]) {
+                    Up_h[x*5+i] = 0.0;
+                }
+            }
+        }
+    }
+
     cudaMemcpy(Un_d, Up_h, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
     //cout << "\nu2\n\n\n";
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
@@ -2635,6 +2670,25 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
     }
+
+    if (do_z) {
+        // HACK:
+        // going to do some hacky data sanitisation here
+        for (int x = 0; x < nx * ny * nz; x++) {
+            if (abs(Up_h[x*5]) > 1.0e2) {
+                Up_h[x*5] = 0.5;
+            }
+            if (abs(Up_h[x*5+4]) > 1.0e3 || Up_h[x*5+4] < 0.0) {
+                Up_h[x*5+4] = Up_h[x*5];
+            }
+            for (int i = 1; i < 4; i++) {
+                if (abs(Up_h[x*5+i]) > Up_h[x*5]) {
+                    Up_h[x*5+i] = 0.0;
+                }
+            }
+        }
+    }
+
     cudaMemcpy(Un_d, Up_h, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyHostToDevice);
     //cout << "\nun+1\n\n\n";
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
@@ -2665,6 +2719,23 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes, y_size, do_z);
+    }
+
+    if (do_z) {
+        // HACK: going to do some hacky data sanitisation here
+        for (int x = 0; x < nx * ny * nz; x++) {
+            if (abs(Up_h[x*5]) > 1.0e2) {
+                Up_h[x*5] = 0.5;
+            }
+            if (abs(Up_h[x*5+4]) > 1.0e3 || Up_h[x*5+4] < 0.0) {
+                Up_h[x*5+4] = Up_h[x*5];
+            }
+            for (int i = 1; i < 4; i++) {
+                if (abs(Up_h[x*5+i]) > Up_h[x*5]) {
+                    Up_h[x*5+i] = 0.0;
+                }
+            }
+        }
     }
 
     for (int j = 0; j < nx*ny*nz*vec_dim; j++) {
@@ -2992,6 +3063,16 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 }
             }*/
 
+            // HACK:
+            // going to do some hacky data sanitisation here
+            /*for (int x = 0; x < nxf * nyf * nz; x++) {
+                for (int i = 1; i < 4; i++) {
+                    if (abs(Uf_h[x*5+i]) > Uf_h[x*5]) {
+                        Uf_h[x*5+i] = 0.0;
+                    }
+                }
+            }*/
+
             cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*5*sizeof(float), cudaMemcpyHostToDevice);
 
             err = cudaGetLastError();
@@ -3113,7 +3194,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            // NOTE: **ALL** the weirdness is happening within here only.
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
                 qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
@@ -3259,6 +3339,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                          Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
                          dt, zmin, gamma_up,
                          rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d, p_floor);
+
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
 
