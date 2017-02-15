@@ -48,6 +48,9 @@ bool test_cons_to_prim_comp_d_wrapper() {
 }
 
 bool test_swe_from_compressible() {
+    /*
+    TODO: FIX THIS TEST
+    */
     bool passed = true;
     float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
         0.0,  0.0,  0.0,  0.80999862};

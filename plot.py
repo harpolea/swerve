@@ -198,8 +198,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.clear()
         ax.set_xlim(0,10)
         ax.set_ylim(0,10)
-        ax.set_zlim(2.24,2.3)
-        for l in range(1,2):
+        #ax.set_zlim(2.24,2.3)
+        for l in range(0,1):
             ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
         plt.savefig(outname)
 
@@ -210,4 +210,4 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 if __name__ == '__main__':
     #quick_plot(filename="../../Documents/Work/swerve/mpi")
 
-    mesh_plot(filename="../../Documents/Work/swerve/mpi_mesh")
+    mesh_plot(filename="../../Documents/Work/swerve/mesh_buoyancy")

@@ -199,7 +199,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        flux_func_ptr h_flux_func, bool do_z);
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float p_floor, float mu, int nx, int ny, int nlayers,
+         float * rho, float * Q, float p_floor, float mu, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,

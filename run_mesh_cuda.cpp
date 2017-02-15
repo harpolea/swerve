@@ -14,9 +14,7 @@ using namespace std;
 
 /*
 Compile with 'make mesh'
-
 */
-
 
 int main(int argc, char *argv[]) {
 

@@ -24,9 +24,6 @@ using namespace std;
 /*
 Compile with 'make mesh'
 
-*/
-
-/*
 Implement Sea class
 */
 
@@ -127,7 +124,6 @@ void Sea::invert_mat(float * M, int m, int n) {
             B[i_max*n*2+i] = temp;
         }
 
-
         for (int i = k+1; i < m; i++) {
             float f = B[i*n*2+k] / B[k*n*2+k];
             for (int j = k+1; j < n*2; j++) {
@@ -155,7 +151,6 @@ void Sea::invert_mat(float * M, int m, int n) {
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
             M[i*n+j] = B[i*2*n+n+j];
-
         }
     }
 
@@ -386,12 +381,6 @@ Sea::Sea(char * filename)
     dt = 0.1 * min(dx, min(dy, dz));
 
     // find inverse of gamma
-    //float det = gamma_down[0] * gamma_down[1*2+1] -
-                //gamma_down[0*2+1] * gamma_down[1*2+0];
-    //gamma_up[0] = gamma_down[1*2+1] / det;
-    //gamma_up[0*2+1] = -gamma_down[0*2+1]/det;
-    //gamma_up[1*2+0] = -gamma_down[1*2+0]/det;
-    //gamma_up[1*2+1] = gamma_down[0*2+0]/det;
     for (int i = 0; i < 3*3; i++) {
         gamma_up[i] = gamma_down[i];
     }
@@ -578,7 +567,13 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /*
     run code
     */
-    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, p_floor, mu,
+    // hack for now
+    float * Qs = new float[nx*ny*nlayers];
+    for (int i = 0; i < nx * ny * nlayers; i++) {
+        Qs[i] = Q;
+    }
+
+    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, Qs, p_floor, mu,
              nx, ny, nlayers, nxf, nyf, nz, ng, nt,
              alpha, gamma, zmin, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 }
