@@ -95,11 +95,13 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 float * old_phi_d, float p_floor);
 
 __global__ void swe_from_compressible(float * q, float * q_swe,
+                                      int nx, int ny,
                                       int nxf, int nyf, int nz,
                                       float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset,
-                                      float p_floor);
+                                      float p_floor, float * qc,
+                                      int * matching_indices);
 
 __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                                    int nx, int ny, int nlayers,

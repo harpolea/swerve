@@ -748,7 +748,6 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
         density at surface
     */
 
-
     // define A at sea surface using condition that p = 0
     float A_surface = surface_rho * exp(-gamma * surface_phi / (gamma-1.0));
     A[0] = A_surface + exp(-gamma * phis[0] / (gamma-1.0)) * (rhos[0] - surface_rho);
@@ -1512,7 +1511,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset,
-                                      float p_floor, float * qc, int * matching_indices) {
+                                      float p_floor, float * qc,
+                                      int * matching_indices) {
     /*
     Calculates the SWE state vector from the compressible variables.
 
@@ -3595,24 +3595,24 @@ __global__ void test_calc_As(bool * passed) {
     int nlayers = 2;
     float gamma = 5.0/3.0;
 
-    float rhos[] = {1.0, 1.0,1.0,1.0, 1.0, 1.0e-3, 1.0, 1.0e-3, 1.0, 1.0e3};
-    float ps[] = {1.0, 1.0, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0,1.0, 1.0, 1.0};
-    float As[] = {1.0, 1.0, 0.5008743442, 0.7779506557, -3.515821195e-3};
+    float rhos[] = {1.0, 1.0,1.0,1.0, 1.0, 1.0e-3, 1.0, 1.0e-3, 1.0e-3, 1.0e3};
+    float phis[] = {1.0, 1.0, 1.0e-3, 1.0e-3, 1.0e-3, 1.0e-3, 1.0,1.0, 1.0, 1.0};
+    float As[] = {0.082085,  0.99750312, 9.97503122e-01, 8.20849986e-02, 8.20849986e-05};
 
-    float * A, *rho, *p;
+    float * A, *rho, *phi;
 
     A = (float *)malloc(nlayers * sizeof(float));
     rho = (float *)malloc(nlayers * sizeof(float));
-    p = (float *)malloc(nlayers * sizeof(float));
+    phi = (float *)malloc(nlayers * sizeof(float));
 
     const float tol = 1.0e-5;
 
     for (int i = 0; i < 5; i++) {
         for (int l = 0; l < nlayers; l++) {
             rho[l] = rhos[i*nlayers+l];
-            p[l] = ps[i*nlayers+l];
+            phi[l] = phis[i*nlayers+l];
         }
-        calc_As(rho, p, A, nlayers, gamma, p[0], rho[0]);
+        calc_As(rho, phi, A, nlayers, gamma, phi[0], rho[0]);
         if ((abs((As[i] - A[0]) / As[i]) > tol) && (abs(As[i] - A[0]) > 0.1*tol)) {
             printf("%f, %f\n", As[i], A[0]);
             *passed = false;
@@ -3620,7 +3620,7 @@ __global__ void test_calc_As(bool * passed) {
     }
     free(As);
     free(rho);
-    free(p);
+    free(phi);
 }
 
 __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <cmath>
 #include <limits>
 #include "Mesh_cuda.h"
@@ -165,6 +166,8 @@ Sea::Sea(char * filename)
 {
     /*
     Constructor for Sea class using inputs from file.
+
+    TODO: implement some data validation here to make sure that problem is initialised with valid parameters. Maybe do this as a separate
     */
 
     // open file
@@ -260,6 +263,106 @@ Sea::Sea(char * filename)
             strncpy(outfile, f.c_str(), sizeof(outfile));
             outfile[sizeof(outfile) - 1] = 0;
         }
+    }
+
+    // data validation
+    if (nx < 0 || nx > 1e5) {
+        printf("Invalid nx: %d\n", nx);
+        exit(EXIT_FAILURE);
+    }
+    if (ny < 0 || ny > 1e5) {
+        printf("Invalid ny: %d\n", ny);
+        exit(EXIT_FAILURE);
+    }
+    if (nz < 0 || nz > 1e5) {
+        printf("Invalid nz: %d\n", nz);
+        exit(EXIT_FAILURE);
+    }
+    if (nz < 0 || nz > 1e5) {
+        printf("Invalid nlayers: %d\n", nlayers);
+        exit(EXIT_FAILURE);
+    }
+    if (ng < 0 || ng > 1e2) {
+        printf("Invalid ng: %d\n", ng);
+        exit(EXIT_FAILURE);
+    }
+    if (nt < 0 || nt > 1e8) {
+        printf("Invalid nt: %d\n", nt);
+        exit(EXIT_FAILURE);
+    }
+    if (r < 0 || r > 1e2) {
+        printf("Invalid r: %d\n", r);
+        exit(EXIT_FAILURE);
+    }
+    if (df < 0.0 || df > 1.0) {
+        printf("Invalid df: %f\n", df);
+        exit(EXIT_FAILURE);
+    }
+    if (xmin < -1.0e5 || xmin > 1.0e5) {
+        printf("Invalid xmin: %f\n", xmin);
+        exit(EXIT_FAILURE);
+    }
+    if (xmax < -1.0e5 || xmax > 1.0e5 || xmax < xmin) {
+        printf("Invalid xmax: %f\n", xmax);
+        exit(EXIT_FAILURE);
+    }
+    if (ymin < -1.0e5 || ymin > 1.0e5) {
+        printf("Invalid ymin: %f\n", ymin);
+        exit(EXIT_FAILURE);
+    }
+    if (ymax < -1.0e5 || ymax > 1.0e5 || ymax < ymin) {
+        printf("Invalid ymax: %f\n", ymax);
+        exit(EXIT_FAILURE);
+    }
+    if (zmin < -1.0e5 || zmin > 1.0e5) {
+        printf("Invalid zmin: %f\n", zmin);
+        exit(EXIT_FAILURE);
+    }
+    if (zmax < -1.0e5 || zmax > 1.0e5 || zmax < zmin) {
+        printf("Invalid zmax: %f\n", zmax);
+        exit(EXIT_FAILURE);
+    }
+    for (int i = 0; i < nlayers; i++) {
+        if (rho[i] < 0 || rho[i] > 1.0e8) {
+            printf("Invalid rho[%d]: %f\n", i, rho[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (p_floor <  0.0 || p_floor > 1.0e8) {
+        printf("Invalid p_floor: %f\n", p_floor);
+        exit(EXIT_FAILURE);
+    }
+    if (Q < -1.0e8 || Q > 1.0e8) {
+        printf("Invalid Q: %f\n", Q);
+        exit(EXIT_FAILURE);
+    }
+    if (mu <  0.0 || mu > 1.0e8) {
+        printf("Invalid mu: %f\n", mu);
+        exit(EXIT_FAILURE);
+    }
+    if (gamma <  0.0 || gamma > 1.0e2) {
+        printf("Invalid gamma: %f\n", gamma);
+        exit(EXIT_FAILURE);
+    }
+    if (alpha <  0.0 || alpha > 1.0) {
+        printf("Invalid alpha: %f\n", alpha);
+        exit(EXIT_FAILURE);
+    }
+    for (int i = 0; i < 3; i++) {
+        if (beta[i] < -1.0 || beta[i] > 1.0) {
+            printf("Invalid beta[%d]: %f\n", i, beta[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    for (int i = 0; i < 3*3; i++) {
+        if (gamma_down[i] < -1.0e2 || gamma_down[i] > 1.0e2) {
+            printf("Invalid gamma_down[%d]: %f\n", i, gamma_down[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (dprint < 0 || dprint > 1e9) {
+        printf("Invalid dprint: %d\n", dprint);
+        exit(EXIT_FAILURE);
     }
 
     nxf = int(r * df * nx);
