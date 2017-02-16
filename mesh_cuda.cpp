@@ -497,6 +497,7 @@ void Sea::print_inputs() {
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dz, dt) \t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho[0] << ',' << rho[1]<< ',' << rho[2] << "\n";
+    cout << "Q \t\t\t" << Q << '\n';
     cout << "mu \t\t\t" << mu << '\n';
     cout << "alpha \t\t\t" << alpha << '\n';
     cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ',' << beta[2] << ")\n";
@@ -568,12 +569,14 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     run code
     */
     // hack for now
-    float * Qs = new float[nx*ny*nlayers];
-    for (int i = 0; i < nx * ny * nlayers; i++) {
+    float * Qs = new float[nlayers];
+    for (int i = 0; i < nlayers; i++) {
         Qs[i] = Q;
     }
 
     cuda_run(beta, gamma_up, U_coarse, U_fine, rho, Qs, p_floor, mu,
              nx, ny, nlayers, nxf, nyf, nz, ng, nt,
              alpha, gamma, zmin, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
+
+    delete[] Qs;
 }

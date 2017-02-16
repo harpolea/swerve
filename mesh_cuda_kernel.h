@@ -153,7 +153,7 @@ __global__ void evolve_z_fluxes(float * F,
                    int kx_offset, int ky_offset);
 
 __global__ void evolve_fv_heating(float * gamma_up_d,
-                    float * Un_d, float * Up, float * U_half,
+                    float * Up, float * U_half,
                     float * qx_plus_half, float * qx_minus_half,
                     float * qy_plus_half, float * qy_minus_half,
                     float * fx_plus_half, float * fx_minus_half,
@@ -165,10 +165,8 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                     bool burning,
                     int kx_offset, int ky_offset);
 
-__global__ void evolve2(float * gamma_up_d,
-                     float * Un_d, float * Up, float * U_half,
-                     float * sum_phs, float * rho_d, float * Q_d,
-                     float mu,
+__global__ void evolve2(float * Un_d, float * Up, float * U_half,
+                     float * sum_phs,
                      int nx, int ny, int nlayers, int ng, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset);
