@@ -21,22 +21,19 @@
 #include "H5Cpp.h"
 using namespace std;
 
-/*
-Compile with 'make mesh'
-
-Implement Sea class
-*/
-
 Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax,
-        float _zmin, float _zmax, float * _rho, float _p_floor,
+        float _zmin, float _zmax, float * _rho,
         float _Q, float _mu, float _gamma,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), p_floor(_p_floor), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), mu(_mu), gamma(_gamma), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
+    /**
+    Implement Sea class
+    */
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
         xs[i] = xmin + (i-ng) * (xmax - xmin) / (nx-2*ng);
@@ -71,12 +68,6 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     }
     Sea::invert_mat(gamma_up, 3, 3);
 
-    //float det = gamma_down[0] * gamma_down[1*3+1] - gamma_down[0*3+1] * gamma_down[1*3+0];
-    //gamma_up[0] = gamma_down[1*3+1] / det;
-    //gamma_up[0*3+1] = -gamma_down[0*3+1]/det;
-    //gamma_up[1*3+0] = -gamma_down[1*3+0]/det;
-    //gamma_up[1*3+1] = gamma_down[0*3+0]/det;
-
     nxf = int(r * df * nx);
     nyf = int(r * df * ny);
 
@@ -95,7 +86,9 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
 }
 
 void Sea::invert_mat(float * M, int m, int n) {
-    // invert the m x n matrix A in place using Gaussian elimination
+    /**
+    Invert the m x n matrix M in place using Gaussian elimination
+    */
     float * B = new float[m*n*2];
     // initialise augmented matrix
     for (int i = 0; i < m; i++) {
@@ -159,10 +152,9 @@ void Sea::invert_mat(float * M, int m, int n) {
 
 Sea::Sea(char * filename)
 {
-    /*
+    /**
     Constructor for Sea class using inputs from file.
-
-    TODO: implement some data validation here to make sure that problem is initialised with valid parameters. Maybe do this as a separate
+    Data is validated: an error will be thrown and the program terminated if any of the inputs are found to be invalid.
     */
 
     // open file
@@ -215,8 +207,6 @@ Sea::Sea(char * filename)
             for (int i = 0; i < nlayers; i++) {
                 inputFile >> rho[i];
             }
-        } else if (variableName == "p_floor") {
-            inputFile >> p_floor;
         } else if (variableName == "Q") {
             inputFile >> Q;
         } else if (variableName == "mu") {
@@ -323,10 +313,6 @@ Sea::Sea(char * filename)
             exit(EXIT_FAILURE);
         }
     }
-    if (p_floor <  0.0 || p_floor > 1.0e8) {
-        printf("Invalid p_floor: %f\n", p_floor);
-        exit(EXIT_FAILURE);
-    }
     if (Q < -1.0e8 || Q > 1.0e8) {
         printf("Invalid Q: %f\n", Q);
         exit(EXIT_FAILURE);
@@ -404,7 +390,6 @@ Sea::Sea(char * filename)
 
     cout << "Matching indices: " << matching_indices[0] << ',' << matching_indices[1] << ',' << matching_indices[2] << ',' << matching_indices[3] << '\n';
 
-
     cout << "matching_indices vs nxf: " <<
         matching_indices[1] - matching_indices[0] << ',' << nxf << '\n';
     cout << "Made a Sea.\n";
@@ -412,8 +397,11 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), p_floor(seaToCopy.p_floor), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), mu(seaToCopy.mu), gamma(seaToCopy.gamma), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
+    /**
+    copy constructor
+    */
 
     xs = new float[nx];
     for (int i = 0; i < nx; i++) {
@@ -459,8 +447,10 @@ Sea::Sea(const Sea &seaToCopy)
     }
 }
 
-// deconstructor
 Sea::~Sea() {
+    /**
+    deconstructor
+    */
     delete[] xs;
     delete[] ys;
     delete[] rho;
@@ -469,9 +459,8 @@ Sea::~Sea() {
     delete[] U_fine;
 }
 
-// set the initial data
 void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
-    /*
+    /**
     Initialise D, Sx, Sy and Q.
     */
     for (int i = 0; i < nx*ny*nlayers; i++) {
@@ -486,10 +475,9 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
 }
 
 void Sea::print_inputs() {
-    /*
+    /**
     Print some input and runtime parameters to screen.
     */
-
     cout << "\nINPUT DATA\n" << "----------\n";
     cout << "(nx, ny, nlayers, ng) \t(" << nx << ',' << ny << ',' << nlayers << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
@@ -507,7 +495,7 @@ void Sea::print_inputs() {
 }
 
 void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
-    /*
+    /**
     Enforce boundary conditions on grid of quantities with dimension vec_dim.
     */
 
@@ -565,7 +553,7 @@ void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
 }
 
 void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
-    /*
+    /**
     run code
     */
     // hack for now
@@ -574,7 +562,7 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
         Qs[i] = Q;
     }
 
-    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, Qs, p_floor, mu,
+    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, Qs, mu,
              nx, ny, nlayers, nxf, nyf, nz, ng, nt,
              alpha, gamma, zmin, dx, dy, dz, dt, burning, dprint, outfile, comm, *status, rank, size, matching_indices);
 

@@ -33,7 +33,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
              const float tol,
              float D, float Sx, float Sy, float Sz, float tau, float gamma,
              float * gamma_up) {
-    /*
+    /**
     Using Brent's method, return the root of a function or functor func known
     to lie between x1 and x2. The root will be regined until its accuracy is
     tol.
@@ -159,7 +159,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
 }
 
 void check_mpi_error(int mpi_err) {
-    /*
+    /**
     Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
     */
 
@@ -183,12 +183,12 @@ void check_mpi_error(int mpi_err) {
 }
 
 void getNumKernels(int nx, int ny, int nz, int ng, int n_processes, int *maxBlocks, int *maxThreads, dim3 * kernels, int * cumulative_kernels) {
-    /*
+    /**
     Return the number of kernels needed to run the problem given its size and the constraints of the GPU.
 
     Parameters
     ----------
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of problem
     ng : int
         number of ghost cells
@@ -254,12 +254,12 @@ void getNumKernels(int nx, int ny, int nz, int ng, int n_processes, int *maxBloc
 
 void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int maxThreads, int n_processes, dim3 *kernels, dim3 *blocks, dim3 *threads)
 {
-    /*
+    /**
     Returns the number of blocks and threads required for each kernel given the size of the problem and the constraints of the device.
 
     Parameters
     ----------
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of problem
     ng : int
         number of ghost cells
@@ -391,14 +391,14 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks, int m
 }
 
 void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
-    /*
+    /**
     Enforce boundary conditions on section of grid.
 
     Parameters
     ----------
     grid : float *
         grid of data
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of grid
     ng : int
         number of ghost cells
@@ -435,7 +435,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
              MPI_Comm comm, MPI_Status status, int rank, int n_processes,
              int y_size, bool do_z) {
-    /*
+    /**
     Enforce boundary conditions across processes / at edges of grid.
 
     Loops have been ordered in a way so as to try and keep memory accesses as contiguous as possible.
@@ -446,7 +446,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     ----------
     grid : float *
         grid of data
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of grid
     vec_dim : int
         dimension of state vector
@@ -648,14 +648,18 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
 }
 
 __host__ __device__ float W_swe(float * q, float * gamma_up) {
-    // calculate Lorentz factor for conserved swe state vector
+    /**
+    calculate Lorentz factor for conserved swe state vector
+    */
     return sqrt((q[1]*q[1] * gamma_up[0] +
             2.0 * q[1] * q[2] * gamma_up[1] +
             q[2] * q[2] * gamma_up[4]) / (q[0]*q[0]) + 1.0);
 }
 
 __host__ __device__ float phi(float r) {
-    // calculate superbee slope limiter Phi(r)
+    /**
+    calculate superbee slope limiter Phi(r)
+    */
     float ph = 0.0;
     if (r >= 1.0) {
         ph = min(float(2.0), min(r, float(2.0 / (1.0 + r))));
@@ -668,7 +672,7 @@ __host__ __device__ float phi(float r) {
 }
 
 __device__ float find_height(float ph) {
-    /*
+    /**
     Finds r given Phi.
     */
     const float M = 1.0; // set this for convenience
@@ -676,7 +680,7 @@ __device__ float find_height(float ph) {
 }
 
 __device__ float find_pot(float r) {
-    /*
+    /**
     Finds Phi given r.
     */
     const float M = 1.0; // set this for convenience
@@ -684,23 +688,40 @@ __device__ float find_pot(float r) {
 }
 
 __device__ float rhoh_from_p(float p, float rho, float gamma) {
-    // calculate rhoh using p for gamma law equation of state
+    /**
+    calculate rhoh using p for gamma law equation of state
+    */
     return rho + gamma * p / (gamma - 1.0);
 }
 
 __device__ float p_from_rhoh(float rhoh, float rho, float gamma) {
-    // calculate p using rhoh for gamma law equation of state
+    /**
+    calculate p using rhoh for gamma law equation of state
+    */
     return (rhoh - rho) * (gamma - 1.0) / gamma;
 }
 
 __device__ __host__ float p_from_rho_eps(float rho, float eps, float gamma) {
-    // calculate p using rho and epsilon for gamma law equation of state
+    /**
+    calculate p using rho and epsilon for gamma law equation of state
+    */
     return (gamma - 1.0) * rho * eps;
 }
 
 __device__ __host__ float phi_from_p(float p, float rho, float gamma, float A) {
-    // calculate the metric potential Phi given p for gamma law equation of
-    // state
+    /**
+    Calculate the metric potential Phi given p for gamma law equation of
+    state
+
+    Parameters
+    ----------
+    p, rho : float
+        pressure and density
+    gamma : float
+        adiabatic index
+    A : float
+        constant used in Phi to p conversion
+    */
     return (gamma - 1.0) / gamma *
         log((rho + gamma * p / (gamma - 1.0)) / A);
 }
@@ -708,8 +729,21 @@ __device__ __host__ float phi_from_p(float p, float rho, float gamma, float A) {
 __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
                                  float Sz, float tau, float gamma,
                                  float * gamma_up) {
-    // function of p whose root is to be found when doing conserved to
-    // primitive variable conversion
+    /**
+    Function of p whose root is to be found when doing conserved to
+    primitive variable conversion
+
+    Parameters
+    ----------
+    p : float
+        pressure
+    D, Sx, Sy, Sz, tau :float
+        components of conserved state vector
+    gamma : float
+        adiabatic index
+    gamma_up : float *
+        spatial metric
+    */
 
     float sq = sqrt(pow(tau + p + D, 2) -
         Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - 2.0*Sx*Sz*gamma_up[2] -
@@ -724,10 +758,21 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
 }
 
 __device__ float h_dot(float phi, float old_phi, float dt) {
-    // Calculates the time derivative of the height given the shallow water
-    // variable phi at current time and previous timestep
-    // NOTE: this is an upwinded approximation of hdot - there may be a better
-    // way to do this which will more accurately give hdot at current time.
+    /**
+    Calculates the time derivative of the height given the shallow water
+    variable phi at current time and previous timestep
+    NOTE: this is an upwinded approximation of hdot - there may be a better
+    way to do this which will more accurately give hdot at current time.
+
+    Parameters
+    ----------
+    phi : float
+        Phi at current timestep
+    old_phi : float
+        Phi at previous timestep
+    dt : float
+        timestep
+    */
 
     float h = find_height(phi);
     //float old_h = ight(old_phi);
@@ -737,9 +782,10 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
 
 __device__ void calc_As(float * rhos, float * phis, float * A,
                         int nlayers, float gamma, float surface_phi, float surface_rho) {
-    // Calculates the As used to calculate the pressure given Phi, given
-    // the pressure at the sea floor
-    /*
+    /**
+    Calculates the As used to calculate the pressure given Phi, given
+    the pressure at the sea floor
+
     Parameters
     ----------
     rhos : float array
@@ -753,7 +799,7 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
     gamma : float
         adiabatic index
     surface_phi : float
-        phi at surface
+        Phi at surface
     surface_rho : float
         density at surface
     */
@@ -770,7 +816,20 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
 
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
                        float gamma, float * gamma_up) {
-    // convert compressible conserved variables to primitive variables
+    /**
+    Convert compressible conserved variables to primitive variables
+
+    Parameters
+    ----------
+    q_cons : float *
+        state vector of conserved variables
+    q_prim : float *
+        state vector of primitive variables
+    gamma : float
+        adiabatic index
+    gamma_up : float *
+        spatial metric
+    */
 
     const float TOL = 1.0e-5;
     float D = q_cons[0];
@@ -830,7 +889,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
                        int nz,
                        float gamma, float * gamma_up) {
-    /*
+    /**
     Convert compressible conserved variables to primitive variables
 
     Parameters
@@ -839,12 +898,12 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
         grid of conserved variables
     q_prim : float *
         grid where shall put the primitive variables
-    nxf, nyf : int
+    nxf, nyf, nz : int
         grid dimensions
     gamma : float
         adiabatic index
     gamma_up : float *
-        spatial metric
+        contravariant spatial metric
     */
 
     const float TOL = 1.e-5;
@@ -902,7 +961,7 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
 __device__ void shallow_water_fluxes(float * q, float * f, int dir,
                           float * gamma_up, float alpha, float * beta,
                           float gamma) {
-    /*
+    /**
     Calculate the flux vector of the shallow water equations
 
     Parameters
@@ -955,7 +1014,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
 __device__ void compressible_fluxes(float * q, float * f, int dir,
                          float * gamma_up, float alpha, float * beta,
                          float gamma) {
-    /*
+    /**
     Calculate the flux vector of the compressible GR hydrodynamics equations
 
     Parameters
@@ -1023,7 +1082,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
 
 void p_from_swe(float * q, float * p, int nx, int ny, int nz,
                  float * gamma_up, float rho, float gamma, float A) {
-    /*
+    /**
     Calculate p using SWE conserved variables
 
     Parameters
@@ -1032,7 +1091,7 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
         state vector
     p : float *
         grid where pressure shall be stored
-    nx, ny : int
+    nx, ny, nz : int
         grid dimensions
     gamma_up : float *
         spatial metric
@@ -1040,6 +1099,8 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
         density
     gamma : float
         adiabatic index
+    A : float
+        variable required in p(Phi) calculation
     */
 
     for (int i = 0; i < nx*ny*nz; i++) {
@@ -1054,7 +1115,7 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
 
 __device__ float p_from_swe(float * q, float * gamma_up, float rho,
                             float gamma, float W, float A) {
-    /*
+    /**
     Calculates p and returns using SWE conserved variables
 
     Parameters
@@ -1069,6 +1130,8 @@ __device__ float p_from_swe(float * q, float * gamma_up, float rho,
         adiabatic index
     W : float
         Lorentz factor
+    A : float
+        variable required in p(Phi) calculation
     */
 
     float ph = q[0] / W;
@@ -1081,8 +1144,8 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                            int nx, int ny, int nz,
                            float * gamma_up, float * rho, float gamma,
                            int kx_offset, int ky_offset, float dt,
-                           float * old_phi, float p_floor) {
-    /*
+                           float * old_phi) {
+    /**
     Calculates the compressible state vector from the SWE variables.
 
     Parameters
@@ -1091,7 +1154,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         grid of SWE state vector
     q_comp : float *
         grid where compressible state vector to be stored
-    nx, ny : int
+    nx, ny, nz : int
         grid dimensions
     gamma_up : float *
         spatial metric
@@ -1099,6 +1162,10 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         density and adiabatic index
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
+    dt : float
+        timestep
+    old_phi : float *
+        Phi at previous timestep
     */
 
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
@@ -1165,7 +1232,10 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
 }
 
 __device__ float slope_limit(float layer_frac, float left, float middle, float right, float aleft, float amiddle, float aright) {
-    // left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
+    /**
+    Calculates slope limited verticle gradient at layer_frac between middle and amiddle.
+    Left, middle and right are from row n, aleft, amiddle and aright are from row above it (n-1)
+    */
     float S_upwind = (layer_frac * (right - middle) +
         (1.0 - layer_frac) * (aright - amiddle));
     float S_downwind = (layer_frac * (middle - left)
@@ -1185,7 +1255,7 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz, float dx, float dy, float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
                     int kx_offset, int ky_offset) {
-    /*
+    /**
     Reconstruct fine grid variables from compressible variables on coarse grid
 
     Parameters
@@ -1204,6 +1274,8 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         coarse grid spacings
     matching_indices_d : int *
         position of fine grid wrt coarse grid
+    gamma_up : float *
+        spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
     */
@@ -1360,8 +1432,8 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   float dx, float dy, float dz, float dt, float zmin,
                   float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
-                  float * old_phi_d, float p_floor) {
-    /*
+                  float * old_phi_d) {
+    /**
     Prolong coarse grid data to fine grid
 
     Parameters
@@ -1372,12 +1444,16 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         cumulative number of kernels in mpi processes of r < rank
     q_cd, q_fd : float *
         coarse and fine grids of state vectors
-    nx, ny : int
+    nx, ny, nlayers : int
         dimensions of coarse grid
-    nxf, nyf : int
+    nxf, nyf, nz : int
         dimensions of fine grid
-    dx, dy : float
+    dx, dy, dz : float
         coarse grid cell spacings
+    dt : float
+        timestep
+    zmin : float
+        height of sea floor
     gamma_up_d : float *
         spatial metric
     rho, gamma : float
@@ -1390,6 +1466,8 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         rank of MPI process
     qc_comp : float *
         grid of compressible variables on coarse grid
+    old_phi_d : float *
+        Phi at previous timstep
     */
 
     int kx_offset = 0;
@@ -1403,7 +1481,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, p_floor);
+            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -1432,9 +1510,9 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset,
-                                      float p_floor, float * qc,
+                                      float * qc,
                                       int * matching_indices) {
-    /*
+    /**
     Calculates the SWE state vector from the compressible variables.
 
     Parameters
@@ -1443,7 +1521,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         grid of compressible state vector
     q_swe : float *
         grid where SWE state vector to be stored
-    nxf, nyf : int
+    nxf, nyf, nz : int
         grid dimensions
     gamma_up : float *
         spatial metric
@@ -1453,6 +1531,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         kernel offsets in the x and y directions
     qc : float *
         coarse grid
+    matching_indices : int *
+        indices of fine grid wrt coarse grid
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
@@ -1574,7 +1654,7 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                                      float * gamma_up,
                                      int kx_offset, int ky_offset) {
 
-    /*
+    /**
     Interpolate SWE variables on fine grid to get them on coarse grid.
 
     Parameters
@@ -1583,12 +1663,14 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         SWE variables on fine grid
     q_c : float *
         coarse grid state vector
-    nx, ny : int
+    nx, ny, nlayers : int
         coarse grid dimensions
-    nxf, nyf : int
+    nxf, nyf, nz : int
         fine grid dimensions
     matching_indices : int *
         position of fine grid wrt coarse grid
+    gamma_up : float *
+        spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
     */
@@ -1612,13 +1694,11 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         float W = W_swe(q_c_new, gamma_up);
         float r = find_height(q_c[coarse_index] / W);
         float height_guess = find_height(q_c[coarse_index] / W);
-        //float r = find_height(q_c[coarse_index] / W);
 
         int z_index = nz;
         float z_frac = 0.0;
 
         if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
-            //printf("hi :/\n");
             z_index = 1;
             float height = zmin + (nz - 1 - 1) * dz;
             z_frac = -(height_guess - (height+dz)) / dz;
@@ -1634,7 +1714,6 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             }
 
             if (z_index == nz) {
-                //printf("oops..\n");
                 z_index = nz - 1;
                 z_frac = 1.0;
             }
@@ -1704,8 +1783,8 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int nx, int ny, int nlayers, int nxf, int nyf, int nz,
                     float dz, float zmin, int * matching_indices,
                     float * rho, float gamma, float * gamma_up,
-                    int ng, int rank, float * qf_swe, float p_floor) {
-    /*
+                    int ng, int rank, float * qf_swe) {
+    /**
     Restrict fine grid data to coarse grid
 
     Parameters
@@ -1745,7 +1824,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nx, ny, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, p_floor, q_cd, matching_indices);
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nx, ny, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1778,7 +1857,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nz, int vec_dim, float alpha, float gamma,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     First part of evolution through one timestep using finite volume methods.
     Reconstructs state vector to cell boundaries using slope limiter
     and calculates fluxes there.
@@ -1793,6 +1872,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer
+    flux_func : flux_func_ptr
+        pointer to function to be used to calulate fluxes
     qx_plus_half, qx_minus_half : float *
         state vector reconstructed at right and left boundaries
     qy_plus_half, qy_minus_half : float *
@@ -1803,8 +1884,10 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         flux vector at top and bottom boundaries
     nx, ny, nz : int
         dimensions of grid
-    alpha : float
-        lapse function
+    alpha, gamma : float
+        lapse function and adiabatic index
+    dx, dy, dt : float
+        grid dimensions and timestep
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -1844,7 +1927,6 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         }
 
         // fluxes
-
         flux_func(q_p, f, 0, gamma_up_d, alpha, beta_d, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
@@ -1911,7 +1993,7 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
                      int nx, int ny, int nz, int vec_dim, float alpha, float gamma,
                      float dz, float dt,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     First part of evolution through one timestep using finite volume methods.
     Reconstructs state vector to cell boundaries using slope limiter
     and calculates fluxes there.
@@ -1926,14 +2008,20 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer
+    flux_func : flux_func_ptr
+        pointer to function to be used to calculate fluxes
     qz_plus_half, qz_minus_half : float *
         state vector reconstructed at top and bottom boundaries
     fz_plus_half, fz_minus_half : float *
         flux vector at top and bottom boundaries
     nx, ny, nz : int
         dimensions of grid
-    alpha : float
-        lapse function
+    vec_dim : int
+        dimension of state vector
+    alpha, gamma : float
+        lapse function and adiabatic index
+    dz, dt : float
+        vertical grid spacing and timestep
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -1973,9 +2061,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         }
 
         // fluxes
-        //if (abs(q_p[1]) > 0.2 || abs(q_p[2]) > 0.2 || abs(q_p[3]) > 0.2)
-        //printf("(%d, %d, %d) Sx, Sy, Sz: (%f %f %f)\n", x, y, z, q_p[1], q_p[2], q_p[3]);
-
         flux_func(q_p, f, 2, gamma_up_d, alpha, beta_d, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
@@ -1990,7 +2075,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
             fz_minus_half[offset + i] = f[i];
         }
     }
-
     free(q_p);
     free(q_m);
     free(f);
@@ -2005,7 +2089,7 @@ __global__ void evolve_fv_fluxes(float * F,
                      int nx, int ny, int nz, int vec_dim, float alpha,
                      float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     Calculates fluxes in finite volume evolution by solving the Riemann
     problem at the cell boundaries.
 
@@ -2021,8 +2105,10 @@ __global__ void evolve_fv_fluxes(float * F,
         flux vector at right and left boundaries
     fy_plus_half, fy_minus_half : float *
         flux vector at top and bottom boundaries
-    nx, ny, nlayers : int
+    nx, ny, nz : int
         dimensions of grid
+    vec_dim : int
+        dimension of state vector
     alpha : float
         lapse function
     dx, dy, dt : float
@@ -2072,7 +2158,6 @@ __global__ void evolve_fv_fluxes(float * F,
                 -alpha * ((fx_p - fx_m)/dx + (fy_p - fy_m)/dy);
 
             // hack?
-            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e6) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) {
                 //printf("nan :( (%d, %d, %d) i: %d, fx_p: %f, fx_m: %f, fy_p: %f, fy_m: %f\n", x, y, z, i, fx_p, fx_m, fy_p, fy_m);
                 F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
@@ -2088,7 +2173,7 @@ __global__ void evolve_z_fluxes(float * F,
                      int nx, int ny, int nz, int vec_dim, float alpha,
                      float dz, float dt,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     Calculates fluxes in finite volume evolution by solving the Riemann
     problem at the cell boundaries in z direction.
 
@@ -2102,6 +2187,8 @@ __global__ void evolve_z_fluxes(float * F,
         flux vector at top and bottom boundaries
     nx, ny, nz : int
         dimensions of grid
+    vec_dim : int
+        dimension of state vector
     alpha : float
         lapse function
     dz, dt : float
@@ -2137,7 +2224,6 @@ __global__ void evolve_z_fluxes(float * F,
                 - alpha * (fz_p - fz_m) / dz;
 
             // hack?
-            //if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i]) || abs(F[((z * ny + y) * nx + x)*vec_dim + i]) > 1.0e4) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
             if (nan_check(F[((z * ny + y) * nx + x)*vec_dim + i])) F[((z * ny + y) * nx + x)*vec_dim + i] = old_F;
         }
     }
@@ -2155,15 +2241,13 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                      float dx, float dy, float dt,
                      bool burning,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     Does the heating part of the evolution.
 
     Parameters
     ----------
     gamma_up_d : float *
         gamma matrix at each grid point
-    Un_d : float *
-        state vector at each grid point in each layer at current timestep
     Up : float *
         state vector at next timestep
     U_half : float *
@@ -2181,7 +2265,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
     rho_d : float *
         list of densities in different layers
     Q_d : float *
-        heating rate at each grid point in each layer
+        heating rate in each layer
     mu : float
         friction
     nx, ny, nlayers : int
@@ -2230,25 +2314,19 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         float deltaQy = 0.0;
 
         if (z < (nlayers - 1)) {
-            //sum_qs += (Q_d[((z + 1) * ny + y) * nx + x] - Q_d[offset]);
             sum_qs += (Q_d[z + 1] - Q_d[z]);
-            //deltaQx = (Q_d[offset] + mu) *
             deltaQx = (Q_d[z] + mu) *
                 (U_half[offset*3+1] - U_half[(((z + 1) * ny + y) * nx + x)*3+1]) /
                 (W * U_half[offset*3]);
-            //deltaQy = (Q_d[offset] + mu) *
             deltaQy = (Q_d[z] + mu) *
                 (U_half[offset*3+2] - U_half[(((z + 1) * ny + y) * nx + x)*3+2]) /
                 (W * U_half[offset*3]);
         }
         if (z > 0) {
-            //sum_qs += -rho_d[z-1] / rho_d[z] * (Q_d[offset] - Q_d[((z - 1) * ny + y) * nx + x]);
             sum_qs += -rho_d[z-1] / rho_d[z] * (Q_d[z] - Q_d[z - 1]);
-            //deltaQx = rho_d[z-1] / rho_d[z] * (Q_d[offset] + mu) *
             deltaQx = rho_d[z-1] / rho_d[z] * (Q_d[z] + mu) *
                 (U_half[offset*3+1] - U_half[(((z - 1) * ny + y) * nx + x)*3+1]) /
                  (W * U_half[offset*3]);
-            //deltaQy = rho_d[z-1] / rho_d[z] * (Q_d[offset] + mu) *
             deltaQy = rho_d[z-1] / rho_d[z] * (Q_d[z] + mu) *
                 (U_half[offset*3+2] - U_half[(((z - 1) * ny + y) * nx + x)*3+2]) /
                  (W * U_half[offset*3]);
@@ -2279,13 +2357,11 @@ __global__ void evolve2(float * Un_d, float * Up, float * U_half,
                      float * sum_phs, int nx, int ny, int nlayers, int ng,
                      float alpha, float dx, float dy, float dt,
                      int kx_offset, int ky_offset) {
-    /*
+    /**
     Adds buoyancy terms.
 
     Parameters
     ----------
-    gamma_up_d : float *
-        gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer at current timestep
     Up : float *
@@ -2294,12 +2370,6 @@ __global__ void evolve2(float * Un_d, float * Up, float * U_half,
         state vector at half timestep
     sum_phs : float *
         sum of Phi in different layers
-    rho_d : float *
-        list of densities in different layers
-    Q_d : float *
-        heating rate at each grid point in each layer
-    mu : float
-        friction
     nx, ny, nlayers : int
         dimensions of grid
     ng : int
@@ -2331,11 +2401,6 @@ __global__ void evolve2(float * Un_d, float * Up, float * U_half,
         }
 
         a *= dt * alpha * U_half[offset*3] * 0.5 * phi(r);
-
-        //float a = dt * alpha * U_half[offset*3] * (0.5 / dx) *
-            //(sum_phs[(z * ny + y) * nx + x+1] -
-            //sum_phs[(z * ny + y) * nx + x-1]);
-
         if (abs(a) < 0.9 * dx / dt) {
             Up[offset*3+1] -= a;
         }
@@ -2351,10 +2416,6 @@ __global__ void evolve2(float * Un_d, float * Up, float * U_half,
         }
 
         a *= dt * alpha * U_half[offset*3] * 0.5 * phi(r);
-
-        //a = dt * alpha * U_half[offset*3] * (0.5 / dy) *
-        //    (sum_phs[(z * ny + y+1) * nx + x] -
-        //     sum_phs[(z * ny + y-1) * nx + x]);
 
         if (abs(a) < 0.9 * dy / dt) {
             Up[offset*3+2] -= a;
@@ -2377,13 +2438,15 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
        int nx, int ny, int nz, int vec_dim, int ng, float alpha, float gamma,
        float dx, float dy, float dz, float dt, int rank,
        flux_func_ptr h_flux_func, bool do_z) {
-    /*
+    /**
     Solves the homogeneous part of the equation (ie the bit without source terms).
 
     Parameters
     ----------
     kernels, threads, blocks : dim3 *
         number of kernels, threads and blocks for each process/kernel
+    cumulative_kernels : int *
+        Cumulative total of kernels in ranks < rank of current MPI process
     beta_d : float *
         shift vector at each grid point
     gamma_up_d : float *
@@ -2400,14 +2463,16 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
         flux vector at right and left boundaries
     fy_p_d, fy_m_d : float *
         flux vector at top and bottom boundaries
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of grid
-    alpha : float
-        lapse function
-    dx, dy, dt : float
+    alpha, gamma : float
+        lapse function and adiabatic index
+    dx, dy, dz, dt : float
         gridpoint spacing and timestep spacing
     rank : int
         rank of MPI process
+    flux_func : flux_func_ptr
+        pointer to function to be used to calculate fluxes
     do_z : bool
         should we evolve in the z direction?
     */
@@ -2479,14 +2544,16 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr h_flux_func, bool do_z) {
-    /*
+       flux_func_ptr flux_func, bool do_z) {
+    /**
     Integrates the homogeneous part of the ODE in time using RK3.
 
     Parameters
     ----------
     kernels, threads, blocks : dim3 *
         number of kernels, threads and blocks for each process/kernel
+    cumulative_kernels : int *
+        Cumulative total of kernels in ranks < rank of current MPI process
     beta_d : float *
         shift vector at each grid point
     gamma_up_d : float *
@@ -2505,13 +2572,15 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         flux vector at right and left boundaries
     fy_p_d, fy_m_d : float *
         flux vector at top and bottom boundaries
-    nx, ny : int
+    nx, ny, nz : int
         dimensions of grid
+    vec_dim : int
+        dimension of state vector
     ng : int
         number of ghost cells
-    alpha : float
-        lapse function
-    dx, dy, dt : float
+    alpha, gamma : float
+        lapse function and adiabatic index
+    dx, dy, dz, dt : float
         gridpoint spacing and timestep spacing
     Up_h, F_h, Un_h : float *
         state vector at next timestep, flux vector and state vector at current timestep on host
@@ -2521,7 +2590,10 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         status of MPI processes
     rank, n_processes : int
         rank of current MPI process and total number of MPI processes
-    do_z
+    flux_func : flux_func_ptr
+        pointer to function to be used to calculate fluxes
+    do_z : bool
+        should we evolve in the z direction?
     */
     //cout << "\nu1\n\n\n";
     // u1 = un + dt * F(un)
@@ -2530,7 +2602,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dz, dt, rank, h_flux_func, do_z);
+          dx, dy, dz, dt, rank, flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2555,6 +2627,9 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     if (do_z) {
         // HACK:
         // going to do some hacky data sanitisation here
+        // NOTE: could argue that this is actually a form of artificial
+        // dissipation to ensure stability (as it is just smoothing out
+        // spikes in the data after all)
         for (int x = 0; x < nx * ny * nz; x++) {
             if (abs(Up_h[x*5]) > 1.0e2) {
                 Up_h[x*5] = 0.5;
@@ -2578,7 +2653,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dz, dt, rank, h_flux_func, do_z);
+          dx, dy, dz, dt, rank, flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2628,7 +2703,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
-          dx, dy, dz, dt, rank, h_flux_func, do_z);
+          dx, dy, dz, dt, rank, flux_func, do_z);
 
     // copy back flux
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2679,7 +2754,7 @@ __device__ flux_func_ptr d_compressible_fluxes = compressible_fluxes;
 __device__ flux_func_ptr d_shallow_water_fluxes = shallow_water_fluxes;
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float * Q, float p_floor, float mu,
+         float * rho, float * Q, float mu,
          int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
@@ -2687,7 +2762,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices) {
-    /*
+    /**
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
 
     Parameters
@@ -2696,8 +2771,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         shift vector at each grid point
     gamma_up : float *
         gamma matrix at each grid point
-    Un_h : float *
-        state vector at each grid point in each layer at current timestep on host
+    Uc_h : float *
+        state vector at each grid point in each layer at current timestep on host in coarse grid
+    Uf_h : float *
+        state vector at each grid point in each layer at current timestep on host in fine grid
     rho : float *
         densities in each layer
     Q : float *
@@ -2714,6 +2791,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         total number of timesteps
     alpha : float
         lapse function
+    gamma : float
+        adiabatic index
+    zmin : float
+        height of sea floor
     dx, dy, dz, dt : float
         gridpoint spacing and timestep spacing
     burning : bool
@@ -2728,6 +2809,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         status of MPI processes
     rank, n_processes : int
         rank of current MPI process and total number of MPI processes
+    matching_indices : int *
+        position of fine grid wrt coarse grid
     */
 
     // set up GPU stuff
@@ -2765,7 +2848,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     dim3 *kernels = new dim3[n_processes];
     int *cumulative_kernels = new int[n_processes];
 
-    //getNumKernels(max(nx, nxf), max(ny, nyf), max(nlayers, nz+2*ng), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
     getNumKernels(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
 
     int total_kernels = cumulative_kernels[n_processes-1];
@@ -2773,7 +2855,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     dim3 *blocks = new dim3[total_kernels];
     dim3 *threads = new dim3[total_kernels];
 
-    //getNumBlocksAndThreads(max(nx, nxf), max(ny, nyf), max(nlayers, nz+2*ng), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
     getNumBlocksAndThreads(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
 
     printf("rank: %i\n", rank);
@@ -2947,7 +3028,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // prolong to fine grid
             prolong_grid(kernels, threads, blocks, cumulative_kernels,
                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, dt, zmin, gamma_up_d,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d, p_floor);
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
@@ -2984,16 +3065,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                             cout << Uf_h[(((z*nyf + y)*nxf)+x)*5+4] << ',';
                         }
                         cout << '\n';
-                }
-            }*/
-
-            // HACK:
-            // going to do some hacky data sanitisation here
-            /*for (int x = 0; x < nxf * nyf * nz; x++) {
-                for (int i = 1; i < 4; i++) {
-                    if (abs(Uf_h[x*5+i]) > Uf_h[x*5]) {
-                        Uf_h[x*5+i] = 0.0;
-                    }
                 }
             }*/
 
@@ -3075,8 +3146,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-                          p_floor);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After restricting\n";
@@ -3140,7 +3210,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 pphi[i] = Uc_h[i*3];
             }
             cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
-
 
             /*cout << "\nCoarse grid after rk3\n\n";
             for (int y = 0; y < ny; y++) {
@@ -3285,8 +3354,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
                          Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
                          dt, zmin, gamma_up,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d, p_floor);
-
+                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
 
             cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*5*sizeof(float), cudaMemcpyDeviceToHost);
 
@@ -3313,8 +3381,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             restrict_grid(kernels, threads, blocks, cumulative_kernels,
                           Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
                           dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-                          p_floor);
+                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
 
             rk3(kernels, threads, blocks, cumulative_kernels,
                 beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,

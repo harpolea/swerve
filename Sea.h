@@ -1,7 +1,7 @@
 #ifndef SEA_H
 #define SEA_H
 
-// define some special vector/matrix classes to make things easier
+//! define some special vector/matrix classes to make things easier
 
 class Vec {
 public:
@@ -27,6 +27,7 @@ public:
 
 
 class Sea {
+    //! A Sea class
 public:
     Sea(int n_layers, int _nx, int _ny, int _nt,
             float xmin, float xmax,
@@ -35,7 +36,8 @@ public:
             float _alpha, float * _beta, float ** _gamma,
             bool _periodic);
 
-    Sea(const Sea &); // copy constructor
+    //! copy constructor
+    Sea(const Sea &);
 
     Vec U(int l, int x, int y, int t);
 
