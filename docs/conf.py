@@ -19,18 +19,19 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('.'))
-
-sys.path.append("/home/alice/anaconda3/lib/python3.4/site-packages/breathe/")
-
-# generate xml files
 import subprocess, os
 
 read_the_docs_build = os.environ.get('READTHEDOCS', None) == 'True'
 
 if read_the_docs_build:
-
+    sys.path.append('../../')
+    # generate xml files
     subprocess.call('cd ..; doxygen', shell=True)
+
+else:
+    sys.path.insert(0, os.path.abspath('.'))
+
+    sys.path.append("/home/alice/anaconda3/lib/python3.4/site-packages/breathe/")
 
 
 # -- General configuration ------------------------------------------------
@@ -44,7 +45,7 @@ if read_the_docs_build:
 # ones.
 extensions = ['sphinx.ext.mathjax', 'breathe']
 
-breathe_projects = {"swerve" : "/home/alice/Dropbox/swerve/docs/xml/",}
+breathe_projects = {"swerve" : "xml/",}
 breathe_default_project = "swerve"
 
 # Add any paths that contain templates here, relative to this directory.
