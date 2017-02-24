@@ -1,4 +1,4 @@
-[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=mpi)](http://swerve.readthedocs.io/en/latest/?badge=mpi)
+[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=mpi)](http://swerve.readthedocs.io/en/mpi/?badge=mpi)
 
 # swerve
 **S**hallow **W**ater **E**quations for **R**elati**V**istic **E**nvironments
