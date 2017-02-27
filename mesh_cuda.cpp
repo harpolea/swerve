@@ -420,7 +420,7 @@ Sea::Sea(const Sea &seaToCopy)
 
     Q = seaToCopy.Q;
 
-    for (int i = 0; i < 4*nx*ny; i++) {
+    for (int i = 0; i < 3*nx*ny; i++) {
         beta[i] = seaToCopy.beta[i];
     }
 
@@ -467,7 +467,7 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
         U_coarse[i*4] = D0[i];
         U_coarse[i*4+1] = Sx0[i];
         U_coarse[i*4+2] = Sy0[i];
-        U_coarse[i*4+3] = 0.0; // everything is unburnt
+        U_coarse[i*4+3] = float(i) / (nx*ny*nlayers); // everything is unburnt
     }
 
     bcs(U_coarse, nx, ny, nlayers, 4);

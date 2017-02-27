@@ -207,7 +207,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             if abs(np.amax(face_colours)) > 0.:
                 face_colours /= abs(np.amax(face_colours))
 
-            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#, #facecolors=cm.viridis_r(face_colours))
+            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True, facecolors=cm.viridis_r(face_colours))
         plt.savefig(outname)
 
     # close hdf5 file

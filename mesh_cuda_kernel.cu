@@ -2840,9 +2840,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
     // set up GPU stuff
     int count;
-    cudaGetDeviceCount(&count);
+    //cudaGetDeviceCount(&count);
+    // HACK: above line not working???
+    count = 1;
 
-    if (rank == 0) {
+    /*if (rank == 0) {
         cudaError_t err = cudaGetLastError();
         // check that we actually have some GPUS
         if (err != cudaSuccess) {
@@ -2851,7 +2853,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             return;
         }
         printf("Found %i CUDA devices\n", count);
-    }
+    }*/
 
     // if rank > number of GPUs, exit now
     if (rank >= count) {
