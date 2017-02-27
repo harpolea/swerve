@@ -2365,6 +2365,9 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
             sum_phs[offset] += U_half[((j * ny + y) * nx + x)*4];
         }
 
+        // NOTE: for now going to make Xdot a constant
+        const float X_dot = 0.01;
+
         // D
         Up[offset*4] += dt * alpha * sum_qs;
 
@@ -2375,6 +2378,9 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
         // Sy
         Up[offset*4+2] += dt * alpha * (-deltaQy);
+
+        // DX
+        Up[offset*4+3] += dt * alpha * X_dot;
     }
 }
 
@@ -2840,11 +2846,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
     // set up GPU stuff
     int count;
-    //cudaGetDeviceCount(&count);
-    // HACK: above line not working???
-    count = 1;
+    cudaGetDeviceCount(&count);
 
-    /*if (rank == 0) {
+    if (rank == 0) {
         cudaError_t err = cudaGetLastError();
         // check that we actually have some GPUS
         if (err != cudaSuccess) {
@@ -2853,7 +2857,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             return;
         }
         printf("Found %i CUDA devices\n", count);
-    }*/
+    }
 
     // if rank > number of GPUs, exit now
     if (rank >= count) {
@@ -3136,6 +3140,23 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 }*/
 
                 cudaDeviceSynchronize();
+
+                // hack on the burning
+                const float X_dot = 0.01;
+                for (int z = 0; z < nz; z++) {
+                    for (int y = ng; y < nyf-ng; y++) {
+                        for (int x = ng; x < nxf - ng; x++) {
+                            Uf_h[((z * nyf + y) * nxf + x) * 6 + 5] += dt * 0.5 * alpha * rho[0] * X_dot;
+                        }
+                    }
+                }
+
+                if (n_processes == 1) {
+                    bcs_fv(Uf_h, nxf, nyf, nz, ng, 6);
+                } else {
+                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                    bcs_mpi(Uf_h, nxf, nyf, nz, 6, ng, comm, status, rank, n_processes, y_size, false);
+                }
 
                 // copy to device
                 cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*6*sizeof(float), cudaMemcpyHostToDevice);
