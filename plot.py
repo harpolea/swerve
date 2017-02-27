@@ -169,6 +169,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     D_2d = table[:,:,:,:,0]
     Sx = table[:,:,:,:,1]
     Sy = table[:,:,:,:,2]
+    DX = table[:,:,:,:,3]
 
     v = np.sqrt(Sx**2 + Sy**2)
 
@@ -190,6 +191,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
 
+
+
     for i in range(start, len(D_2d[:,0,0,0])-1):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
@@ -200,7 +203,11 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         ax.set_ylim(0,10)
         #ax.set_zlim(2.24,2.3)
         for l in range(0,2):
-            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)
+            face_colours = DX[i,l,2:-2,2:-2].T
+            if abs(np.amax(face_colours)) > 0.:
+                face_colours /= abs(np.amax(face_colours))
+
+            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#, #facecolors=cm.viridis_r(face_colours))
         plt.savefig(outname)
 
     # close hdf5 file

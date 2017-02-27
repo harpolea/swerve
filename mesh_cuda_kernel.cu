@@ -837,6 +837,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     float Sy = q_cons[2];
     float Sz = q_cons[3];
     float tau = q_cons[4];
+    float DX = q_cons[5];
 
     // S^2
     float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
@@ -878,12 +879,14 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     float eps = (sq - p * (tau + p + D)/sq - D) / D;
     float h = 1.0 + gamma * eps;
     float W = sqrt(1.0 + Ssq / (D*D*h*h));
+    float X = DX / D;
 
     q_prim[0] = D * sq / (tau + p + D);//D / W;
     q_prim[1] = Sx / (W*W * h * q_prim[0]);
     q_prim[2] = Sy / (W*W * h * q_prim[0]);
     q_prim[3] = Sz / (W*W * h * q_prim[0]);
     q_prim[4] = eps;
+    q_prim[5] = X;
 }
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
@@ -914,6 +917,7 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
         float Sy = q_cons[i*6+2];
         float Sz = q_cons[i*6+3];
         float tau = q_cons[i*6+4];
+        float DX = q_cons[i*6+5];
 
         // S^2
         float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
@@ -949,12 +953,14 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
         float eps = (sq - p * (tau + p + D)/sq - D) / D;
         float h = 1.0 + gamma * eps;
         float W = sqrt(1.0 + Ssq / (D*D*h*h));
+        float X = DX / D;
 
         q_prim[i*6] = D * sq / (tau + p + D);//D / W;
         q_prim[i*6+1] = Sx / (W*W * h * q_prim[i*6]);
         q_prim[i*6+2] = Sy / (W*W * h * q_prim[i*6]);
         q_prim[i*6+3] = Sz / (W*W * h * q_prim[i*6]);
         q_prim[i*6+4] = eps;
+        q_prim[i*6+5] = X;
     }
 }
 
@@ -984,6 +990,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
     if (nan_check(q[0])) q[0] = 1.0;
     if (nan_check(q[1])) q[1] = 0.0;
     if (nan_check(q[2])) q[2] = 0.0;
+    if (nan_check(q[3])) q[3] = 0.0;
 
     float W = W_swe(q, gamma_up);
     if (nan_check(W)) {
@@ -1001,6 +1008,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
         f[0] = q[0] * qx;
         f[1] = q[1] * qx + 0.5 * q[0] * q[0] / (W * W);
         f[2] = q[2] * qx;
+        f[3] = q[3] * qx;
     } else {
         float qy = v * gamma_up[4] + u * gamma_up[1] -
             beta[1] / alpha;
@@ -1008,6 +1016,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
         f[0] = q[0] * qy;
         f[1] = q[1] * qy;
         f[2] = q[2] * qy + 0.5 * q[0] * q[0] / (W * W);
+        f[3] = q[3] * qy;
     }
 }
 
@@ -1057,6 +1066,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[2] = q[2] * qx;
         f[3] = q[3] * qx;
         f[4] = q[4] * qx + p * u;
+        f[5] = q[5] * qx;
     } else if (dir == 1){
         float qy = v * gamma_up[4] + u * gamma_up[1] + w * gamma_up[5] - beta[1] / alpha;
 
@@ -1065,6 +1075,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[2] = q[2] * qy + p;
         f[3] = q[3] * qy;
         f[4] = q[4] * qy + p * v;
+        f[5] = q[5] * qy;
     } else {
         float qz = w * gamma_up[8] + u * gamma_up[2] + v * gamma_up[5] - beta[2] / alpha;
 
@@ -1073,6 +1084,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[2] = q[2] * qz;
         f[3] = q[3] * qz + p;
         f[4] = q[4] * qz + p * w;
+        f[5] = q[5] * qz;
     }
 
     //printf("f(tau): %f\n", f[4]);
@@ -1218,6 +1230,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         q_comp[offset*6+2] = rhoh * W * q[offset*4+2] / q[offset*4];
         q_comp[offset*6+3] = rho[z] * W * hdot;
         q_comp[offset*6+4] = rhoh*W*W - p - rho[z] * W;
+        q_comp[offset*6+5] = rho[z] * W * q[offset*4+3] / q[offset*4];
 
         //printf("s2c (%d, %d, %d): %f, %f\n", x, y, z, q_comp[offset*6+4], p);
 
@@ -1225,6 +1238,10 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         if (q_comp[offset*6+4] < 0.0) {
             //printf("tau < 0, p: %f, tau: %f\n", p, q_comp[offset*6+4]);
             q_comp[offset*6+4] = 0.0;
+        }
+        // cannot have X < 0.0
+        if (q_comp[offset*6+5] < 0.0) {
+            q_comp[offset*6+5] = 0.0;
         }
 
         free(q_swe);
@@ -1547,7 +1564,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         }
         printf("\n\n");
     }*/
-    float W, u, v, w, p;
+    float W, u, v, w, p, X;
     float * q_prim, * q_con;
     q_con = (float *)malloc(6 * sizeof(float));
     q_prim = (float *)malloc(6 * sizeof(float));
@@ -1563,6 +1580,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         u = q_prim[1];
         v = q_prim[2];
         w = q_prim[3];
+        X = q_prim[5];
 
         W = 1.0 / sqrt(1.0 -
                 u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
@@ -1638,6 +1656,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         q_swe[offset*4] = ph * W;
         q_swe[offset*4+1] = ph * W * W * u;
         q_swe[offset*4+2] = ph * W * W * v;
+        q_swe[offset*4+3] = ph * W * X;
 
         //printf("(x,y,z): %d, %d, %d Phi, Sx, Sy: %f, %f, %f\n", x,y,z,q_swe[offset*4], q_swe[offset*4+1], q_swe[offset*4+2]);
     }
@@ -1741,16 +1760,19 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         // now need to do linear interpolation thing on u, v
         float u[8];
         float v[8];
+        float WX[8];
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
                 u[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+1] /
                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
                 v[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+2] /
                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                WX[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+3] / Phi;
                 u[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+1] /
                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
                 v[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+2] /
                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+                WX[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+3] / Phi;
             }
         }
 
@@ -1758,10 +1780,13 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
             (1.0 - z_frac) * 0.25 * (u[4] + u[5] + u[6] + u[7]);
         float interp_v = z_frac * 0.25 * (v[0] + v[1] + v[2] + v[3]) +
             (1.0 - z_frac) * 0.25 * (v[4] + v[5] + v[6] + v[7]);
+        float interp_WX = z_frac * 0.25 * (WX[0] + WX[1] + WX[2] + WX[3]) +
+            (1.0 - z_frac) * 0.25 * (WX[4] + WX[5] + WX[6] + WX[7]);
 
         q_c[coarse_index] = Phi * interp_W;
         q_c[coarse_index + 1] = q_c[coarse_index] * interp_W * interp_u;
         q_c[coarse_index + 2] = q_c[coarse_index] * interp_W * interp_v;
+        q_c[coarse_index + 3] = Phi * interp_WX ;
 
         free(q_c_new);
     } /*else if ((x > 0) && (x < int(round(nxf*0.5))) && (y > 0) && (y < int(round(nyf*0.5))) && (z == nlayers-1)) { // sea floor

@@ -373,7 +373,7 @@ Sea::Sea(char * filename)
     Sea::invert_mat(gamma_up, 3, 3);
 
     U_coarse = new float[nx*ny*nlayers*4];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_fine = new float[nxf*nyf*nz*6];
 
     // initialise arrays
     for (int i = 0; i < nx*ny*nlayers*4; i++) {
@@ -467,6 +467,7 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
         U_coarse[i*4] = D0[i];
         U_coarse[i*4+1] = Sx0[i];
         U_coarse[i*4+2] = Sy0[i];
+        U_coarse[i*4+3] = 0.0; // everything is unburnt
     }
 
     bcs(U_coarse, nx, ny, nlayers, 4);

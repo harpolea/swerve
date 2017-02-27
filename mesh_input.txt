@@ -1,8 +1,8 @@
-nx      150
-ny      150
+nx      50
+ny      50
 nz      10
 nlayers 3
-nt      1500
+nt      5
 ng      2
 r       2
 df      0.4
@@ -21,5 +21,5 @@ beta    0.0 0.0 0.0
 gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
 periodic f
 burning f
-dprint  10
+dprint  1
 outfile ../../Documents/Work/swerve/mesh_buoyancy.h5
