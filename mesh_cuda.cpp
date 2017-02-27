@@ -72,8 +72,8 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     nyf = int(r * df * ny);
 
     // D, Sx, Sy, zeta
-    U_coarse = new float[nx*ny*nlayers*3];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_coarse = new float[nx*ny*nlayers*4];
+    U_fine = new float[nxf*nyf*nz*6];
 
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
@@ -372,14 +372,14 @@ Sea::Sea(char * filename)
     }
     Sea::invert_mat(gamma_up, 3, 3);
 
-    U_coarse = new float[nx*ny*nlayers*3];
+    U_coarse = new float[nx*ny*nlayers*4];
     U_fine = new float[nxf*nyf*nz*5];
 
     // initialise arrays
-    for (int i = 0; i < nx*ny*nlayers*3; i++) {
+    for (int i = 0; i < nx*ny*nlayers*4; i++) {
         U_coarse[i] = 0.0;
     }
-    for (int i = 0; i < nxf*nyf*nz*5; i++) {
+    for (int i = 0; i < nxf*nyf*nz*6; i++) {
         U_fine[i] = 0.0;
     }
 
@@ -420,18 +420,18 @@ Sea::Sea(const Sea &seaToCopy)
 
     Q = seaToCopy.Q;
 
-    for (int i = 0; i < 3*nx*ny; i++) {
+    for (int i = 0; i < 4*nx*ny; i++) {
         beta[i] = seaToCopy.beta[i];
     }
 
-    U_coarse = new float[int(nx*ny*nlayers*3)];
-    U_fine = new float[nxf*nyf*nz*5];
+    U_coarse = new float[int(nx*ny*nlayers*4)];
+    U_fine = new float[nxf*nyf*nz*6];
 
-    for (int i = 0; i < nx*ny*nlayers*3;i++) {
+    for (int i = 0; i < nx*ny*nlayers*4;i++) {
         U_coarse[i] = seaToCopy.U_coarse[i];
     }
 
-    for (int i = 0; i < nxf*nyf*nz*5;i++) {
+    for (int i = 0; i < nxf*nyf*nz*6;i++) {
         U_fine[i] = seaToCopy.U_fine[i];
     }
 
@@ -464,12 +464,12 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     Initialise D, Sx, Sy and Q.
     */
     for (int i = 0; i < nx*ny*nlayers; i++) {
-        U_coarse[i*3] = D0[i];
-        U_coarse[i*3+1] = Sx0[i];
-        U_coarse[i*3+2] = Sy0[i];
+        U_coarse[i*4] = D0[i];
+        U_coarse[i*4+1] = Sx0[i];
+        U_coarse[i*4+2] = Sy0[i];
     }
 
-    bcs(U_coarse, nx, ny, nlayers, 3);
+    bcs(U_coarse, nx, ny, nlayers, 4);
 
     cout << "Set initial data.\n";
 }

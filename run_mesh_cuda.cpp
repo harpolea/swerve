@@ -2,6 +2,8 @@
 Includes main function to run mesh cuda simulation.
 
 Compile with 'make mesh'.
+
+Run with `mpirun -np N ./mesh [input file]` where N is the number of processors to use and input file is an optional argument providing the file path to the input file to use. If no input file is provided, will default to use mesh_input.txt.
 */
 
 #include <stdio.h>
