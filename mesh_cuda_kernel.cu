@@ -1,3 +1,7 @@
+/*
+TODO: need to interpolate rho onto fine grid at start (probably in mes constructor)
+*/
+
 #include <stdio.h>
 #include <mpi.h>
 #include "H5Cpp.h"
@@ -778,6 +782,51 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     //float old_h = ight(old_phi);
 
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
+}
+
+__device__ float calc_Q_swe(float rho, float p, float gamma, float Y) {
+    /**
+    Calculate the heating rate per unit mass from the shallow water variables
+    */
+    const float Cv = 1.0;
+
+    float T = p / ((gamma - 1.0) * rho * Cv);
+    float A = 1.0e8; // constant of proportionality
+
+    float X_dot = A*rho*rho*Y*Y*Y / (T*T*T) * exp(-44.0 / T);
+
+    if (nan_check(X_dot)) {
+        X_dot = 0.0;
+    }
+
+    return X_dot;
+
+}
+
+void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
+            float gamma, float * gamma_up, float * Q) {
+    /**
+    Calculate the heating rate per unit mass
+    */
+    const float Cv = 1.0;
+
+    // hack: need to actually interpolate rho here rather than just assume it's constant
+
+    float * q_prim = new float[nx*ny*nz*6];
+    cons_to_prim_comp(q_cons, q_prim, nx, ny, nz, gamma, gamma_up);
+
+    for (int i = 0; i < nx*ny*nz; i++) {
+        float eps = q_prim[i*6+4];
+        float Y = q_prim[i*6+5];
+        float T = eps / Cv;
+        float A = 1.0e8; // constant of proportionality
+
+        Q[i] = A*rho[0]*rho[0]*Y*Y*Y / (T*T*T) * exp(-44.0 / T);
+
+        //cout << "eps = " << eps << "  Y = " << Y << "  H = " << Q[i] << '\n';
+    }
+
+    delete[] q_prim;
 }
 
 __device__ void calc_As(float * rhos, float * phis, float * A,
@@ -2254,15 +2303,14 @@ __global__ void evolve_z_fluxes(float * F,
     }
 }
 
-__global__ void evolve_fv_heating(float * gamma_up_d,
+__global__ void evolve_fv_heating(float * gamma_up,
                      float * Up, float * U_half,
                      float * qx_plus_half, float * qx_minus_half,
                      float * qy_plus_half, float * qy_minus_half,
                      float * fx_plus_half, float * fx_minus_half,
                      float * fy_plus_half, float * fy_minus_half,
-                     float * sum_phs, float * rho_d, float * Q_d,
-                     float mu,
-                     int nx, int ny, int nlayers, float alpha,
+                     float * sum_phs, float * rho, float * Q_d,
+                     int nx, int ny, int nlayers, float alpha, float gamma,
                      float dx, float dy, float dt,
                      bool burning,
                      int kx_offset, int ky_offset) {
@@ -2271,7 +2319,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
     Parameters
     ----------
-    gamma_up_d : float *
+    gamma_up : float *
         gamma matrix at each grid point
     Up : float *
         state vector at next timestep
@@ -2287,16 +2335,14 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         flux vector at top and bottom boundaries
     sum_phs : float *
         sum of Phi in different layers
-    rho_d : float *
+    rho : float *
         list of densities in different layers
     Q_d : float *
         heating rate in each layer
-    mu : float
-        friction
     nx, ny, nlayers : int
         dimensions of grid
-    alpha : float
-        lapse function
+    alpha, gamma : float
+        lapse function and adiabatic index
     dx, dy, dt : float
         gridpoint spacing and timestep spacing
     burning : bool
@@ -2314,6 +2360,9 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
     float W = 1.0;
 
+    float X_dot = 0.0;
+    const float E_He = 10.0e3;
+
     // do source terms
     if ((x < nx) && (y < ny) && (z < nlayers)) {
         float * q_swe;
@@ -2322,7 +2371,26 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         for (int i = 0; i < 4; i++) {
             q_swe[i] = U_half[offset * 4 + i];
         }
-        W = W_swe(q_swe, gamma_up_d);
+        W = W_swe(q_swe, gamma_up);
+
+        float * A, * phis;
+        A = (float *)malloc(nlayers * sizeof(float));
+        phis = (float *)malloc(nlayers * sizeof(float));
+        for (int i = 0; i < nlayers; i++) {
+            phis[i] = U_half[((i * ny + y) * nx + x)* 4];
+        }
+
+        calc_As(rho, phis, A, nlayers, gamma, phis[0], rho[0]);
+
+        float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
+        float Y = q_swe[3] / q_swe[0];
+
+        X_dot = calc_Q_swe(rho[z], p, gamma, Y) / E_He;
+
+        //printf("p: %f, A: %f, X_dot : %f\n", p, A[z], X_dot);
+
+        free(phis);
+        free(A);
         free(q_swe);
 
         U_half[offset*4] /= W;
@@ -2340,25 +2408,25 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
 
         if (z < (nlayers - 1)) {
             sum_qs += (Q_d[z + 1] - Q_d[z]);
-            deltaQx = (Q_d[z] + mu) *
+            deltaQx = Q_d[z] *
                 (U_half[offset*4+1] - U_half[(((z + 1) * ny + y) * nx + x)*4+1]) /
                 (W * U_half[offset*4]);
-            deltaQy = (Q_d[z] + mu) *
+            deltaQy = (Q_d[z]) *
                 (U_half[offset*4+2] - U_half[(((z + 1) * ny + y) * nx + x)*4+2]) /
                 (W * U_half[offset*4]);
         }
         if (z > 0) {
-            sum_qs += -rho_d[z-1] / rho_d[z] * (Q_d[z] - Q_d[z - 1]);
-            deltaQx = rho_d[z-1] / rho_d[z] * (Q_d[z] + mu) *
+            sum_qs += -rho[z-1] / rho[z] * (Q_d[z] - Q_d[z - 1]);
+            deltaQx = rho[z-1] / rho[z] * Q_d[z] *
                 (U_half[offset*4+1] - U_half[(((z - 1) * ny + y) * nx + x)*4+1]) /
                  (W * U_half[offset*4]);
-            deltaQy = rho_d[z-1] / rho_d[z] * (Q_d[z] + mu) *
+            deltaQy = rho[z-1] / rho[z] * Q_d[z] *
                 (U_half[offset*4+2] - U_half[(((z - 1) * ny + y) * nx + x)*4+2]) /
                  (W * U_half[offset*4]);
         }
 
         for (int j = 0; j < z; j++) {
-            sum_phs[offset] += rho_d[j] / rho_d[z] *
+            sum_phs[offset] += rho[j] / rho[z] *
                 U_half[((j * ny + y) * nx + x)*4];
         }
         for (int j = z+1; j < nlayers; j++) {
@@ -2366,7 +2434,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
         }
 
         // NOTE: for now going to make Xdot a constant
-        const float X_dot = 0.01;
+        //const float X_dot = 0.01;
 
         // D
         Up[offset*4] += dt * alpha * sum_qs;
@@ -2668,6 +2736,8 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
             if (abs(Up_h[x*6+4]) > 1.0e3 || Up_h[x*6+4] < 0.0) {
                 Up_h[x*6+4] = Up_h[x*6];
             }
+            if (Up_h[x*6+5] > 1.0) Up_h[x*6+5] = 1.0;
+            if (Up_h[x*6+5] < 0.0) Up_h[x*6+5] = 0.0;
             for (int i = 1; i < 4; i++) {
                 if (abs(Up_h[x*6+i]) > Up_h[x*6]) {
                     Up_h[x*6+i] = 0.0;
@@ -2718,6 +2788,8 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
             if (abs(Up_h[x*6+4]) > 1.0e3 || Up_h[x*6+4] < 0.0) {
                 Up_h[x*6+4] = Up_h[x*6];
             }
+            if (Up_h[x*6+5] > 1.0) Up_h[x*6+5] = 1.0;
+            if (Up_h[x*6+5] < 0.0) Up_h[x*6+5] = 0.0;
             for (int i = 1; i < 4; i++) {
                 if (abs(Up_h[x*6+i]) > Up_h[x*6]) {
                     Up_h[x*6+i] = 0.0;
@@ -2767,6 +2839,8 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
             if (abs(Up_h[x*6+4]) > 1.0e3 || Up_h[x*6+4] < 0.0) {
                 Up_h[x*6+4] = Up_h[x*6];
             }
+            if (Up_h[x*6+5] > 1.0) Up_h[x*6+5] = 1.0;
+            if (Up_h[x*6+5] < 0.0) Up_h[x*6+5] = 0.0;
             for (int i = 1; i < 4; i++) {
                 if (abs(Up_h[x*6+i]) > Up_h[x*6]) {
                     Up_h[x*6+i] = 0.0;
@@ -2785,7 +2859,7 @@ __device__ flux_func_ptr d_compressible_fluxes = compressible_fluxes;
 __device__ flux_func_ptr d_shallow_water_fluxes = shallow_water_fluxes;
 
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float * Q, float mu,
+         float * rho, float * Q,
          int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
@@ -2810,8 +2884,6 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         densities in each layer
     Q : float *
         heating rate at each point and in each layer
-    mu : float
-        friction
     nx, ny, nlayers : int
         dimensions of coarse grid
     nxf, nyf, nz : int
@@ -3142,14 +3214,23 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cudaDeviceSynchronize();
 
                 // hack on the burning
-                const float X_dot = 0.01;
+                //const float X_dot = 0.01;
+                //const float H = 0.01; // heating
+                const float E_He = 10.0e3;
+                float * H = new float[nxf*nyf*nz];
+                calc_Q(rho, Uf_h, nxf, nyf, nz, gamma, gamma_up, H);
                 for (int z = 0; z < nz; z++) {
                     for (int y = ng; y < nyf-ng; y++) {
                         for (int x = ng; x < nxf - ng; x++) {
+                            // tau
+                            Uf_h[((z * nyf + y) * nxf + x) * 6 + 4] += dt * 0.5 * alpha * Uf_h[((z * nyf + y) * nxf + x) * 6] * H[(z * nyf + y) * nxf + x];
+                            float X_dot = H[(z * nyf + y) * nxf + x] / E_He;
+                            // DX
                             Uf_h[((z * nyf + y) * nxf + x) * 6 + 5] += dt * 0.5 * alpha * rho[0] * X_dot;
                         }
                     }
                 }
+                delete[] H;
 
                 if (n_processes == 1) {
                     bcs_fv(Uf_h, nxf, nyf, nz, ng, 6);
@@ -3284,8 +3365,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                            Upc_d, Uc_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                           sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
+                           sum_phs_d, rho_d, Q_d,
+                           nx, ny, nlayers, alpha, gamma,
                            dx, dy, dt, burning, kx_offset, ky_offset);
                     kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
@@ -3452,8 +3533,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                            Up_d, U_half_d,
                            qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                           sum_phs_d, rho_d, Q_d, mu,
-                           nx, ny, nlayers, alpha,
+                           sum_phs_d, rho_d, Q_d,
+                           nx, ny, nlayers, alpha, gamma,
                            dx, dy, dt, burning, kx_offset, ky_offset);
                     kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
@@ -3468,7 +3549,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 kx_offset = 0;
                 for (int i = 0; i < kernels[rank].x; i++) {
                     evolve2<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
-                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d, mu,
+                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
                            nx, ny, nlayers, ng, alpha,
                            dx, dy, dt, kx_offset, ky_offset);
                     kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;

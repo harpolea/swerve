@@ -200,6 +200,25 @@ way to do this which will more accurately give hdot at current time.
 __device__ float h_dot(float phi, float old_phi, float dt);
 
 /**
+Calculate the heating rate per unit mass.
+
+\param rho
+    densities of layers
+\param q_cons
+    conservative state vector
+\param nx, ny, nz
+    dimensions of grid
+\param gamma
+    adiabatic index
+\param gamma_up
+    contravariant spatial metric
+\param Q
+    array that shall contain heating rate per unit mass
+*/
+void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
+            float gamma, float * gamma_up, float * Q);
+
+/**
 Calculates the As used to calculate the pressure given Phi, given
 the pressure at the sea floor
 
@@ -693,12 +712,10 @@ Does the heating part of the evolution.
    list of densities in different layers
 \param Q_d
    heating rate in each layer
-\param mu
-   friction
 \param nx, ny, nlayers
    dimensions of grid
-\param alpha
-   lapse function
+\param alpha, gamma
+   lapse function and adibatic index
 \param dx, dy, dt
    gridpoint spacing and timestep spacing
 \param burning
@@ -713,8 +730,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                     float * fx_plus_half, float * fx_minus_half,
                     float * fy_plus_half, float * fy_minus_half,
                     float * sum_phs, float * rho_d, float * Q_d,
-                    float mu,
-                    int nx, int ny, int nlayers, float alpha,
+                    int nx, int ny, int nlayers, float alpha, float gamma,
                     float dx, float dy, float dt,
                     bool burning,
                     int kx_offset, int ky_offset);
@@ -871,8 +887,6 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    densities in each layer
 \param Q
    heating rate at each point and in each layer
-\param mu
-   friction
 \param nx, ny, nlayers
    dimensions of coarse grid
 \param nxf, nyf, nz
@@ -901,11 +915,11 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    status of MPI processes
 \param rank, n_processes
    rank of current MPI process and total number of MPI processes
-\param matching_indices 
+\param matching_indices
    position of fine grid wrt coarse grid
 */
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float * Q, float mu, int nx, int ny, int nlayers,
+         float * rho, float * Q, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
          int nt, float alpha, float gamma, float zmin,
          float dx, float dy, float dz, float dt, bool burning,

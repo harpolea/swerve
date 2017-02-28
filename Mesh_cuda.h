@@ -18,7 +18,7 @@ public:
             float xmin, float xmax,
             float ymin, float ymax,
             float zmin, float zmax, float  * _rho,
-            float  _Q, float _mu, float _gamma,
+            float  _Q, float _gamma,
             float _alpha, float * _beta, float * _gamma_down,
             bool _periodic, bool _burning, int _dprint);
 
@@ -105,7 +105,6 @@ private:
 
     float *rho; /**< Vector of density in each of the shallow water layers  */
     float Q; /**< Mass transfer rate */
-    float mu; /**< Friction */
     float gamma; /**< Adiabatic index */
 
     float alpha; /**< Lapse function */
