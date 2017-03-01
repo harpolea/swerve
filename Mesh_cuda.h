@@ -18,7 +18,7 @@ public:
             float xmin, float xmax,
             float ymin, float ymax,
             float zmin, float zmax, float  * _rho,
-            float  _Q, float _gamma,
+            float  _Q, float _gamma, float _E_He, float _Cv,
             float _alpha, float * _beta, float * _gamma_down,
             bool _periodic, bool _burning, int _dprint);
 
@@ -106,6 +106,8 @@ private:
     float *rho; /**< Vector of density in each of the shallow water layers  */
     float Q; /**< Mass transfer rate */
     float gamma; /**< Adiabatic index */
+    float E_He; /**< Energy release per unit mass of helium burning*/
+    float Cv; /**< Specific heat at constant volume*/
 
     float alpha; /**< Lapse function */
     float beta[3]; /**< Shift vector */

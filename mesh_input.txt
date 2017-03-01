@@ -1,8 +1,8 @@
-nx      50
-ny      50
+nx      150
+ny      150
 nz      10
 nlayers 3
-nt      50
+nt      250
 ng      2
 r       2
 df      0.4
@@ -14,7 +14,8 @@ zmin    2.1
 zmax    2.6
 rho     0.5 0.5 0.5
 Q       0.0
-mu      0.0
+E_He    10.0e3
+Cv      1.0
 gamma   1.6666666667
 alpha   0.9
 beta    0.0 0.0 0.0

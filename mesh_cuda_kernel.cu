@@ -784,11 +784,10 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
     return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }
 
-__device__ float calc_Q_swe(float rho, float p, float gamma, float Y) {
+__device__ float calc_Q_swe(float rho, float p, float gamma, float Y, float Cv) {
     /**
     Calculate the heating rate per unit mass from the shallow water variables
     */
-    const float Cv = 1.0;
 
     float T = p / ((gamma - 1.0) * rho * Cv);
     float A = 1.0e8; // constant of proportionality
@@ -804,11 +803,10 @@ __device__ float calc_Q_swe(float rho, float p, float gamma, float Y) {
 }
 
 void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
-            float gamma, float * gamma_up, float * Q) {
+            float gamma, float * gamma_up, float * Q, float Cv) {
     /**
     Calculate the heating rate per unit mass
     */
-    const float Cv = 1.0;
 
     // hack: need to actually interpolate rho here rather than just assume it's constant
 
@@ -2312,7 +2310,7 @@ __global__ void evolve_fv_heating(float * gamma_up,
                      float * sum_phs, float * rho, float * Q_d,
                      int nx, int ny, int nlayers, float alpha, float gamma,
                      float dx, float dy, float dt,
-                     bool burning,
+                     bool burning, float Cv, float E_He,
                      int kx_offset, int ky_offset) {
     /**
     Does the heating part of the evolution.
@@ -2347,6 +2345,8 @@ __global__ void evolve_fv_heating(float * gamma_up,
         gridpoint spacing and timestep spacing
     burning : bool
         is burning present in this system?
+    Cv, E_He : float
+        specific heat in constant volume and energy release per unit mass of He
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -2361,7 +2361,6 @@ __global__ void evolve_fv_heating(float * gamma_up,
     float W = 1.0;
 
     float X_dot = 0.0;
-    const float E_He = 10.0e3;
 
     // do source terms
     if ((x < nx) && (y < ny) && (z < nlayers)) {
@@ -2385,7 +2384,7 @@ __global__ void evolve_fv_heating(float * gamma_up,
         float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
         float Y = q_swe[3] / q_swe[0];
 
-        X_dot = calc_Q_swe(rho[z], p, gamma, Y) / E_He;
+        X_dot = calc_Q_swe(rho[z], p, gamma, Y, Cv) / E_He;
 
         //printf("p: %f, A: %f, X_dot : %f\n", p, A[z], X_dot);
 
@@ -2862,7 +2861,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float * rho, float * Q,
          int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
-         int nt, float alpha, float gamma, float zmin,
+         int nt, float alpha, float gamma, float E_He, float Cv,
+         float zmin,
          float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
@@ -2896,6 +2896,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         lapse function
     gamma : float
         adiabatic index
+    E_He : float
+        energy release per unit mass of helium
+    Cv : float
+        specific heat in constant volume
     zmin : float
         height of sea floor
     dx, dy, dz, dt : float
@@ -3214,11 +3218,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                 cudaDeviceSynchronize();
 
                 // hack on the burning
-                //const float X_dot = 0.01;
-                //const float H = 0.01; // heating
-                const float E_He = 10.0e3;
                 float * H = new float[nxf*nyf*nz];
-                calc_Q(rho, Uf_h, nxf, nyf, nz, gamma, gamma_up, H);
+                calc_Q(rho, Uf_h, nxf, nyf, nz, gamma, gamma_up, H, Cv);
                 for (int z = 0; z < nz; z++) {
                     for (int y = ng; y < nyf-ng; y++) {
                         for (int x = ng; x < nxf - ng; x++) {
@@ -3367,7 +3368,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                            sum_phs_d, rho_d, Q_d,
                            nx, ny, nlayers, alpha, gamma,
-                           dx, dy, dt, burning, kx_offset, ky_offset);
+                           dx, dy, dt, burning, Cv, E_He,
+                           kx_offset, ky_offset);
                     kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
                 ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
@@ -3535,7 +3537,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                            fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                            sum_phs_d, rho_d, Q_d,
                            nx, ny, nlayers, alpha, gamma,
-                           dx, dy, dt, burning, kx_offset, ky_offset);
+                           dx, dy, dt, burning, Cv, E_He,
+                           kx_offset, ky_offset);
                     kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
                 }
                 ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;

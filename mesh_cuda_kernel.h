@@ -200,6 +200,22 @@ way to do this which will more accurately give hdot at current time.
 __device__ float h_dot(float phi, float old_phi, float dt);
 
 /**
+Calculate the heating rate per unit mass from the shallow water variables
+
+\param rho
+    densities of layers
+\param p
+    pressure
+\param gamma
+    adiabatic index
+\param Y
+    species fraction
+\param Cv
+    specific heat in constant volume
+*/
+__device__ float calc_Q_swe(float rho, float p, float gamma, float Y, float Cv);
+
+/**
 Calculate the heating rate per unit mass.
 
 \param rho
@@ -214,9 +230,11 @@ Calculate the heating rate per unit mass.
     contravariant spatial metric
 \param Q
     array that shall contain heating rate per unit mass
+\param Cv
+    specific heat in constant volume
 */
 void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
-            float gamma, float * gamma_up, float * Q);
+            float gamma, float * gamma_up, float * Q, float Cv);
 
 /**
 Calculates the As used to calculate the pressure given Phi, given
@@ -720,6 +738,10 @@ Does the heating part of the evolution.
    gridpoint spacing and timestep spacing
 \param burning
    is burning present in this system?
+\param Cv
+    specific heat in constant volume
+\param E_He
+    energy release per unit mass of helium
 \param kx_offset, ky_offset
    x, y offset for current kernel
 */
@@ -732,7 +754,7 @@ __global__ void evolve_fv_heating(float * gamma_up_d,
                     float * sum_phs, float * rho_d, float * Q_d,
                     int nx, int ny, int nlayers, float alpha, float gamma,
                     float dx, float dy, float dt,
-                    bool burning,
+                    bool burning, float Cv, float E_He,
                     int kx_offset, int ky_offset);
 
 /**
@@ -899,6 +921,10 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    lapse function
 \param gamma
    adiabatic index
+\param E_He
+    energy release per unit mass of helium burning
+\param Cv
+    specific heat per unit volume
 \param zmin
    height of sea floor
 \param dx, dy, dz, dt
@@ -921,7 +947,8 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float * rho, float * Q, int nx, int ny, int nlayers,
          int nxf, int nyf, int nz, int ng,
-         int nt, float alpha, float gamma, float zmin,
+         int nt, float alpha, float gamma, float E_He, float Cv,
+         float zmin,
          float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
