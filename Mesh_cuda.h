@@ -77,17 +77,25 @@ public:
     // these need to be public
     int nx; /**<number of gridpoints in x-direction of coarsest grid*/
     int ny; /**< number of gridpoints in y-direction of coarsest grid */
+    int *nxs; /**<number of gridpoints in x-direction of grids */
+    int *nys; /**< number of gridpoints in y-direction of grids */
+    int *nzs; /**< Number of layers to have in each grid*/
     int nz; /**< number of gridpoints in z-direction of fine (compressible) grid */
     int nlayers; /**< Number of shallow water layers*/
     int ng; /**< Number of ghost cells */
+    int nlevels; /**< Number of levels of mesh refinement*/
+    char *models; /**< Array describing the physical model to use on each level. S = single layer SWE, M = multilayer SWE, C = compressible, L = Low Mach*/
+    int *vec_dims; /**< Dimensions of state vectors on each grid*/
+
 
     float dz; /**< Gridpoint separation in the z-direction of fine (compressible grid)*/
     float zmin; /**< Height of sea floor */
     float zmax; /**< Maximum height of sea surface */
-    float *xs; /**< Vector of x-coordinates of coarse gridpoints */
-    float *ys; /**< Vector of y-coordinates of coarse gridpoints  */
+    float *xs; /**< Vector of x-coordinates of coarsest gridpoints */
+    float *ys; /**< Vector of y-coordinates of coarsest gridpoints  */
     float *U_coarse; /**< Conserved shallow water variables on coarse grid */
     float *U_fine; /**< Conserved compressible variables on fine grid.*/
+    float **Us; /**< Array of pointers to grids.*/
 
 private:
 
@@ -97,8 +105,8 @@ private:
     int nyf; /**< Number of gridpoints in y-direction on fine grid */
     int matching_indices[2*2]; /**< Location of fine grid wrt coarse grid coordinates */
 
-    float dx; /**< Gridpoint separation in x-direction on coarse grid */
-    float dy; /**< Gridpoint separation in y-direction on coarse grid */
+    float dx; /**< Gridpoint separation in x-direction on coarsest grid */
+    float dy; /**< Gridpoint separation in y-direction on coarsest grid */
 
     float dt; /**< Timestep */
     float df; /**< Fraction of coarse grid covered by fine grid */

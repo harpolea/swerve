@@ -296,7 +296,7 @@ mesh_cuda.o: mesh_cuda.cpp
 run_mesh_cuda.o: run_mesh_cuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
 
-mesh_cuda_kernel.cu:
+mesh_cuda_kernel.cu: mesh_cuda_grid.cu mesh_cuda_thermo.cu mesh_cuda_evolve.cu mesh_cuda_test.cu
 	cat mesh_cuda_grid.cu > mesh_cuda_kernel.cu
 	cat mesh_cuda_thermo.cu >> mesh_cuda_kernel.cu
 	cat mesh_cuda_evolve.cu >> mesh_cuda_kernel.cu

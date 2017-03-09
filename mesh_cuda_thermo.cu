@@ -1,3 +1,7 @@
+/**
+File containing thermodynamic routines and auxiliary functions.
+**/
+
 unsigned int nextPow2(unsigned int x)
 {
     --x;

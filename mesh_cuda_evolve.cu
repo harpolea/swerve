@@ -1,3 +1,7 @@
+/**
+File containing routines which model the evolution.
+**/
+
 __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      float * Un_d, flux_func_ptr flux_func,
                      float * qx_plus_half, float * qx_minus_half,
@@ -931,10 +935,21 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     }
 }
 
+template<typename T>
+T array_max(T * a, int length) {
+    // Returns the maximum value of array a
+    T max = a[0];
+    for (int i = 1; i < length; i++) {
+        if (a[i] > max) max = a[i];
+    }
+    return max;
+}
+
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float * Q,
-         int nx, int ny, int nlayers,
-         int nxf, int nyf, int nz, int ng,
+         float ** Us_h, float * rho, float * Q, int nx, int ny, int nlayers,
+         int nxf, int nyf, int nz,
+         int * nxs, int * nys, int * nzs, int nlevels, char * models,
+         int * vec_dims, int ng,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
@@ -1029,14 +1044,18 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     dim3 *kernels = new dim3[n_processes];
     int *cumulative_kernels = new int[n_processes];
 
-    getNumKernels(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
+    //getNumKernels(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
+
+    getNumKernels(array_max(nxs, nlevels), array_max(nys, nlevels), array_max(nzs, nlevels), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
 
     int total_kernels = cumulative_kernels[n_processes-1];
 
     dim3 *blocks = new dim3[total_kernels];
     dim3 *threads = new dim3[total_kernels];
 
-    getNumBlocksAndThreads(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
+    //getNumBlocksAndThreads(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
+
+    getNumBlocksAndThreads(array_max(nxs, nlevels), array_max(nys, nlevels), array_max(nzs, nlevels), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
 
     printf("rank: %i\n", rank);
     printf("kernels: (%i, %i)\n", kernels[rank].x, kernels[rank].y);
@@ -1109,7 +1128,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         Upf_h[j] = 0.0;
     }
 
-    int grid_size = max(nx*ny*nlayers*4, nxf*nyf*nz*6);
+    //int grid_size = max(nx*ny*nlayers*4, nxf*nyf*nz*6);
+    int grid_size = nxs[0]*nys[0]*nzs[0]*vec_dims[0];
+    for (int i = 1; i < nlevels; i++) {
+        grid_size = max(nxs[i]*nys[i]*nzs[i]*vec_dims[i], grid_size);
+    }
 
     cudaMalloc((void**)&qx_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&qx_m_d, grid_size*sizeof(float));

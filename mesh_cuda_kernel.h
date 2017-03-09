@@ -913,6 +913,16 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    dimensions of coarse grid
 \param nxf, nyf, nz
    dimensions of fine grid
+\param nxs, nys, nzs
+   dimensions of grids
+\param nlevels
+    number of levels of mesh refinement
+\param models
+    Array describing the physical model to use on each level. S = single layer SWE, M = multilayer SWE, C = compressible, L = Low Mach
+\param vec_dims
+    Dimensions of state vectors on each grid
+\parm Us_h
+    Array of pointers to grids.
 \param ng
    number of ghost cells
 \param nt
@@ -945,8 +955,10 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    position of fine grid wrt coarse grid
 */
 void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float * rho, float * Q, int nx, int ny, int nlayers,
-         int nxf, int nyf, int nz, int ng,
+         float ** Us_h, float * rho, float * Q, int nx, int ny, int nlayers,
+         int nxf, int nyf, int nz,
+         int * nxs, int * nys, int * nzs, int nlevels, char * models,
+         int * vec_dims, int ng,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,

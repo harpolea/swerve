@@ -1,4 +1,6 @@
 /*
+File containing routines which deal with multigrid operations.
+
 TODO: need to interpolate rho onto fine grid at start (probably in mes constructor)
 */
 

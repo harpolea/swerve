@@ -183,6 +183,38 @@ Sea::Sea(char * filename)
         } else if (variableName == "ng") {
             inputFile >> value;
             ng = int(value);
+        } else if (variableName == "nlevels") {
+            inputFile >> value;
+            nlevels = int(value);
+            models = new char[nlevels];
+            nxs = new int[nlevels];
+            nys = new int[nlevels];
+            nzs = new int[nlevels];
+            vec_dims = new int[nlevels];
+        } else if (variableName == "models") {
+            for (int i = 0; i < nlevels; i++) {
+                inputFile >> models[i];
+                if (models[i] == 'S' || models[i] == 'M') {
+                    vec_dims[i] = 4;
+                } else {
+                    vec_dims[i] = 6;
+                }
+            }
+        } else if (variableName == "nzs") {
+            for (int i = 0; i < nlevels; i++) {
+                inputFile >> value;
+                nzs[i] = int(value);
+            }
+        } else if (variableName == "nxs") {
+            for (int i = 0; i < nlevels; i++) {
+                inputFile >> value;
+                nxs[i] = int(value);
+            }
+        } else if (variableName == "nys") {
+            for (int i = 0; i < nlevels; i++) {
+                inputFile >> value;
+                nys[i] = int(value);
+            }
         } else if (variableName == "nt") {
             inputFile >> value;
             nt = int(value);
@@ -265,9 +297,25 @@ Sea::Sea(char * filename)
         printf("Invalid nz: %d\n", nz);
         exit(EXIT_FAILURE);
     }
-    if (nz < 0 || nz > 1e5) {
+    if (nlayers < 0 || nlayers > nz) {
         printf("Invalid nlayers: %d\n", nlayers);
         exit(EXIT_FAILURE);
+    }
+    if (nlevels < 0 || nlevels > 1e2) {
+        printf("Invalid nlevels: %d\n", nlevels);
+        exit(EXIT_FAILURE);
+    }
+    for (int i = 0; i < nlevels; i++) {
+        if (nzs[i] < 0 || nzs[i] > nzs[nlevels-1]) {
+            printf("Invalid nzs[%d]: %d\n", i, nzs[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+    for (int i = 0; i < nlevels; i++) {
+        if (models[i] != 'S' && models[i] != 'M' && models[i] != 'C' && models[i] != 'L') {
+            printf("Invalid model[%d]: %c\n", i, models[i]);
+            exit(EXIT_FAILURE);
+        }
     }
     if (ng < 0 || ng > 1e2) {
         printf("Invalid ng: %d\n", ng);
@@ -352,6 +400,14 @@ Sea::Sea(char * filename)
         exit(EXIT_FAILURE);
     }
 
+    nxs[0] = nx;
+    nys[0] = ny;
+
+    for (int i = 1; i < nlevels; i++) {
+        nxs[i] = int(r * df * nxs[i-1]);
+        nys[i] = int(r * df * nys[i-1]);
+    }
+
     nxf = int(r * df * nx);
     nyf = int(r * df * ny);
 
@@ -380,6 +436,10 @@ Sea::Sea(char * filename)
 
     U_coarse = new float[nx*ny*nlayers*4];
     U_fine = new float[nxf*nyf*nz*6];
+
+    for (int i = 0; i < nlevels; i++) {
+        Us[i] = new float[nxs[i]*nys[i]*nzs[i]*vec_dims[i]];
+    }
 
     // initialise arrays
     for (int i = 0; i < nx*ny*nlayers*4; i++) {
@@ -460,6 +520,15 @@ Sea::~Sea() {
     delete[] xs;
     delete[] ys;
     delete[] rho;
+    delete[] models;
+    delete[] nxs;
+    delete[] nys;
+    delete[] nzs;
+    delete[] vec_dims;
+
+    for (int i = 0; i < nlevels; i++) {
+        delete[] Us[i];
+    }
 
     delete[] U_coarse;
     delete[] U_fine;
@@ -473,7 +542,7 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
         U_coarse[i*4] = D0[i];
         U_coarse[i*4+1] = Sx0[i];
         U_coarse[i*4+2] = Sy0[i];
-        U_coarse[i*4+3] = 0.9 * float(i) / (nx*ny*nlayers); 
+        U_coarse[i*4+3] = 0.9 * float(i) / (nx*ny*nlayers);
     }
 
     bcs(U_coarse, nx, ny, nlayers, 4);
@@ -570,8 +639,10 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
         Qs[i] = Q;
     }
 
-    cuda_run(beta, gamma_up, U_coarse, U_fine, rho, Qs,
-             nx, ny, nlayers, nxf, nyf, nz, ng, nt,
+    cuda_run(beta, gamma_up, U_coarse, U_fine, Us, rho, Qs,
+             nx, ny, nlayers, nxf, nyf, nz,
+             nxs, nys, nzs, nlevels, models, vec_dims,
+             ng, nt,
              alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning, dprint,
              outfile, comm, *status, rank, size, matching_indices);
 

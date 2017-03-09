@@ -1,3 +1,7 @@
+/**
+File containing test routines.
+**/
+
 __global__ void test_find_height(bool * passed) {
     *passed = true;
 
