@@ -259,8 +259,8 @@ run: build
 	$(EXEC) ./gr_cuda
 
 clean:
-	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
-clean_test:
+	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_cuda_kernel.cu mesh_link.o
+clean_test: clean
 	rm -f testing/flat testing/unit_tests testing/*.o
 
 testing/flat.o: testing/flat.cpp
@@ -295,6 +295,12 @@ mesh_cuda.o: mesh_cuda.cpp
 
 run_mesh_cuda.o: run_mesh_cuda.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
+
+mesh_cuda_kernel.cu:
+	cat mesh_cuda_grid.cu > mesh_cuda_kernel.cu
+	cat mesh_cuda_thermo.cu >> mesh_cuda_kernel.cu
+	cat mesh_cuda_evolve.cu >> mesh_cuda_kernel.cu
+	cat mesh_cuda_test.cu >> mesh_cuda_kernel.cu
 
 mesh_cuda_kernel.o: mesh_cuda_kernel.cu
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -g -o $@ -c $<
