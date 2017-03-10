@@ -21,7 +21,7 @@
 #include "H5Cpp.h"
 using namespace std;
 
-Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
+Sea::Sea(int _nx, int _ny,
         int _nt, int _ng, int _r, float _df,
         float xmin, float xmax,
         float ymin, float ymax,
@@ -29,7 +29,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         float _Q, float _gamma, float _E_He, float _Cv,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), nz(_nz), nlayers(_nlayers), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
 {
     /**
     Implement Sea class
@@ -44,13 +44,30 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         ys[i] = ymin + (i-ng) * (ymax - ymin) / (ny-2*ng);
     }
 
+    nxs[0] = nx;
+    nys[0] = ny;
+
+    for (int i = 1; i < nlevels; i++) {
+        nxs[i] = int(r * df * nxs[i-1]);
+        nys[i] = int(r * df * nys[i-1]);
+    }
+
     dx = xs[1] - xs[0];
     dy = ys[1] - ys[0];
-    dz = (zmax - _zmin) / (nz - 1.0);
-    dt = 0.1 * min(dx, min(dy, dz));
+    // NOTE: need to define this in such a way that it is calculated using layer separation on first compressible grid
+    for (int i = 0; i < nlevels; i++) {
+        // first compressible layer
+        if (models[i] == 'C') {
+            dz = (zmax - zmin) / (nzs[i] - 1.0);
+            dz *= pow(r, i);
+            break;
+        }
+    }
+    float cfl = 0.5; // cfl number?
+    dt = cfl * min(dx, min(dy, dz));
 
-    rho = new float[nlayers];
-    for (int i = 0; i < nlayers; i++) {
+    rho = new float[nzs[0]];
+    for (int i = 0; i < nzs[0]; i++) {
         rho[i] = _rho[i];
     }
     Q = _Q;
@@ -67,13 +84,6 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
         gamma_up[i] = gamma_down[i];
     }
     Sea::invert_mat(gamma_up, 3, 3);
-
-    nxf = int(r * df * nx);
-    nyf = int(r * df * ny);
-
-    // D, Sx, Sy, zeta
-    U_coarse = new float[nx*ny*nlayers*4];
-    U_fine = new float[nxf*nyf*nz*6];
 
     matching_indices = new int[4 * (nlevels-1)];
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
@@ -174,13 +184,6 @@ Sea::Sea(char * filename)
         } else if (variableName == "ny") {
             inputFile >> value;
             ny = int(value);
-        } else if (variableName == "nz") {
-            inputFile >> value;
-            nz = int(value);
-        } else if (variableName == "nlayers") {
-            inputFile >> value;
-            nlayers = int(value);
-            rho = new float[nlayers];
         } else if (variableName == "ng") {
             inputFile >> value;
             ng = int(value);
@@ -206,6 +209,8 @@ Sea::Sea(char * filename)
                 inputFile >> value;
                 nzs[i] = int(value);
             }
+            // TODO: work out where to define rhos
+            rho = new float[nzs[0]];
         } else if (variableName == "nt") {
             inputFile >> value;
             nt = int(value);
@@ -227,7 +232,7 @@ Sea::Sea(char * filename)
         } else if (variableName == "zmax") {
             inputFile >> zmax;
         } else if (variableName == "rho") {
-            for (int i = 0; i < nlayers; i++) {
+            for (int i = 0; i < nzs[0]; i++) {
                 inputFile >> rho[i];
             }
         } else if (variableName == "Q") {
@@ -282,14 +287,6 @@ Sea::Sea(char * filename)
     }
     if (ny < 0 || ny > 1e5) {
         printf("Invalid ny: %d\n", ny);
-        exit(EXIT_FAILURE);
-    }
-    if (nz < 0 || nz > 1e2) {
-        printf("Invalid nz: %d\n", nz);
-        exit(EXIT_FAILURE);
-    }
-    if (nlayers < 0 || nlayers > nz) {
-        printf("Invalid nlayers: %d\n", nlayers);
         exit(EXIT_FAILURE);
     }
     if (nlevels < 0 || nlevels > 1e2) {
@@ -348,7 +345,7 @@ Sea::Sea(char * filename)
         printf("Invalid zmax: %f\n", zmax);
         exit(EXIT_FAILURE);
     }
-    for (int i = 0; i < nlayers; i++) {
+    for (int i = 0; i < nzs[0]; i++) {
         if (rho[i] < 0 || rho[i] > 1.0e8) {
             printf("Invalid rho[%d]: %f\n", i, rho[i]);
             exit(EXIT_FAILURE);
@@ -399,9 +396,6 @@ Sea::Sea(char * filename)
         nys[i] = int(r * df * nys[i-1]);
     }
 
-    nxf = int(r * df * nx);
-    nyf = int(r * df * ny);
-
     inputFile.close();
 
     xs = new float[nx];
@@ -416,17 +410,24 @@ Sea::Sea(char * filename)
 
     dx = xs[1] - xs[0];
     dy = ys[1] - ys[0];
-    dz = (zmax - zmin) / (nz - 1.0);
-    dt = 0.1 * min(dx, min(dy, dz));
+    // NOTE: need to define this in such a way that it is calculated using layer separation on first compressible grid
+    for (int i = 0; i < nlevels; i++) {
+        // first compressible layer
+        if (models[i] == 'C') {
+            dz = (zmax - zmin) / (nzs[i] - 1.0);
+            dz *= pow(r, i);
+            break;
+        }
+    }
+
+    float cfl = 0.5; // cfl number?
+    dt = cfl * min(dx, min(dy, dz));
 
     // find inverse of gamma
     for (int i = 0; i < 3*3; i++) {
         gamma_up[i] = gamma_down[i];
     }
     Sea::invert_mat(gamma_up, 3, 3);
-
-    U_coarse = new float[nx*ny*nlayers*4];
-    U_fine = new float[nxf*nyf*nz*6];
 
     cout << "nxs, nys, nzs, vec_dims:\n";
     for (int i = 0; i < nlevels; i++) {
@@ -437,14 +438,6 @@ Sea::Sea(char * filename)
 
     for (int i = 0; i < nlevels; i++) {
         Us[i] = new float[nxs[i]*nys[i]*nzs[i]*vec_dims[i]];
-    }
-
-    // initialise arrays
-    for (int i = 0; i < nx*ny*nlayers*4; i++) {
-        U_coarse[i] = 0.0;
-    }
-    for (int i = 0; i < nxf*nyf*nz*6; i++) {
-        U_fine[i] = 0.0;
     }
 
     matching_indices = new int[4 * (nlevels-1)];
@@ -466,7 +459,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), nz(seaToCopy.nz), nlayers(seaToCopy.nlayers), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), nxf(seaToCopy.nxf), nyf(seaToCopy.nyf), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
 {
     /**
     copy constructor
@@ -482,8 +475,8 @@ Sea::Sea(const Sea &seaToCopy)
         ys[i] = seaToCopy.ys[i];
     }
 
-    rho = new float[nlayers];
-    for (int i = 0; i < nlayers; i++) {
+    rho = new float[nzs[0]];
+    for (int i = 0; i < nzs[0]; i++) {
         rho[i] = seaToCopy.rho[i];
     }
 
@@ -491,17 +484,6 @@ Sea::Sea(const Sea &seaToCopy)
 
     for (int i = 0; i < 3*nx*ny; i++) {
         beta[i] = seaToCopy.beta[i];
-    }
-
-    U_coarse = new float[int(nx*ny*nlayers*4)];
-    U_fine = new float[nxf*nyf*nz*6];
-
-    for (int i = 0; i < nx*ny*nlayers*4;i++) {
-        U_coarse[i] = seaToCopy.U_coarse[i];
-    }
-
-    for (int i = 0; i < nxf*nyf*nz*6;i++) {
-        U_fine[i] = seaToCopy.U_fine[i];
     }
 
     for (int i = 0; i < 3; i++) {
@@ -533,9 +515,6 @@ Sea::~Sea() {
     for (int i = 0; i < nlevels; i++) {
         delete[] Us[i];
     }
-
-    delete[] U_coarse;
-    delete[] U_fine;
 }
 
 void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
@@ -570,9 +549,9 @@ void Sea::print_inputs() {
     Print some input and runtime parameters to screen.
     */
     cout << "\nINPUT DATA\n" << "----------\n";
-    cout << "(nx, ny, nlayers, ng) \t(" << nx << ',' << ny << ',' << nlayers << ',' << ng << ")\n";
+    cout << "(nx, ny, ng) \t\t(" << nx << ',' << ny << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
-    cout << "(nxf, nyf, nz, r, df) \t(" << nxf << ',' << nyf << ',' << nz << ',' << r << ',' << df << ")\n";
+    cout << "(r, df) \t\t(" << r << ',' << df << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dz, dt) \t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho[0] << ',' << rho[1]<< ',' << rho[2] << "\n";
@@ -649,8 +628,8 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     run code
     */
     // hack for now
-    float * Qs = new float[nlayers];
-    for (int i = 0; i < nlayers; i++) {
+    float * Qs = new float[nzs[0]];
+    for (int i = 0; i < nzs[0]; i++) {
         Qs[i] = Q;
     }
 

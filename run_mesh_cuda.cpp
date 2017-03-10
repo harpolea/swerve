@@ -52,22 +52,22 @@ int main(int argc, char *argv[]) {
 
     Sea sea(input_filename);
 
-    float * D0 = new float[sea.nx*sea.ny*sea.nlayers];
-    float * Sx0 = new float[sea.nx*sea.ny*sea.nlayers];
-    float * Sy0 = new float[sea.nx*sea.ny*sea.nlayers];
+    float * D0 = new float[sea.nxs[0]*sea.nys[0]*sea.nzs[0]];
+    float * Sx0 = new float[sea.nxs[0]*sea.nys[0]*sea.nzs[0]];
+    float * Sy0 = new float[sea.nxs[0]*sea.nys[0]*sea.nzs[0]];
 
     // set initial data
-    for (int y = 0; y < sea.ny; y++) {
-        for (int x = 0; x < sea.nx; x++) {
-            D0[y * sea.nx + x] = -0.5 * log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
+    for (int y = 0; y < sea.nys[0]; y++) {
+        for (int x = 0; x < sea.nxs[0]; x++) {
+            D0[y * sea.nxs[0] + x] = -0.5 * log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
                 //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.ny + y) * sea.nx + x] = 1.1 - 0.1 *
+            D0[(sea.nys[0] + y) * sea.nxs[0] + x] = 1.1 - 0.1 *
                 exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(2*sea.ny + y) * sea.nx + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);
+            D0[(2*sea.nys[0] + y) * sea.nxs[0] + x] = -0.5 * log(1.0 - 2.0 / sea.zmin);
 
-            for (int z = 0; z < sea.nlayers; z++) {
-                Sx0[(z * sea.ny + y) * sea.nx + x] = 0.0;
-                Sy0[(z * sea.ny + y) * sea.nx + x] = 0.0;
+            for (int z = 0; z < sea.nzs[0]; z++) {
+                Sx0[(z * sea.nys[0] + y) * sea.nxs[0] + x] = 0.0;
+                Sy0[(z * sea.nys[0] + y) * sea.nxs[0] + x] = 0.0;
             }
         }
     }

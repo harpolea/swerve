@@ -1252,10 +1252,11 @@ void cuda_run(float * beta, float * gamma_up,
                         cudaMemcpyHostToDevice);
 
                 // prolong to fine grid
+                // TODO: when have LM, will need to check which prolong function to use here.
                 prolong_swe_to_comp(kernels, threads, blocks,
                              cumulative_kernels,
                              U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dx, dy, dz, dt, zmin, gamma_up_d,
+                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
                              rho_d, gamma, matching_indices_d, ng, rank,
                              q_comp_d, old_phi_d, i, nlevels);
 
@@ -1297,7 +1298,7 @@ void cuda_run(float * beta, float * gamma_up,
                     //do_z = true;
                 //}
 
-                for (int j = 0; j < i * r; j++) {
+                for (int j = 0; j < pow(r, i); j++) {
                     // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
 
                     err = cudaGetLastError();
@@ -1312,7 +1313,7 @@ void cuda_run(float * beta, float * gamma_up,
                             fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                             nxs[i], nys[i], nzs[i], vec_dims[i], ng,
                             alpha, gamma,
-                            dx/(i*r), dy/(i*r), dz/(i*r), dt/(i*r),
+                            dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i),
                             Up_h, F_h, Us_h[i],
                             comm, status, rank, n_processes,
                             flux_func, do_z);
@@ -1328,19 +1329,19 @@ void cuda_run(float * beta, float * gamma_up,
                                 for (int x = ng; x < nxs[i] - ng; x++) {
                                     // tau
                                     Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6 + 4] +=
-                                        dt * 0.5 * alpha *
+                                        dt/pow(r, i) * 0.5 * alpha *
                                         Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
                                         H[(z * nys[i] + y) * nxs[i] + x];
                                     float X_dot =
                                         H[(z*nys[i] + y)*nxs[i] + x] / E_He;
                                     // DX
                                     Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
-                                        dt * 0.5 * alpha * rho[0] * X_dot;
+                                        dt/pow(r, i) * 0.5 * alpha * rho[0] * X_dot;
                                 }
                             }
                         }
                         delete[] H;
-                    } else if (models[i] == 'M') {
+                    } else if (models[i] == 'M') { // SWE burning
                         // update old_phi
                         for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
                             pphi[j] = Us_h[i][j*4];
@@ -1369,7 +1370,7 @@ void cuda_run(float * beta, float * gamma_up,
                                        fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                                        sum_phs_d, rho_d, Q_d,
                                        nxs[i], nys[i], nzs[i], alpha, gamma,
-                                       dx/(i*r), dy/(i*r), dt/(i*r),
+                                       dx/pow(r, i), dy/pow(r, i), dt/pow(r, i),
                                        burning, Cv, E_He,
                                        kx_offset, ky_offset);
                                 kx_offset += blocks[k_offset + l * kernels[rank].x + k].x * threads[k_offset + l * kernels[rank].x + k].x - 2*ng;
@@ -1406,7 +1407,7 @@ void cuda_run(float * beta, float * gamma_up,
                                 evolve2<<<blocks[k_offset + p * kernels[rank].x + q], threads[k_offset + p * kernels[rank].x + q]>>>(U_d,
                                        Up_d, U_half_d, sum_phs_d,
                                        nxs[i], nys[i], nzs[i], ng, alpha,
-                                       dx/(i*r), dy/(i*r), dt/(i*r),
+                                       dx/pow(r, i), dy/pow(r, i), dt/pow(r, i),
                                        kx_offset, ky_offset);
                                 kx_offset += blocks[k_offset + p * kernels[rank].x + q].x * threads[k_offset + p * kernels[rank].x + q].x - 2*ng;
                             }
@@ -1448,11 +1449,11 @@ void cuda_run(float * beta, float * gamma_up,
                     // restrict to coarse grid
                     // copy to device
                     cudaMemcpy(Up_d, Us_h[i-1], nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float), cudaMemcpyHostToDevice);
-                    // TODO: fix dz
+                    // TODO: when have LM model as well, will need to select correct restrict function here
                     restrict_comp_to_swe(kernels, threads, blocks,
                                   cumulative_kernels,
                                   Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  dz/(i*r), zmin, matching_indices_d,
+                                  dz/pow(r, i), zmin, matching_indices_d,
                                   rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
                                   i-1, nlevels);
                     err = cudaGetLastError();
@@ -1558,7 +1559,7 @@ void cuda_run(float * beta, float * gamma_up,
                 // prolong to fine grid
                 prolong_swe_to_comp(kernels, threads, blocks,
                              cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d, dx, dy, dz, dt,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d, dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i),
                              zmin, gamma_up_d,
                              rho_d, gamma, matching_indices_d, ng, rank,
                              q_comp_d, old_phi_d, i, nlevels);
@@ -1595,7 +1596,7 @@ void cuda_run(float * beta, float * gamma_up,
                     //do_z = true;
                 //}
 
-                for (int j = 0; j < i * r; j++) {
+                for (int j = 0; j < pow(r, i); j++) {
                     // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
 
                     err = cudaGetLastError();
@@ -1610,7 +1611,7 @@ void cuda_run(float * beta, float * gamma_up,
                             fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                             nxs[i], nys[i], nzs[i], vec_dims[i], ng,
                             alpha, gamma,
-                            dx/(i*r), dy/(i*r), dz/(i*r), dt/(i*r),
+                            dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i),
                             Up_h, F_h, Us_h[i],
                             comm, status, rank, n_processes,
                             flux_func, do_z);
@@ -1626,14 +1627,14 @@ void cuda_run(float * beta, float * gamma_up,
                                 for (int x = ng; x < nxs[i] - ng; x++) {
                                     // tau
                                     Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+4] +=
-                                        dt * 0.5 * alpha *
+                                        dt/pow(r, i) * 0.5 * alpha *
                                         Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
                                         H[(z * nys[i] + y) * nxs[i] + x];
                                     float X_dot =
                                         H[(z*nys[i]+y)*nxs[i] + x] / E_He;
                                     // DX
                                     Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
-                                        dt * 0.5 * alpha * rho[0] * X_dot;
+                                        dt/pow(r, i) * 0.5 * alpha * rho[0] * X_dot;
                                 }
                             }
                         }
@@ -1665,7 +1666,7 @@ void cuda_run(float * beta, float * gamma_up,
                     restrict_comp_to_swe(kernels, threads, blocks,
                                   cumulative_kernels,
                                   Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  dz/(i*r), zmin, matching_indices_d,
+                                  dz/pow(r, i), zmin, matching_indices_d,
                                   rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
                                   i-1, nlevels);
                     err = cudaGetLastError();

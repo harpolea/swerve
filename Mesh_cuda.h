@@ -13,7 +13,7 @@ class Sea {
 public:
     /** Constructor from list of parameters.
     */
-    Sea(int _nx, int _ny, int _nz, int _nlayers, int _nt, int _ng,
+    Sea(int _nx, int _ny, int _nt, int _ng,
             int _r, float _df,
             float xmin, float xmax,
             float ymin, float ymax,
@@ -80,8 +80,6 @@ public:
     int * nxs; /**<number of gridpoints in x-direction of grids */
     int * nys; /**< number of gridpoints in y-direction of grids */
     int * nzs; /**< Number of layers to have in each grid*/
-    int nz; /**< number of gridpoints in z-direction of fine (compressible) grid */
-    int nlayers; /**< Number of shallow water layers*/
     int ng; /**< Number of ghost cells */
     int nlevels; /**< Number of levels of mesh refinement*/
     char * models; /**< Array describing the physical model to use on each level. S = single layer SWE, M = multilayer SWE, C = compressible, L = Low Mach*/
@@ -93,16 +91,12 @@ public:
     float zmax; /**< Maximum height of sea surface */
     float * xs; /**< Vector of x-coordinates of coarsest gridpoints */
     float * ys; /**< Vector of y-coordinates of coarsest gridpoints  */
-    float * U_coarse; /**< Conserved shallow water variables on coarse grid */
-    float * U_fine; /**< Conserved compressible variables on fine grid.*/
     float ** Us; /**< Array of pointers to grids.*/
 
 private:
 
     int nt; /**< Total number of timesteps to run simulation for */
     int r; /**< refinement ratio */
-    int nxf; /**< Number of gridpoints in x-direction on fine grid */
-    int nyf; /**< Number of gridpoints in y-direction on fine grid */
     int * matching_indices; /**< Location of fine grids wrt coarser grid coordinates */
 
     float dx; /**< Gridpoint separation in x-direction on coarsest grid */

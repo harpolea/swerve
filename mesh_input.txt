@@ -1,8 +1,6 @@
-nx      20
-ny      20
-nz      10
-nlayers 3
-nt      5
+nx      80
+ny      80
+nt      100
 ng      2
 r       2
 nlevels 2
