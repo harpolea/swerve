@@ -383,7 +383,7 @@ Calculates the compressible state vector from the SWE variables.
    grid of SWE state vector
 \param q_comp
    grid where compressible state vector to be stored
-\param nx, ny, nz
+\param nxs, nys, nzs
    grid dimensions
 \param gamma_up
    spatial metric
@@ -395,12 +395,14 @@ Calculates the compressible state vector from the SWE variables.
    timestep
 \param old_phi
    Phi at previous timestep
+\param level
+    index of level
 */
 __global__ void compressible_from_swe(float * q, float * q_comp,
-                          int nx, int ny, int nz,
+                          int * nxs, int * nys, int * nzs,
                           float * gamma_up, float * rho, float gamma,
                           int kx_offset, int ky_offset, float dt,
-                          float * old_phi);
+                          float * old_phi, int level);
 
 /**
 Calculates slope limited verticle gradient at layer_frac between middle and amiddle.
@@ -417,10 +419,8 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     fine grid state vector
 \param q_c
     coarse grid swe state vector
-\param nx, ny, nlayers
-    coarse grid dimensions
-\param nxf, nyf, nz
-    fine grid dimensions
+\param nxs, nys, nzs
+    grid dimensions
 \param dx, dy, dz
     coarse grid spacings
 \param matching_indices_d
@@ -429,11 +429,15 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     spatial metric
 \param kx_offset, ky_offset
     kernel offsets in the x and y directions
+\param coarse_level
+  index of coarser level
+\param nlevels
+    total number of levels
 */
-__global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
-                  int nx, int ny, int nlayers, int nxf, int nyf, int nz, float dx, float dy, float dz, float zmin,
+__global__ void prolong_reconstruct_comp(float * q_comp, float * q_f, float * q_c,
+                  int * nxs, int * nys, int * nzs, float dx, float dy, float dz, float zmin,
                   int * matching_indices_d, float * gamma_up,
-                  int kx_offset, int ky_offset);
+                  int kx_offset, int ky_offset, int coarse_level, int nlevels);
 
 /**
 Prolong coarse grid data to fine grid
@@ -444,10 +448,8 @@ Prolong coarse grid data to fine grid
   cumulative number of kernels in mpi processes of r < rank
 \param q_cd, q_fd
   coarse and fine grids of state vectors
-\param nx, ny, nlayers
-  dimensions of coarse grid
-\param nxf, nyf, nz
-  dimensions of fine grid
+\param nxs, nys, nzs
+  dimensions of grids
 \param dx, dy, dz
   coarse grid cell spacings
 \param dt
@@ -468,14 +470,18 @@ Prolong coarse grid data to fine grid
   grid of compressible variables on coarse grid
 \param old_phi_d
   Phi at previous timstep
+\param coarse_level
+    index of coarser level
+\param nlevels
+  total number of levels
 */
-void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 int * cumulative_kernels, float * q_cd, float * q_fd,
-                int nx, int ny, int nlayers, int nxf, int nyf, int nz,
+                int * nxs, int * nys, int * nzs,
                 float dx, float dy, float dz, float dt, float zmin,
                 float * gamma_up_d, float * rho, float gamma,
                 int * matching_indices_d, int ng, int rank, float * qc_comp,
-                float * old_phi_d);
+                float * old_phi_d, int coarse_level, int nlevels);
 
 /**
 Calculates the SWE state vector from the compressible variables.
@@ -484,7 +490,7 @@ Calculates the SWE state vector from the compressible variables.
     grid of compressible state vector
 \param q_swe
     grid where SWE state vector to be stored
-\param nxf, nyf, nz
+\param nxs, nys, nzs
     grid dimensions
 \param gamma_up
     spatial metric
@@ -496,15 +502,17 @@ Calculates the SWE state vector from the compressible variables.
     coarse grid
 \param matching_indices
     indices of fine grid wrt coarse grid
+\param coarse_level, nlevels
+    index of coarser grid and total number of grid levels
 */
 __global__ void swe_from_compressible(float * q, float * q_swe,
-                                      int nx, int ny,
-                                      int nxf, int nyf, int nz,
+                                      int * nxs, int * nys, int * nzs,
                                       float * gamma_up, float * rho,
                                       float gamma,
                                       int kx_offset, int ky_offset,
                                       float * qc,
-                                      int * matching_indices);
+                                      int * matching_indices,
+                                      int coarse_level, int nlevels);
 
 /**
 Interpolate SWE variables on fine grid to get them on coarse grid.
@@ -513,24 +521,24 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
   SWE variables on fine grid
 \param q_c
   coarse grid state vector
-\param nx, ny, nlayers
-  coarse grid dimensions
-\param nxf, nyf, nz
-  fine grid dimensions
+\param nxs, nys, nzs
+  grid dimensions
 \param matching_indices
   position of fine grid wrt coarse grid
 \param gamma_up
   spatial metric
 \param kx_offset, ky_offset
   kernel offsets in the x and y directions
+\param coarse_level, nlevels
+    index of coarser level and total number of levels
 */
-__global__ void restrict_interpolate(float * qf_sw, float * q_c,
-                                   int nx, int ny, int nlayers,
-                                   int nxf, int nyf, int nz,
+__global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
+                                   int * nxs, int * nys, int * nzs,
                                    float dz, float zmin,
                                    int * matching_indices,
                                    float * gamma_up,
-                                   int kx_offset, int ky_offset);
+                                   int kx_offset, int ky_offset,
+                                   int coarse_level, int nlevels);
 
 /**
 Restrict fine grid data to coarse grid
@@ -541,10 +549,8 @@ Restrict fine grid data to coarse grid
    cumulative number of kernels in mpi processes of r < rank
 \param q_cd, q_fd
    coarse and fine grids of state vectors
-\param nx, ny, nlayers
-   dimensions of coarse grid
-\param nxf, nyf, nz
-   dimensions of fine grid
+\param nxs, nys, nzs
+   dimensions of grids
 \param matching_indices
    position of fine grid wrt coarse grid
 \param rho, gamma
@@ -557,13 +563,16 @@ Restrict fine grid data to coarse grid
    rank of MPI process
 \param qf_swe
    grid of SWE variables on fine grid
+\param coarse_level, nlevels
+    index of coarser level and total number of levels
 */
-void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                    int * cumulative_kernels, float * q_cd, float * q_fd,
-                   int nx, int ny, int nlayers, int nxf, int nyf, int nz,
+                   int * nxs, int * nys, int * nzs,
                    float dz, float zmin, int * matching_indices,
                    float * rho, float gamma, float * gamma_up,
-                   int ng, int rank, float * qf_swe);
+                   int ng, int rank, float * qf_swe,
+                   int coarse_level, int nlevels);
 
 /**
 First part of evolution through one timestep using finite volume methods.
@@ -901,18 +910,10 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    shift vector at each grid point
 \param gamma_up
    gamma matrix at each grid point
-\param Uc_h
-   state vector at each grid point in each layer at current timestep on host in coarse grid
-\param Uf_h
-   state vector at each grid point in each layer at current timestep on host in fine grid
 \param rho
    densities in each layer
 \param Q
    heating rate at each point and in each layer
-\param nx, ny, nlayers
-   dimensions of coarse grid
-\param nxf, nyf, nz
-   dimensions of fine grid
 \param nxs, nys, nzs
    dimensions of grids
 \param nlevels
@@ -953,10 +954,11 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    rank of current MPI process and total number of MPI processes
 \param matching_indices
    position of fine grid wrt coarse grid
+\param r
+    ratio of grid resolutions
 */
-void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float ** Us_h, float * rho, float * Q, int nx, int ny, int nlayers,
-         int nxf, int nyf, int nz,
+void cuda_run(float * beta, float * gamma_up,
+         float ** Us_h, float * rho, float * Q,
          int * nxs, int * nys, int * nzs, int nlevels, char * models,
          int * vec_dims, int ng,
          int nt, float alpha, float gamma, float E_He, float Cv,
@@ -964,7 +966,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices);
+         int * matching_indices, int r);
 
 __global__ void test_find_height(bool * passed);
 __global__ void test_find_pot(bool * passed);

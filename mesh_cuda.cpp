@@ -75,6 +75,7 @@ Sea::Sea(int _nx, int _ny, int _nz, int _nlayers,
     U_coarse = new float[nx*ny*nlayers*4];
     U_fine = new float[nxf*nyf*nz*6];
 
+    matching_indices = new int[4 * (nlevels-1)];
     matching_indices[0] = int(ceil(nx*0.5*(1-df)));
     matching_indices[1] = int(ceil(nx*0.5*(1+df)));
     matching_indices[2] = int(ceil(ny*0.5*(1-df)));
@@ -204,16 +205,6 @@ Sea::Sea(char * filename)
             for (int i = 0; i < nlevels; i++) {
                 inputFile >> value;
                 nzs[i] = int(value);
-            }
-        } else if (variableName == "nxs") {
-            for (int i = 0; i < nlevels; i++) {
-                inputFile >> value;
-                nxs[i] = int(value);
-            }
-        } else if (variableName == "nys") {
-            for (int i = 0; i < nlevels; i++) {
-                inputFile >> value;
-                nys[i] = int(value);
             }
         } else if (variableName == "nt") {
             inputFile >> value;
@@ -437,6 +428,13 @@ Sea::Sea(char * filename)
     U_coarse = new float[nx*ny*nlayers*4];
     U_fine = new float[nxf*nyf*nz*6];
 
+    cout << "nxs, nys, nzs, vec_dims:\n";
+    for (int i = 0; i < nlevels; i++) {
+        cout << nxs[i] << ' ' << nys[i] << ' ' << nzs[i] << ' ' << vec_dims[i] << '\n';
+    }
+
+    Us = new float*[nlevels];
+
     for (int i = 0; i < nlevels; i++) {
         Us[i] = new float[nxs[i]*nys[i]*nzs[i]*vec_dims[i]];
     }
@@ -449,15 +447,20 @@ Sea::Sea(char * filename)
         U_fine[i] = 0.0;
     }
 
-    matching_indices[0] = int(ceil(nx*0.5*(1-df)));
-    matching_indices[1] = int(floor(nx*0.5*(1+df)));
-    matching_indices[2] = int(ceil(ny*0.5*(1-df)));
-    matching_indices[3] = int(floor(ny*0.5*(1+df)));
+    matching_indices = new int[4 * (nlevels-1)];
 
-    cout << "Matching indices: " << matching_indices[0] << ',' << matching_indices[1] << ',' << matching_indices[2] << ',' << matching_indices[3] << '\n';
+    for (int i = 0; i < nlevels-1; i++) {
+        matching_indices[i*(nlevels-1)] = int(ceil(nxs[i]*0.5*(1-df)));
+        matching_indices[i*(nlevels-1)+1] = int(floor(nxs[i]*0.5*(1+df)));
+        matching_indices[i*(nlevels-1)+2] = int(ceil(nys[i]*0.5*(1-df)));
+        matching_indices[i*(nlevels-1)+3] = int(floor(nys[i]*0.5*(1+df)));
 
-    cout << "matching_indices vs nxf: " <<
-        matching_indices[1] - matching_indices[0] << ',' << nxf << '\n';
+        cout << "Matching indices: " << matching_indices[i*(nlevels-1)] << ',' << matching_indices[i*(nlevels-1)+1] << ',' << matching_indices[i*(nlevels-1)+2] << ',' << matching_indices[i*(nlevels-1)+3] << '\n';
+
+        cout << "matching_indices vs nxf: " <<
+            matching_indices[i*(nlevels-1)+1] - matching_indices[i*(nlevels-1)+0] << ',' << nxs[i+1] << '\n';
+
+    }
     cout << "Made a Sea.\n";
 }
 
@@ -515,7 +518,7 @@ Sea::Sea(const Sea &seaToCopy)
 
 Sea::~Sea() {
     /**
-    deconstructor
+    Deconstructor
     */
     delete[] xs;
     delete[] ys;
@@ -525,6 +528,7 @@ Sea::~Sea() {
     delete[] nys;
     delete[] nzs;
     delete[] vec_dims;
+    delete[] matching_indices;
 
     for (int i = 0; i < nlevels; i++) {
         delete[] Us[i];
@@ -536,16 +540,27 @@ Sea::~Sea() {
 
 void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     /**
-    Initialise D, Sx, Sy and Q.
+    Initialise D, Sx, Sy and Q on coarsest multilayer SWE grid.
     */
-    for (int i = 0; i < nx*ny*nlayers; i++) {
-        U_coarse[i*4] = D0[i];
-        U_coarse[i*4+1] = Sx0[i];
-        U_coarse[i*4+2] = Sy0[i];
-        U_coarse[i*4+3] = 0.9 * float(i) / (nx*ny*nlayers);
+    // find coarsest multilayer SWE grid
+    // TODO: make sure ensure this exists when initialise object
+    int grid_index = 0;
+    for (int i = 0; i < nlevels; i++) {
+        if (models[i] == 'M') {
+            grid_index = i;
+            break;
+        }
     }
 
-    bcs(U_coarse, nx, ny, nlayers, 4);
+    for (int i = 0; i < nxs[grid_index]*nys[grid_index]*nzs[grid_index]; i++) {
+        // it's on a SWE grid so know vec_dim = 4
+        Us[grid_index][i*4] = D0[i];
+        Us[grid_index][i*4+1] = Sx0[i];
+        Us[grid_index][i*4+2] = Sy0[i];
+        Us[grid_index][i*4+3] = 0.9 * float(i) / (nxs[grid_index]*nys[grid_index]*nzs[grid_index]);
+    }
+
+    bcs(Us[grid_index], nxs[grid_index], nys[grid_index], nzs[grid_index], vec_dims[grid_index]);
 
     cout << "Set initial data.\n";
 }
@@ -639,12 +654,11 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
         Qs[i] = Q;
     }
 
-    cuda_run(beta, gamma_up, U_coarse, U_fine, Us, rho, Qs,
-             nx, ny, nlayers, nxf, nyf, nz,
+    cuda_run(beta, gamma_up, Us, rho, Qs,
              nxs, nys, nzs, nlevels, models, vec_dims,
              ng, nt,
              alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning, dprint,
-             outfile, comm, *status, rank, size, matching_indices);
+             outfile, comm, *status, rank, size, matching_indices, r);
 
     delete[] Qs;
 }

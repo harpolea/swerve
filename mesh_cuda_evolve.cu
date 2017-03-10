@@ -945,9 +945,8 @@ T array_max(T * a, int length) {
     return max;
 }
 
-void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
-         float ** Us_h, float * rho, float * Q, int nx, int ny, int nlayers,
-         int nxf, int nyf, int nz,
+void cuda_run(float * beta, float * gamma_up,
+         float ** Us_h, float * rho, float * Q,
          int * nxs, int * nys, int * nzs, int nlevels, char * models,
          int * vec_dims, int ng,
          int nt, float alpha, float gamma, float E_He, float Cv,
@@ -955,7 +954,7 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
          float dx, float dy, float dz, float dt, bool burning,
          int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices) {
+         int * matching_indices, int r) {
     /**
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
 
@@ -965,18 +964,14 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         shift vector at each grid point
     gamma_up : float *
         gamma matrix at each grid point
-    Uc_h : float *
-        state vector at each grid point in each layer at current timestep on host in coarse grid
-    Uf_h : float *
-        state vector at each grid point in each layer at current timestep on host in fine grid
+    Us_h : float **
+        state vector at each grid point in each layer at current timestep on host in grids
     rho : float *
         densities in each layer
     Q : float *
         heating rate at each point and in each layer
-    nx, ny, nlayers : int
-        dimensions of coarse grid
-    nxf, nyf, nz : int
-        dimensions of fine grid
+    nxs, nys, nzs : int *
+        dimensions of grids
     ng : int
         number of ghost cells
     nt : int
@@ -1007,6 +1002,8 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
         rank of current MPI process and total number of MPI processes
     matching_indices : int *
         position of fine grid wrt coarse grid
+    r : int
+        ratio of resolutions
     */
 
     // set up GPU stuff
@@ -1073,66 +1070,61 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     }
 
     // gpu variables
-    float * beta_d, * gamma_up_d, * Uc_d, * Uf_d, * rho_d, * Q_d;
-
-    // initialise Uf_h
-    for (int i = 0; i < nxf*nyf*nz*6; i++) {
-        Uf_h[i] = 0.0;
-    }
+    float * beta_d, * gamma_up_d, * rho_d, * Q_d;
 
     // set device
     cudaSetDevice(rank);
 
+    // TODO: work out where I want rho to be defined.
+
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 3*sizeof(float));
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
-    cudaMalloc((void**)&Uc_d, nx*ny*nlayers*4*sizeof(float));
-    cudaMalloc((void**)&Uf_d, nxf*nyf*nz*6*sizeof(float));
-    cudaMalloc((void**)&rho_d, nlayers*sizeof(float));
-    cudaMalloc((void**)&Q_d, nlayers*sizeof(float));
+    cudaMalloc((void**)&rho_d, nzs[0]*sizeof(float));
+    cudaMalloc((void**)&Q_d, nzs[0]*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*6*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(rho_d, rho, nlayers*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Q_d, Q, nlayers*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(rho_d, rho, nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Q_d, Q, nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
 
-    float *Upc_d, *Uc_half_d, *Upf_d, *Uf_half_d, *old_phi_d, *sum_phs_d;
-    cudaMalloc((void**)&Upc_d, nx*ny*nlayers*4*sizeof(float));
-    cudaMalloc((void**)&Uc_half_d, nx*ny*nlayers*4*sizeof(float));
-    cudaMalloc((void**)&Upf_d, nxf*nyf*nz*6*sizeof(float));
-    cudaMalloc((void**)&Uf_half_d, nxf*nyf*nz*6*sizeof(float));
-    cudaMalloc((void**)&old_phi_d, nlayers*nx*ny*sizeof(float));
-    cudaMalloc((void**)&sum_phs_d, nlayers*nx*ny*sizeof(float));
-
-    // need to fill old_phi with current phi to initialise
-    float *pphi = new float[nlayers*nx*ny];
-    for (int i = 0; i < nlayers*nx*ny; i++) {
-        pphi[i] = Uc_h[i*4];
-    }
-    cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
-
-    float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *qz_p_d, *qz_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d, *fz_p_d, *fz_m_d;
-    float *Upc_h = new float[nx*ny*nlayers*4];
-    float *Fc_h = new float[nx*ny*nlayers*4];
-
-    float *Upf_h = new float[nxf*nyf*nz*6];
-    float *Ff_h = new float[nxf*nyf*nz*6];
-
-    float * sum_phs_h = new float[nx*ny*nlayers];
-
-    // initialise
-    for (int j = 0; j < nxf*nyf*nz*6; j++) {
-        Upf_h[j] = 0.0;
-    }
-
-    //int grid_size = max(nx*ny*nlayers*4, nxf*nyf*nz*6);
     int grid_size = nxs[0]*nys[0]*nzs[0]*vec_dims[0];
     for (int i = 1; i < nlevels; i++) {
         grid_size = max(nxs[i]*nys[i]*nzs[i]*vec_dims[i], grid_size);
     }
+
+    int * nxs_d, * nys_d, * nzs_d;
+    cudaMalloc((void**)&nxs_d, nlevels*sizeof(int));
+    cudaMalloc((void**)&nys_d, nlevels*sizeof(int));
+    cudaMalloc((void**)&nzs_d, nlevels*sizeof(int));
+    cudaMemcpy(nxs_d, nxs, nlevels*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(nys_d, nys, nlevels*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(nzs_d, nzs, nlevels*sizeof(int), cudaMemcpyHostToDevice);
+
+    float * U_h = new float[grid_size];
+    float * Up_h = new float[grid_size];
+    float * F_h = new float[grid_size];
+
+    float * U_d, * U_half_d, * Up_d, * F_d;
+
+    cudaMalloc((void**)&U_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&U_half_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&Up_d, grid_size*sizeof(float));
+    cudaMalloc((void**)&F_d, grid_size*sizeof(float));
+
+    // initialise with coarsest grid
+    for (int i = 0; i < nxs[0]*nys[0]*nzs[0]*vec_dims[0]; i++) {
+        U_h[i] = Us_h[0][i];
+    }
+    cudaMemcpy(U_d, U_h, nxs[0]*nys[0]*nzs[0]*vec_dims[0]*sizeof(float), cudaMemcpyHostToDevice);
+
+    // initialise
+    for (int i = 0; i < grid_size; i++) {
+        Up_h[i] = 0.0;
+    }
+
+    float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *qz_p_d, *qz_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d, *fz_p_d, *fz_m_d;
 
     cudaMalloc((void**)&qx_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&qx_m_d, grid_size*sizeof(float));
@@ -1147,14 +1139,46 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     cudaMalloc((void**)&fz_p_d, grid_size*sizeof(float));
     cudaMalloc((void**)&fz_m_d, grid_size*sizeof(float));
 
+    // find size of largest compressible and SWE grids
+    int largest_comp_grid = 0;
+    int largest_swe_grid = 0;
+    for (int i = 0; i < nlevels; i++) {
+        if (models[i] == 'M' || models[i] == 'S') {
+            if (nxs[i]*nys[i]*nzs[i] > largest_swe_grid) {
+                largest_swe_grid = nxs[i]*nys[i]*nzs[i];
+            }
+        } else if (models[i] == 'C') {
+            if (nxs[i]*nys[i]*nzs[i] > largest_comp_grid) {
+                largest_comp_grid = nxs[i]*nys[i]*nzs[i];
+            }
+        }
+    }
+
     float * q_comp_d;
-    cudaMalloc((void**)&q_comp_d, nx*ny*nlayers*6*sizeof(float));
+    cudaMalloc((void**)&q_comp_d, largest_swe_grid*6*sizeof(float));
     float * qf_swe;
-    cudaMalloc((void**)&qf_swe, nxf*nyf*nz*4*sizeof(float));
+    cudaMalloc((void**)&qf_swe, largest_comp_grid*4*sizeof(float));
+    float *old_phi_d, *sum_phs_d;
+    cudaMalloc((void**)&old_phi_d, largest_swe_grid*sizeof(float));
+    cudaMalloc((void**)&sum_phs_d, largest_swe_grid*sizeof(float));
+
+    // initialise old_phi with phi on coarsest multilayer SWE grid
+    float *pphi = new float[largest_swe_grid];
+    for (int i = 0; i < nlevels; i++) {
+        if (models[i] == 'M') {
+            for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
+                pphi[j] = Us_h[i][j*vec_dims[i]];
+            }
+            cudaMemcpy(old_phi_d, pphi, nxs[i]*nys[i]*nzs[i]*sizeof(float), cudaMemcpyHostToDevice);
+            break;
+        }
+    }
+
+    float * sum_phs_h = new float[largest_swe_grid];
 
     int * matching_indices_d;
-    cudaMalloc((void**)&matching_indices_d, 4*sizeof(int));
-    cudaMemcpy(matching_indices_d, matching_indices, 4*sizeof(int), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&matching_indices_d, (nlevels-1)*4*sizeof(int));
+    cudaMemcpy(matching_indices_d, matching_indices, (nlevels-1)*4*sizeof(int), cudaMemcpyHostToDevice);
 
     // make host-side function pointers to __device__ functions
     flux_func_ptr h_compressible_fluxes;
@@ -1163,6 +1187,9 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // copy function pointers to host equivalent
     cudaMemcpyFromSymbol(&h_compressible_fluxes, d_compressible_fluxes, sizeof(flux_func_ptr));
     cudaMemcpyFromSymbol(&h_shallow_water_fluxes, d_shallow_water_fluxes, sizeof(flux_func_ptr));
+
+    // TODO: this is the grid that shall be printed - need to set this in input file / calculate from first multilayer SWE grid.
+    int p = 0;
 
     if (strcmp(filename, "na") != 0) {
         hid_t outFile, dset, mem_space, file_space;
@@ -1173,12 +1200,12 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             // create dataspace
             int ndims = 5;
-            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nlayers), (ny), hsize_t(nx), 4};
+            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nzs[p]), (nys[p]), hsize_t(nxs[p]), vec_dims[p]};
             file_space = H5Screate_simple(ndims, dims, NULL);
 
             hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
             H5Pset_layout(plist, H5D_CHUNKED);
-            hsize_t chunk_dims[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 4};
+            hsize_t chunk_dims[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]), hsize_t(nxs[p]), vec_dims[p]};
             H5Pset_chunk(plist, ndims, chunk_dims);
 
             // create dataset
@@ -1192,11 +1219,11 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
             // select a hyperslab
             file_space = H5Dget_space(dset);
             hsize_t start[] = {0, 0, 0, 0, 0};
-            hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 4};
+            hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]), hsize_t(nxs[p]), vec_dims[p]};
             H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
             // write to dataset
             printf("Printing t = %i\n", 0);
-            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Uc_h);
+            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Us_h[p]);
             // close file dataspace
             H5Sclose(file_space);
         }
@@ -1215,310 +1242,247 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
             int ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
-            // good here
-            /*cout << "\nCoarse grid before prolonging\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    cout << '(' << x << ',' << y << "): ";
-                    for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*4] << ',';
-                    }
-                    cout << '\n';
+            // first prolong data down from coarse grids to fine grids
+            for (int i = 0; i < (nlevels-1); i++) {
+                cudaMemcpy(U_d, Us_h[i],
+                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+                cudaMemcpy(Up_d, Us_h[i+1],
+                        nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+
+                // prolong to fine grid
+                prolong_swe_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             dx, dy, dz, dt, zmin, gamma_up_d,
+                             rho_d, gamma, matching_indices_d, ng, rank,
+                             q_comp_d, old_phi_d, i, nlevels);
+
+                cudaMemcpy(Us_h[i+1], Up_d,
+                        nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                        cudaMemcpyDeviceToHost);
+
+                // enforce boundaries
+                if (n_processes == 1) {
+                    bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                            ng, vec_dims[i+1]);
+                } else {
+                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                    bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                            vec_dims[i+1], ng, comm, status, rank,
+                            n_processes, y_size, true);
                 }
-            }*/
+            }
 
-            //cout << "\n\nProlonging\n\n";
-
-            // prolong to fine grid
-            prolong_grid(kernels, threads, blocks, cumulative_kernels,
-                         Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, dt, zmin, gamma_up_d,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
-
-
-            cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*6*sizeof(float), cudaMemcpyDeviceToHost);
             err = cudaGetLastError();
             if (err != cudaSuccess){
                 cout << "After prolonging\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
 
-            /*cout << "\nFine grid after prolonging\n\n";
-            for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                        cout << '(' << x << ',' << y << "): ";
-                        for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*6+4] << ',';
-                        }
-                        cout << '\n';
-                }
-            }*/
+            // Do evolutions on grids
+            for (int i = (nlevels-1); i >= 0; i--) {
+                cudaMemcpy(U_d, Us_h[i],
+                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
 
-            // enforce boundaries
-            if (n_processes == 1) {
-                bcs_fv(Uf_h, nxf, nyf, nz, ng, 6);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uf_h, nxf, nyf, nz, 6, ng, comm, status, rank, n_processes, y_size, true);
-            }
+                flux_func_ptr flux_func = h_compressible_fluxes;
+                bool do_z = true;
+                if (models[i] == 'M') {
+                    flux_func = h_shallow_water_fluxes;
+                    do_z = false;
+                } //else {
+                    //flux_func = h_compressible_fluxes;
+                    //do_z = true;
+                //}
 
-            /*cout << "\nFine grid after prolonging\n\n";
-            for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                        cout << '(' << x << ',' << y << "): ";
-                        for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*6+4] << ',';
-                        }
-                        cout << '\n';
-                }
-            }*/
+                for (int j = 0; j < i * r; j++) {
+                    // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
 
-            cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*6*sizeof(float), cudaMemcpyHostToDevice);
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess) {
+                        cout << "Before rk3\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
+                    }
 
-            err = cudaGetLastError();
-            if (err != cudaSuccess) {
-                cout << "Before fine rk3\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
+                    rk3(kernels, threads, blocks, cumulative_kernels,
+                            beta_d, gamma_up_d, U_d, U_half_d, Up_d,
+                            qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                            fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
+                            nxs[i], nys[i], nzs[i], vec_dims[i], ng,
+                            alpha, gamma,
+                            dx/(i*r), dy/(i*r), dz/(i*r), dt/(i*r),
+                            Up_h, F_h, Us_h[i],
+                            comm, status, rank, n_processes,
+                            flux_func, do_z);
 
-            // evolve fine grid through two subcycles
-            for (int i = 0; i < 2; i++) {
+                    cudaDeviceSynchronize();
 
-                rk3(kernels, threads, blocks, cumulative_kernels,
-                        beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
-                        qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                        fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                        nxf, nyf, nz, 6, ng, alpha, gamma,
-                        dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
-                        comm, status, rank, n_processes,
-                        h_compressible_fluxes, true);
-
-                // enforce boundaries is done within rk3
-                /*if (n_processes == 1) {
-                    bcs_fv(Uf_h, nxf, nyf, nz, ng, 6);
-                } else {
-                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                    bcs_mpi(Uf_h, nxf, nyf, nz, 6, ng, comm, status, rank, n_processes, y_size);
-                }*/
-
-                /*cout << "\nFine grid\n\n";
-                for (int y = 0; y < nyf; y++) {
-                    for (int x = 0; x < nxf; x++) {
-                            cout << '(' << x << ',' << y << "): ";
-                            for (int z = 0; z < nz; z++) {
-                                if (abs(Uf_h[(((z*nyf + y)*nxf)+x)*6+4]) > 30.0)
-                                cout << Uf_h[(((z*nyf + y)*nxf)+x)*6+4] << ',';
+                    if (models[i] == 'C') {
+                        // hack on the burning
+                        float * H = new float[nxs[i]*nys[i]*nzs[i]];
+                        calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma, gamma_up, H, Cv);
+                        for (int z = 0; z < nzs[i]; z++) {
+                            for (int y = ng; y < nys[i]-ng; y++) {
+                                for (int x = ng; x < nxs[i] - ng; x++) {
+                                    // tau
+                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6 + 4] +=
+                                        dt * 0.5 * alpha *
+                                        Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
+                                        H[(z * nys[i] + y) * nxs[i] + x];
+                                    float X_dot =
+                                        H[(z*nys[i] + y)*nxs[i] + x] / E_He;
+                                    // DX
+                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
+                                        dt * 0.5 * alpha * rho[0] * X_dot;
+                                }
                             }
-                            cout << '\n';
-                    }
-                }*/
-
-                cudaDeviceSynchronize();
-
-                // hack on the burning
-                float * H = new float[nxf*nyf*nz];
-                calc_Q(rho, Uf_h, nxf, nyf, nz, gamma, gamma_up, H, Cv);
-                for (int z = 0; z < nz; z++) {
-                    for (int y = ng; y < nyf-ng; y++) {
-                        for (int x = ng; x < nxf - ng; x++) {
-                            // tau
-                            Uf_h[((z * nyf + y) * nxf + x) * 6 + 4] += dt * 0.5 * alpha * Uf_h[((z * nyf + y) * nxf + x) * 6] * H[(z * nyf + y) * nxf + x];
-                            float X_dot = H[(z * nyf + y) * nxf + x] / E_He;
-                            // DX
-                            Uf_h[((z * nyf + y) * nxf + x) * 6 + 5] += dt * 0.5 * alpha * rho[0] * X_dot;
                         }
-                    }
-                }
-                delete[] H;
-
-                if (n_processes == 1) {
-                    bcs_fv(Uf_h, nxf, nyf, nz, ng, 6);
-                } else {
-                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                    bcs_mpi(Uf_h, nxf, nyf, nz, 6, ng, comm, status, rank, n_processes, y_size, false);
-                }
-
-                // copy to device
-                cudaMemcpy(Uf_d, Uf_h, nxf*nyf*nz*6*sizeof(float), cudaMemcpyHostToDevice);
-
-            }
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "Before restricting\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            //cout << "\n\nRestricting\n\n";
-            // probably good here
-            /*cout << "\nFine grid before restricting\n\n";
-            for (int y = 0; y < nyf; y++) {
-                for (int x = 0; x < nxf; x++) {
-                        cout << '(' << x << ',' << y << "): ";
-                        for (int z = 0; z < nz; z++) {
-                            cout << Uf_h[(((z*nyf + y)*nxf)+x)*6+4] << ',';
+                        delete[] H;
+                    } else if (models[i] == 'M') {
+                        // update old_phi
+                        for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
+                            pphi[j] = Us_h[i][j*4];
                         }
-                        cout << '\n';
-                }
-            }*/
+                        cudaMemcpy(old_phi_d, pphi,
+                                nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                                cudaMemcpyHostToDevice);
 
-            /*cout << "\nCoarse grid before restricting\n\n";
-            for (int z = 0; z < nlayers; z++) {
-                for (int y = 0; y < ny; y++) {
-                    for (int x = 0; x < nx; x++) {
-                            cout << '(' << x << ',' << y << ',' << z << "): " << Uc_h[(((z*ny+y)*nx)+x)*4+1] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*4+2] << ',' <<  Uc_h[(((z*ny+y)*nx)+x)*4+3] << '\n';
+                        cudaMemcpy(Up_d, Us_h[i],
+                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                                cudaMemcpyHostToDevice);
+                        cudaMemcpy(U_half_d, Us_h[i],
+                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                                cudaMemcpyHostToDevice);
+
+                        float kx_offset = 0;
+                        ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+                        for (int l = 0; l < kernels[rank].y; l++) {
+                            kx_offset = 0;
+                            for (int k = 0; k < kernels[rank].x; k++) {
+                                evolve_fv_heating<<<blocks[k_offset + l * kernels[rank].x + k], threads[k_offset + l * kernels[rank].x + k]>>>(
+                                       gamma_up_d,
+                                       Up_d, U_half_d,
+                                       qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                                       fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                                       sum_phs_d, rho_d, Q_d,
+                                       nxs[i], nys[i], nzs[i], alpha, gamma,
+                                       dx/(i*r), dy/(i*r), dt/(i*r),
+                                       burning, Cv, E_He,
+                                       kx_offset, ky_offset);
+                                kx_offset += blocks[k_offset + l * kernels[rank].x + k].x * threads[k_offset + l * kernels[rank].x + k].x - 2*ng;
+                            }
+                            ky_offset += blocks[k_offset + l * kernels[rank].x].y * threads[k_offset + l * kernels[rank].x].y - 2*ng;
+                        }
+
+                        cudaMemcpy(Up_h, Up_d,
+                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                                cudaMemcpyDeviceToHost);
+                        cudaMemcpy(sum_phs_h, sum_phs_d,
+                                nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                                cudaMemcpyDeviceToHost);
+
+                        // enforce boundaries
+                        if (n_processes == 1) {
+                            bcs_fv(Up_h, nxs[i], nys[i], nzs[i], ng, 4);
+                            bcs_fv(sum_phs_h, nxs[i], nys[i], nzs[i], ng, 1);
+                        } else {
+                            int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                            bcs_mpi(Up_h, nxs[i], nys[i], nzs[i], 4, ng, comm, status, rank, n_processes, y_size, false);
+                            bcs_mpi(sum_phs_h, nxs[i], nys[i], nzs[i], 1, ng, comm, status, rank, n_processes, y_size, false);
+                        }
+
+                        cudaMemcpy(Up_d, Up_h, nxs[i]*nys[i]*nzs[i]*4*sizeof(float), cudaMemcpyHostToDevice);
+                        cudaMemcpy(sum_phs_d, sum_phs_h, nxs[i]*nys[i]*nzs[i]*sizeof(float), cudaMemcpyHostToDevice);
+
+                        kx_offset = 0;
+                        ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+                        for (int p = 0; p < kernels[rank].y; p++) {
+                            kx_offset = 0;
+                            for (int q = 0; q < kernels[rank].x; q++) {
+                                evolve2<<<blocks[k_offset + p * kernels[rank].x + q], threads[k_offset + p * kernels[rank].x + q]>>>(U_d,
+                                       Up_d, U_half_d, sum_phs_d,
+                                       nxs[i], nys[i], nzs[i], ng, alpha,
+                                       dx/(i*r), dy/(i*r), dt/(i*r),
+                                       kx_offset, ky_offset);
+                                kx_offset += blocks[k_offset + p * kernels[rank].x + q].x * threads[k_offset + p * kernels[rank].x + q].x - 2*ng;
+                            }
+                            ky_offset += blocks[k_offset + p * kernels[rank].x].y * threads[k_offset + p * kernels[rank].x].y - 2*ng;
+                        }
+
+                        cudaDeviceSynchronize();
+
+                        err = cudaGetLastError();
+
+                        if (err != cudaSuccess)
+                            printf("Error: %s\n", cudaGetErrorString(err));
+
+                        // boundaries
+                        cudaMemcpy(Us_h[i], U_d, nxs[i]*nys[i]*nzs[i]*4*sizeof(float), cudaMemcpyDeviceToHost);
+                        if (n_processes == 1) {
+                            bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, 4);
+                        } else {
+                            int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                            bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], 4, ng, comm, status, rank, n_processes, y_size, false);
+                        }
+                        cudaMemcpy(U_d, Us_h[i], nxs[i]*nys[i]*nzs[i]*4*sizeof(float), cudaMemcpyHostToDevice);
+                    }
+
+                    if (n_processes == 1) {
+                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, vec_dims[i]);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                        bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i], ng, comm, status, rank, n_processes, y_size, false);
+                    }
+
+                    // copy to device
+                    cudaMemcpy(U_d, Us_h[i],
+                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+                }
+
+                if (i > 0) {
+                    // restrict to coarse grid
+                    // copy to device
+                    cudaMemcpy(Up_d, Us_h[i-1], nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float), cudaMemcpyHostToDevice);
+                    // TODO: fix dz
+                    restrict_comp_to_swe(kernels, threads, blocks,
+                                  cumulative_kernels,
+                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
+                                  dz/(i*r), zmin, matching_indices_d,
+                                  rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+                                  i-1, nlevels);
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess){
+                        cout << "After restricting\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
+                    }
+
+                    cudaMemcpy(Us_h[i-1], Up_d,
+                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                        cudaMemcpyDeviceToHost);
+
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess){
+                        cout << "After copying\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
+                    }
+
+                    // enforce boundaries
+                    if (n_processes == 1) {
+                        bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
+                            vec_dims[i-1]);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                        bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
+                            vec_dims[i-1], ng, comm, status, rank,
+                            n_processes, y_size, false);
                     }
                 }
-            }*/
-
-            // restrict to coarse grid
-            restrict_grid(kernels, threads, blocks, cumulative_kernels,
-                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
-                          dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "After restricting\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
             }
-
-            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "After copying\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            // enforce boundaries
-            if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, nlayers, ng, 4);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 4, ng, comm, status, rank, n_processes, y_size, false);
-            }
-
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-
-            /*cout << "\nCoarse grid after restricting\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    cout << '(' << x << ',' << y << "): ";
-                    for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*4] << ',';
-                    }
-                    cout << '\n';
-                }
-            }*/
-
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "Coarse rk3\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            rk3(kernels, threads, blocks, cumulative_kernels,
-                beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
-                qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                nx, ny, nlayers, 4, ng, alpha, gamma,
-                dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
-                comm, status, rank, n_processes,
-                h_shallow_water_fluxes, false);
-
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "Done coarse rk3\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-
-            // update old_phi
-            for (int i = 0; i < nlayers*nx*ny; i++) {
-                pphi[i] = Uc_h[i*4];
-            }
-            cudaMemcpy(old_phi_d, pphi, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
-
-            /*cout << "\nCoarse grid after rk3\n\n";
-            for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
-                    cout << '(' << x << ',' << y << "): ";
-                    for (int z = 0; z < nlayers; z++) {
-                        cout << Uc_h[(((z*ny + y)*nx)+x)*4] << ',';
-                    }
-                    cout << '\n';
-                }
-            }*/
-
-            cudaMemcpy(Upc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(Uc_half_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-
-            float kx_offset = 0;
-            ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
-
-            for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
-                for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve_fv_heating<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
-                           gamma_up_d,
-                           Upc_d, Uc_half_d,
-                           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                           sum_phs_d, rho_d, Q_d,
-                           nx, ny, nlayers, alpha, gamma,
-                           dx, dy, dt, burning, Cv, E_He,
-                           kx_offset, ky_offset);
-                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-                }
-                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
-            }
-
-            cudaMemcpy(Upc_h, Upc_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-            cudaMemcpy(sum_phs_h, sum_phs_d, nx*ny*nlayers*sizeof(float), cudaMemcpyDeviceToHost);
-
-            // enforce boundaries
-            if (n_processes == 1) {
-                bcs_fv(Upc_h, nx, ny, nlayers, ng, 4);
-                bcs_fv(sum_phs_h, nx, ny, nlayers, ng, 1);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Upc_h, nx, ny, nlayers, 4, ng, comm, status, rank, n_processes, y_size, false);
-                bcs_mpi(sum_phs_h, nx, ny, nlayers, 1, ng, comm, status, rank, n_processes, y_size, false);
-            }
-
-            cudaMemcpy(Upc_d, Upc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
-            cudaMemcpy(sum_phs_d, sum_phs_h, nx*ny*nlayers*sizeof(float), cudaMemcpyHostToDevice);
-
-            kx_offset = 0;
-            ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
-
-            for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
-                for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve2<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(Uc_d,
-                           Upc_d, Uc_half_d, sum_phs_d,
-                           nx, ny, nlayers, ng, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-                }
-                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
-            }
-
-            cudaDeviceSynchronize();
-
-            err = cudaGetLastError();
-
-            if (err != cudaSuccess)
-                printf("Error: %s\n", cudaGetErrorString(err));
-
-            // boundaries
-            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-            if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, nlayers, ng, 4);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 4, ng, comm, status, rank, n_processes, y_size, false);
-            }
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
             int mpi_err;
 
@@ -1527,21 +1491,24 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     printf("Printing t = %i\n", t+1);
 
                     if (n_processes > 1) { // only do MPI stuff if needed
-                        float * buf = new float[nx*ny*nlayers*4];
+                        float * buf =
+                            new float[nxs[p]*nys[p]*nzs[p]*vec_dims[p]];
                         int tag = 0;
                         for (int source = 1; source < n_processes; source++) {
-                            mpi_err = MPI_Recv(buf, nx*ny*nlayers*4, MPI_FLOAT, source, tag, comm, &status);
+                            mpi_err = MPI_Recv(buf,
+                                nxs[p]*nys[p]*nzs[p]*vec_dims[p], MPI_FLOAT,
+                                source, tag, comm, &status);
 
                             check_mpi_error(mpi_err);
 
                             // copy data back to grid
                             ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
                             // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
-                            for (int z = 0; z < nlayers; z++) {
-                                for (int y = ky_offset; y < ny; y++) {
-                                    for (int x = 0; x < nx; x++) {
+                            for (int z = 0; z < nzs[p]; z++) {
+                                for (int y = ky_offset; y < nys[p]; y++) {
+                                    for (int x = 0; x < nxs[p]; x++) {
                                         for (int i = 0; i < 4; i++) {
-                                            Uc_h[((z * ny + y) * nx + x) * 4 + i] = buf[((z * ny + y) * nx + x) * 4 + i];
+                                            Us_h[p][((z*nys[p]+y)*nxs[p]+x)*4+i] = buf[((z*nys[p]+y)*nxs[p]+x)*4+i];
                                         }
                                     }
                                 }
@@ -1555,15 +1522,15 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
                     // select a hyperslab
                     file_space = H5Dget_space(dset);
                     hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                    hsize_t hcount[] = {1, hsize_t(nlayers), hsize_t(ny), hsize_t(nx), 4};
+                    hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]), hsize_t(nxs[p]), vec_dims[p]};
                     H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL, hcount, NULL);
                     // write to dataset
-                    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Uc_h);
+                    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space, H5P_DEFAULT, Us_h[p]);
                     // close file dataspae
                     H5Sclose(file_space);
                 } else { // send data to rank 0
                     int tag = 0;
-                    mpi_err = MPI_Ssend(Uc_h, ny*nx*nlayers*4, MPI_FLOAT, 0, tag, comm);
+                    mpi_err = MPI_Ssend(Us_h[p], nys[p]*nxs[p]*nzs[p]*vec_dims[p], MPI_FLOAT, 0, tag, comm);
                     check_mpi_error(mpi_err);
                 }
             }
@@ -1576,98 +1543,163 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
 
     } else { // don't print
 
+        cudaError_t err;
+
         for (int t = 0; t < nt; t++) {
 
-            // prolong to fine grid
-            prolong_grid(kernels, threads, blocks, cumulative_kernels, Uc_d,
-                         Uf_d, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz,
-                         dt, zmin, gamma_up,
-                         rho_d, gamma, matching_indices_d, ng, rank, q_comp_d, old_phi_d);
+            for (int i = 0; i < (nlevels-1); i++) {
+                cudaMemcpy(U_d, Us_h[i],
+                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+                cudaMemcpy(Up_d, Us_h[i+1],
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyHostToDevice);
 
-            cudaMemcpy(Uf_h, Uf_d, nxf*nyf*nz*6*sizeof(float), cudaMemcpyDeviceToHost);
+                // prolong to fine grid
+                prolong_swe_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d, dx, dy, dz, dt,
+                             zmin, gamma_up_d,
+                             rho_d, gamma, matching_indices_d, ng, rank,
+                             q_comp_d, old_phi_d, i, nlevels);
 
-            // evolve fine grid through two subcycles
-            for (int i = 0; i < 2; i++) {
-                rk3(kernels, threads, blocks, cumulative_kernels,
-                        beta_d, gamma_up_d, Uf_d, Uf_half_d, Upf_d,
-                        qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                        fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                        nxf, nyf, nz, 6, ng, alpha, gamma,
-                        dx*0.5, dy*0.5, dz, dt*0.5, Upf_h, Ff_h, Uf_h,
-                        comm, status, rank, n_processes,
-                        h_compressible_fluxes, true);
+                cudaMemcpy(Us_h[i+1], Up_d,
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyDeviceToHost);
 
-                // if not last step, copy output array to input array
-                if (i < 1) {
-                    for (int j = 0; j < nxf*nyf*nz*6; j++) {
-                        Uf_h[j] = Upf_h[j];
+                // enforce boundaries
+                if (n_processes == 1) {
+                    bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1], ng,
+                        vec_dims[i+1]);
+                } else {
+                    int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                    bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                        vec_dims[i+1], ng, comm, status, rank, n_processes,
+                        y_size, true);
+                }
+            }
+
+            // Do evolutions on grids
+            for (int i = (nlevels-1); i >= 0; i--) {
+                cudaMemcpy(U_d, Us_h[i],
+                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+
+                flux_func_ptr flux_func = h_compressible_fluxes;
+                bool do_z = true;
+                if (models[i] == 'M') {
+                    flux_func = h_shallow_water_fluxes;
+                    do_z = false;
+                } //else {
+                    //flux_func = h_compressible_fluxes;
+                    //do_z = true;
+                //}
+
+                for (int j = 0; j < i * r; j++) {
+                    // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
+
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess) {
+                        cout << "Before rk3\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
                     }
+
+                    rk3(kernels, threads, blocks, cumulative_kernels,
+                            beta_d, gamma_up_d, U_d, U_half_d, Up_d,
+                            qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                            fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
+                            nxs[i], nys[i], nzs[i], vec_dims[i], ng,
+                            alpha, gamma,
+                            dx/(i*r), dy/(i*r), dz/(i*r), dt/(i*r),
+                            Up_h, F_h, Us_h[i],
+                            comm, status, rank, n_processes,
+                            flux_func, do_z);
+
+                    cudaDeviceSynchronize();
+
+                    if (models[i] == 'C') {
+                        // hack on the burning
+                        float * H = new float[nxs[i]*nys[i]*nzs[i]];
+                        calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma, gamma_up, H, Cv);
+                        for (int z = 0; z < nzs[i]; z++) {
+                            for (int y = ng; y < nys[i]-ng; y++) {
+                                for (int x = ng; x < nxs[i] - ng; x++) {
+                                    // tau
+                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+4] +=
+                                        dt * 0.5 * alpha *
+                                        Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
+                                        H[(z * nys[i] + y) * nxs[i] + x];
+                                    float X_dot =
+                                        H[(z*nys[i]+y)*nxs[i] + x] / E_He;
+                                    // DX
+                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
+                                        dt * 0.5 * alpha * rho[0] * X_dot;
+                                }
+                            }
+                        }
+                        delete[] H;
+                    }
+
+                    if (n_processes == 1) {
+                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, vec_dims[i]);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                        bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i],
+                            ng, comm, status, rank, n_processes, y_size,
+                            false);
+                    }
+
+                    // copy to device
+                    cudaMemcpy(U_d, Us_h[i],
+                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+                }
+
+                if (i > 0) {
+                    // restrict to coarse grid
+                    // copy to device
+                    cudaMemcpy(Up_d, Us_h[i-1],
+                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+                    // TODO: fix dz
+                    restrict_comp_to_swe(kernels, threads, blocks,
+                                  cumulative_kernels,
+                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
+                                  dz/(i*r), zmin, matching_indices_d,
+                                  rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
+                                  i-1, nlevels);
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess){
+                        cout << "After restricting\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
+                    }
+
+                    cudaMemcpy(Us_h[i-1], Up_d,
+                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                        cudaMemcpyDeviceToHost);
+
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess){
+                        cout << "After copying\n";
+                        printf("Error: %s\n", cudaGetErrorString(err));
+                    }
+
+                    // enforce boundaries
+                    if (n_processes == 1) {
+                        bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
+                            vec_dims[i-1]);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
+                        bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
+                            vec_dims[i-1], ng, comm, status, rank,
+                            n_processes, y_size, false);
+                    }
+
+
                 }
             }
-
-            // restrict to coarse grid
-            restrict_grid(kernels, threads, blocks, cumulative_kernels,
-                          Uc_d, Uf_d, nx, ny, nlayers, nxf, nyf, nz,
-                          dz, zmin, matching_indices_d,
-                          rho_d, gamma, gamma_up_d, ng, rank, qf_swe);
-
-            rk3(kernels, threads, blocks, cumulative_kernels,
-                beta_d, gamma_up_d, Uc_d, Uc_half_d, Upc_d,
-                qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                nx, ny, nlayers, 4, ng, alpha, gamma,
-                dx, dy, dz, dt, Upc_h, Fc_h, Uc_h,
-                comm, status, rank, n_processes,
-                h_shallow_water_fluxes, false);
-
-            /*int k_offset = 0;
-            if (rank > 0) {
-                k_offset = cumulative_kernels[rank-1];
-            }
-            for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
-                for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve_fv_heating<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(
-                           gamma_up_d, Un_d,
-                           Up_d, U_half_d,
-                           qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                           fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                           sum_phs_d, rho_d, Q_d,
-                           nx, ny, nlayers, alpha, gamma,
-                           dx, dy, dt, burning, Cv, E_He,
-                           kx_offset, ky_offset);
-                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-                }
-                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[j * kernels[rank].x].y - 2*ng;
-            }
-
-
-            kx_offset = 0;
-            ky_offset = (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
-
-            for (int j = 0; j < kernels[rank].y; j++) {
-                kx_offset = 0;
-                for (int i = 0; i < kernels[rank].x; i++) {
-                    evolve2<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(gamma_up_d, Un_d,
-                           Up_d, U_half_d, sum_phs_d, rho_d, Q_d,
-                           nx, ny, nlayers, ng, alpha,
-                           dx, dy, dt, kx_offset, ky_offset);
-                    kx_offset += blocks[k_offset + j * kernels[rank].x + i].x * threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
-                }
-                ky_offset += blocks[k_offset + j * kernels[rank].x].y * threads[k_offset + j * kernels[rank].x].y - 2*ng;
-            }*/
 
             cudaDeviceSynchronize();
-
-            // boundaries
-            cudaMemcpy(Uc_h, Uc_d, nx*ny*nlayers*4*sizeof(float), cudaMemcpyDeviceToHost);
-            if (n_processes == 1) {
-                bcs_fv(Uc_h, nx, ny, nlayers, ng, 4);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
-                bcs_mpi(Uc_h, nx, ny, nlayers, 4, ng, comm, status, rank, n_processes, y_size, false);
-            }
-            cudaMemcpy(Uc_d, Uc_h, nx*ny*nlayers*4*sizeof(float), cudaMemcpyHostToDevice);
 
             cudaError_t err = cudaGetLastError();
 
@@ -1679,16 +1711,19 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     // delete some stuff
     cudaFree(beta_d);
     cudaFree(gamma_up_d);
-    cudaFree(Uc_d);
-    cudaFree(Uf_d);
     cudaFree(rho_d);
     cudaFree(Q_d);
-    cudaFree(Upc_d);
-    cudaFree(Uc_half_d);
-    cudaFree(Upf_d);
-    cudaFree(Uf_half_d);
     cudaFree(old_phi_d);
     cudaFree(sum_phs_d);
+
+    cudaFree(U_d);
+    cudaFree(Up_d);
+    cudaFree(U_half_d);
+    cudaFree(F_d);
+
+    cudaFree(nxs_d);
+    cudaFree(nys_d);
+    cudaFree(nzs_d);
 
     cudaFree(qx_p_d);
     cudaFree(qx_m_d);
@@ -1710,10 +1745,10 @@ void cuda_run(float * beta, float * gamma_up, float * Uc_h, float * Uf_h,
     delete[] cumulative_kernels;
     delete[] threads;
     delete[] blocks;
-    delete[] Upc_h;
-    delete[] Fc_h;
-    delete[] Upf_h;
-    delete[] Ff_h;
     delete[] pphi;
     delete[] sum_phs_h;
+
+    delete[] U_h;
+    delete[] Up_h;
+    delete[] F_h;
 }

@@ -481,10 +481,11 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
 }
 
 
-__global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
-                    int nx, int ny, int nlayers, int nxf, int nyf, int nz, float dx, float dy, float dz, float zmin,
+__global__ void prolong_reconstruct_comp(float * q_comp, float * q_f, float * q_c,
+                    int * nxs, int * nys, int * nzs,
+                    float dx, float dy, float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
-                    int kx_offset, int ky_offset) {
+                    int kx_offset, int ky_offset, int coarse_level, int nlevels) {
     /**
     Reconstruct fine grid variables from compressible variables on coarse grid
 
@@ -496,10 +497,8 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         fine grid state vector
     q_c : float *
         coarse grid swe state vector
-    nx, ny, nlayers : int
-        coarse grid dimensions
-    nxf, nyf, nz : int
-        fine grid dimensions
+    nxs, nys, nzs : int *
+        grid dimensions
     dx, dy, dz : float
         coarse grid spacings
     matching_indices_d : int *
@@ -508,51 +507,55 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
         spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
+    coarse_level : int
+        index of coarser level
+    nlevels: int
+        total number of levels
     */
 
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x>0) && (x < int(round(nxf*0.5)+1)) && (y > 0) && (y < int(round(nyf*0.5)+1)) && (z < nz)) {
+    if ((x>0) && (x < int(round(nxs[coarse_level+1]*0.5)+1)) && (y > 0) && (y < int(round(nys[coarse_level+1]*0.5)+1)) && (z < nzs[coarse_level+1])) {
         // corresponding x and y on the coarse grid
-        int c_x = x + matching_indices_d[0];
-        int c_y = y + matching_indices_d[2];
+        int c_x = x + matching_indices_d[coarse_level*(nlevels-1)*4];
+        int c_y = y + matching_indices_d[coarse_level*(nlevels-1)*4+2];
 
         // height of this layer
-        float height = zmin + dz * (nz - z - 1.0);
+        float height = zmin + dz * (nzs[coarse_level+1] - z - 1.0);
         float * q_swe;
         q_swe = (float *)malloc(4 * sizeof(float));
         for (int i = 0; i < 4; i++) {
-            q_swe[i] = q_c[(c_y*nx+c_x)*4+i];
+            q_swe[i] = q_c[(c_y*nxs[coarse_level]+c_x)*4+i];
         }
         float W = W_swe(q_swe, gamma_up);
-        float r = find_height(q_c[(c_y * nx + c_x) * 4]/W);
+        float r = find_height(q_c[(c_y * nxs[coarse_level] + c_x) * 4]/W);
         // Heights are sane here?
         //printf("z = %i, heights = %f, %f\n", z, height, r);
         float prev_r = r;
 
-        int neighbour_layer = nlayers; // SWE layer just below compressible layer
+        int neighbour_layer = nzs[coarse_level]; // SWE layer just below compressible layer
         float layer_frac = 0.0; // fraction of distance between SWE layers that compressible is at
 
         if (height > r) { // compressible layer above top SWE layer
             neighbour_layer = 1;
             for (int i = 0; i < 4; i++) {
-                q_swe[i] = q_c[((ny+c_y)*nx+c_x)*4+i];
+                q_swe[i] = q_c[((nys[coarse_level]+c_y)*nxs[coarse_level]+c_x)*4+i];
             }
             W = W_swe(q_swe, gamma_up);
-            r = find_height(q_c[((ny + c_y) * nx + c_x) * 4] / W);
+            r = find_height(q_c[((nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 4] / W);
             layer_frac = (height - prev_r) / (r - prev_r);
         } else {
 
             // find heights of SWE layers - if height of SWE layer is above it, stop.
-            for (int l = 1; l < nlayers-1; l++) {
+            for (int l = 1; l < nzs[coarse_level]-1; l++) {
                 prev_r = r;
                 for (int i = 0; i < 4; i++) {
-                    q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*4+i];
+                    q_swe[i] = q_c[((l*nys[coarse_level]+c_y)*nxs[coarse_level]+c_x)*4+i];
                 }
                 W = W_swe(q_swe, gamma_up);
-                r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 4] / W);
+                r = find_height(q_c[((l * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 4] / W);
                 if (height > r) {
                     neighbour_layer = l;
                     layer_frac = (height - prev_r)/ (r - prev_r);
@@ -560,19 +563,19 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
                 }
             }
 
-            if (neighbour_layer == nlayers) {
+            if (neighbour_layer == nzs[coarse_level]) {
                 // lowest compressible beneath lowest SWE layer
-                neighbour_layer = nlayers - 1;
-                if (z == (nz-1)) {
+                neighbour_layer = nzs[coarse_level] - 1;
+                if (z == (nzs[coarse_level+1]-1)) {
                     layer_frac = 1.0;
                 } else {
                     prev_r = r;
                     int l = neighbour_layer;
                     for (int i = 0; i < 4; i++) {
-                        q_swe[i] = q_c[((l*ny+c_y)*nx+c_x)*4+i];
+                        q_swe[i] = q_c[((l*nys[coarse_level]+c_y)*nxs[coarse_level]+c_x)*4+i];
                     }
                     W = W_swe(q_swe, gamma_up);
-                    r = find_height(q_c[((l * ny + c_y) * nx + c_x) * 4] / W);
+                    r = find_height(q_c[((l * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 4] / W);
                     layer_frac = (height - prev_r) / (r - prev_r);
                     //printf("Lower layer frac: %f  ", layer_frac);
                 }
@@ -585,17 +588,17 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
             // do some slope limiting
             // x-dir
             float S_upwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x+1) * 6 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 6 + n]) +
+                (q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x+1) * 6 + n] -
+                q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n]) +
                 (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x+1)*6 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*6 + n]));
+                (q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y) * nxs[coarse_level] + c_x+1)*6 + n] -
+                q_comp[(((neighbour_layer-1)*nys[coarse_level]+c_y)*nxs[coarse_level]+c_x)*6 + n]));
             float S_downwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 6 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x-1) * 6 + n])
+                (q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n] -
+                q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x-1) * 6 + n])
                 + (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*6 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y)*nx+c_x-1)*6+n]));
+                (q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y) * nxs[coarse_level] + c_x)*6 + n] -
+                q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y)*nxs[coarse_level]+c_x-1)*6+n]));
 
             float Sx = 0.5 * (S_upwind + S_downwind);
 
@@ -608,17 +611,17 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
             // y-dir
             S_upwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y+1) * nx + c_x) * 6 + n] -
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 6 + n]) +
+                (q_comp[((neighbour_layer * nys[coarse_level] + c_y+1) * nxs[coarse_level] + c_x) * 6 + n] -
+                q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n]) +
                 (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y+1) * nx + c_x)*6 + n] -
-                q_comp[(((neighbour_layer-1)*ny+c_y)*nx+c_x)*6 + n]));
+                (q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y+1) * nxs[coarse_level] + c_x)*6 + n] -
+                q_comp[(((neighbour_layer-1)*nys[coarse_level]+c_y)*nxs[coarse_level]+c_x)*6 + n]));
             S_downwind = (layer_frac *
-                (q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 6 + n] -
-                q_comp[((neighbour_layer * ny + c_y-1) * nx + c_x) * 6 + n])
+                (q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n] -
+                q_comp[((neighbour_layer * nys[coarse_level] + c_y-1) * nxs[coarse_level] + c_x) * 6 + n])
                 + (1.0 - layer_frac) *
-                (q_comp[(((neighbour_layer-1)*ny + c_y) * nx + c_x)*6 + n] -
-                q_comp[(((neighbour_layer-1)*ny + c_y-1)*nx+c_x)*6+n]));
+                (q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y) * nxs[coarse_level] + c_x)*6 + n] -
+                q_comp[(((neighbour_layer-1)*nys[coarse_level] + c_y-1)*nxs[coarse_level]+c_x)*6+n]));
 
             float Sy = 0.5 * (S_upwind + S_downwind);
 
@@ -631,20 +634,20 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
 
             // vertically interpolated component of q_comp
             float interp_q_comp = layer_frac *
-                q_comp[((neighbour_layer * ny + c_y) * nx + c_x) * 6 + n] +
+                q_comp[((neighbour_layer * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n] +
                 (1.0 - layer_frac) *
-                q_comp[(((neighbour_layer-1) * ny + c_y) * nx + c_x) * 6 + n];
+                q_comp[(((neighbour_layer-1) * nys[coarse_level] + c_y) * nxs[coarse_level] + c_x) * 6 + n];
 
-            q_f[((z * nyf + 2*y) * nxf + 2*x) * 6 + n] =
+            q_f[((z * nys[coarse_level+1] + 2*y) * nxs[coarse_level+1] + 2*x) * 6 + n] =
                 interp_q_comp - 0.25 * (Sx + Sy);
 
-            q_f[((z * nyf + 2*y) * nxf + 2*x+1) * 6 + n] =
+            q_f[((z * nys[coarse_level+1] + 2*y) * nxs[coarse_level+1] + 2*x+1) * 6 + n] =
                 interp_q_comp + 0.25 * (Sx - Sy);
 
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x) * 6 + n] =
+            q_f[((z * nys[coarse_level+1] + 2*y+1) * nxs[coarse_level+1] + 2*x) * 6 + n] =
                 interp_q_comp + 0.25 * (-Sx + Sy);
 
-            q_f[((z * nyf + 2*y+1) * nxf + 2*x+1) * 6 + n] =
+            q_f[((z * nys[coarse_level+1] + 2*y+1) * nxs[coarse_level+1] + 2*x+1) * 6 + n] =
                 interp_q_comp + 0.25 * (Sx + Sy);
 
         }
@@ -656,13 +659,13 @@ __global__ void prolong_reconstruct(float * q_comp, float * q_f, float * q_c,
     }
 }
 
-void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
-                  int nx, int ny, int nlayers, int nxf, int nyf, int nz,
+                  int * nxs, int * nys, int * nzs,
                   float dx, float dy, float dz, float dt, float zmin,
                   float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
-                  float * old_phi_d) {
+                  float * old_phi_d, int coarse_level, int nlevels) {
     /**
     Prolong coarse grid data to fine grid
 
@@ -674,10 +677,8 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         cumulative number of kernels in mpi processes of r < rank
     q_cd, q_fd : float *
         coarse and fine grids of state vectors
-    nx, ny, nlayers : int
-        dimensions of coarse grid
-    nxf, nyf, nz : int
-        dimensions of fine grid
+    nxs, nys, nzs : int *
+        dimensions of grids
     dx, dy, dz : float
         coarse grid cell spacings
     dt : float
@@ -698,6 +699,10 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         grid of compressible variables on coarse grid
     old_phi_d : float *
         Phi at previous timstep
+    coarse_level : int
+        index of coarser level
+    nlevels : int
+        total number of levels
     */
 
     int kx_offset = 0;
@@ -711,7 +716,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nx, ny, nlayers, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d);
+            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nxs, nys, nzs, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, coarse_level);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -724,7 +729,7 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nx, ny, nlayers, nxf, nyf, nz, dx, dy, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset);
+           prolong_reconstruct_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, dx, dy, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, coarse_level, nlevels);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -735,13 +740,13 @@ void prolong_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 
-__global__ void restrict_interpolate(float * qf_sw, float * q_c,
-                                     int nx, int ny, int nlayers,
-                                     int nxf, int nyf, int nz,
+__global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
+                                     int * nxs, int * nys, int * nzs,
                                      float dz, float zmin,
                                      int * matching_indices,
                                      float * gamma_up,
-                                     int kx_offset, int ky_offset) {
+                                     int kx_offset, int ky_offset,
+                                     int coarse_level, int nlevels) {
 
     /**
     Interpolate SWE variables on fine grid to get them on coarse grid.
@@ -752,16 +757,16 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         SWE variables on fine grid
     q_c : float *
         coarse grid state vector
-    nx, ny, nlayers : int
+    nxs, nys, nzs : int *
         coarse grid dimensions
-    nxf, nyf, nz : int
-        fine grid dimensions
     matching_indices : int *
         position of fine grid wrt coarse grid
     gamma_up : float *
         spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
+    coarse_level, nlevels : int
+        index of coarser grid level and total number of levels
     */
     // interpolate fine grid to coarse grid
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
@@ -769,10 +774,10 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     int z = threadIdx.z;
 
     // note we're not going to restrict the top layer
-    if ((x > 1) && (x < int(round(nxf*0.5))-1) && (y > 1) && (y < int(round(nyf*0.5))-1) && (z > 1) && (z < nlayers-2)) {
+    if ((x > 1) && (x < int(round(nxs[coarse_level+1]*0.5))-1) && (y > 1) && (y < int(round(nys[coarse_level+1]*0.5))-1) && (z > 1) && (z < nzs[coarse_level]-2)) {
         // first find position of layers relative to fine grid
-        int coarse_index = ((z * ny + y+matching_indices[2]) * nx +
-              x+matching_indices[0]) * 4;
+        int coarse_index = ((z * nys[coarse_level] + y+matching_indices[(nlevels-1)*coarse_level*4+2]) * nxs[coarse_level] +
+              x+matching_indices[(nlevels-1)*coarse_level*4]) * 4;
 
         float * q_c_new;
         q_c_new = (float *)malloc(4 * sizeof(float));
@@ -784,17 +789,17 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         float r = find_height(q_c[coarse_index] / W);
         float height_guess = find_height(q_c[coarse_index] / W);
 
-        int z_index = nz;
+        int z_index = nzs[coarse_level+1];
         float z_frac = 0.0;
 
-        if (height_guess > (zmin + (nz - 1.0) * dz)) { // SWE layer above top compressible layer
+        if (height_guess > (zmin + (nzs[coarse_level+1] - 1.0) * dz)) { // SWE layer above top compressible layer
             z_index = 1;
-            float height = zmin + (nz - 1 - 1) * dz;
+            float height = zmin + (nzs[coarse_level+1] - 1 - 1) * dz;
             z_frac = -(height_guess - (height+dz)) / dz;
         } else {
 
-            for (int i = 1; i < (nz-1); i++) {
-                float height = zmin + (nz - 1 - i) * dz;
+            for (int i = 1; i < (nzs[coarse_level+1]-1); i++) {
+                float height = zmin + (nzs[coarse_level+1] - 1 - i) * dz;
                 if (height_guess > height) {
                     z_index = i;
                     z_frac = -(height_guess - (height+dz)) / dz;
@@ -802,8 +807,8 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
                 }
             }
 
-            if (z_index == nz) {
-                z_index = nz - 1;
+            if (z_index == nzs[coarse_level+1]) {
+                z_index = nzs[coarse_level+1] - 1;
                 z_frac = 1.0;
             }
         }
@@ -813,11 +818,11 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
                 for (int k = 0; k < 4; k++) {
-                    q_c_new[k] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+k];
+                    q_c_new[k] = qf_sw[((l*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+k];
                 }
                 Ww[j*2+i] = W_swe(q_c_new, gamma_up);
                 for (int k = 0; k < 4; k++) {
-                    q_c_new[k] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+k];
+                    q_c_new[k] = qf_sw[(((l-1)*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+k];
                 }
                 Ww[(2+j)*2+i] = W_swe(q_c_new, gamma_up);
             }
@@ -833,16 +838,16 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
         float WX[8];
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
-                u[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+1] /
+                u[j*2+i] = qf_sw[((l*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+1] /
                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
-                v[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+2] /
+                v[j*2+i] = qf_sw[((l*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+2] /
                                    (Phi * Ww[j*2+i] * Ww[j*2+i]);
-                WX[j*2+i] = qf_sw[((l*nyf+y*2+j)*nxf+x*2+i)*4+3] / Phi;
-                u[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+1] /
+                WX[j*2+i] = qf_sw[((l*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+3] / Phi;
+                u[(2+j)*2+i] = qf_sw[(((l-1)*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+1] /
                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
-                v[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+2] /
+                v[(2+j)*2+i] = qf_sw[(((l-1)*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+2] /
                                    (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
-                WX[(2+j)*2+i] = qf_sw[(((l-1)*nyf+y*2+j)*nxf+x*2+i)*4+3] / Phi;
+                WX[(2+j)*2+i] = qf_sw[(((l-1)*nys[coarse_level+1]+y*2+j)*nxs[coarse_level+1]+x*2+i)*4+3] / Phi;
             }
         }
 
@@ -873,12 +878,13 @@ __global__ void restrict_interpolate(float * qf_sw, float * q_c,
     }*/
 }
 
-void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
+void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * cumulative_kernels, float * q_cd, float * q_fd,
-                    int nx, int ny, int nlayers, int nxf, int nyf, int nz,
+                    int * nxs, int * nys, int * nzs,
                     float dz, float zmin, int * matching_indices,
                     float * rho, float gamma, float * gamma_up,
-                    int ng, int rank, float * qf_swe) {
+                    int ng, int rank, float * qf_swe,
+                    int coarse_level, int nlevels) {
     /**
     Restrict fine grid data to coarse grid
 
@@ -890,10 +896,8 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         cumulative number of kernels in mpi processes of r < rank
     q_cd, q_fd : float *
         coarse and fine grids of state vectors
-    nx, ny, nlayers : int
-        dimensions of coarse grid
-    nxf, nyf, nz : int
-        dimensions of fine grid
+    nxs, nys, nzs : int *
+        dimensions of grids
     matching_indices : int *
         position of fine grid wrt coarse grid
     rho, gamma : float
@@ -906,6 +910,8 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
         rank of MPI process
     qf_swe : float *
         grid of SWE variables on fine grid
+    coarse_level, nlevels : int
+        index of coarser grid and total number of grid levels
     */
 
     int kx_offset = 0;
@@ -919,7 +925,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nx, ny, nxf, nyf, nz, gamma_up, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices);
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxs, nys, nzs, gamma_up, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices, coarse_level, nlevels);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -933,7 +939,7 @@ void restrict_grid(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nx, ny, nlayers, nxf, nyf, nz, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset);
+           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset, coarse_level, nlevels);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
