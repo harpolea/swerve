@@ -549,9 +549,9 @@ void Sea::print_inputs() {
     Print some input and runtime parameters to screen.
     */
     cout << "\nINPUT DATA\n" << "----------\n";
-    cout << "(nx, ny, ng) \t\t(" << nx << ',' << ny << ',' << ng << ")\n";
+    cout << "(nx, ny, nz, ng) \t(" << nxs[0] << ',' << nys[0] << ',' << nzs[0] << ',' << ng << ")\n";
     cout << "nt \t\t\t" << nt << '\n';
-    cout << "(r, df) \t\t(" << r << ',' << df << ")\n";
+    cout << "(r, df, nlevels) \t(" << r << ',' << df << ',' << nlevels << ")\n";
     cout << "dprint \t\t\t" << dprint << '\n';
     cout << "(dx, dy, dz, dt) \t(" << dx << ',' << dy << ',' << dz << ',' << dt << ")\n";
     cout << "rho \t\t\t" << rho[0] << ',' << rho[1]<< ',' << rho[2] << "\n";

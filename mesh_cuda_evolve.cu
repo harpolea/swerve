@@ -1252,13 +1252,21 @@ void cuda_run(float * beta, float * gamma_up,
                         cudaMemcpyHostToDevice);
 
                 // prolong to fine grid
-                // TODO: when have LM, will need to check which prolong function to use here.
-                prolong_swe_to_comp(kernels, threads, blocks,
-                             cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
-                             rho_d, gamma, matching_indices_d, ng, rank,
-                             q_comp_d, old_phi_d, i, nlevels);
+                // select prolongation algorithm
+                if (models[i] == 'M' && models[i+1] == 'C') {
+                    prolong_swe_to_comp(kernels, threads, blocks,
+                                 cumulative_kernels,
+                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
+                                 dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
+                                 rho_d, gamma, matching_indices_d, ng, rank,
+                                 q_comp_d, old_phi_d, i, nlevels);
+                } else {
+                    prolong_comp_to_comp(kernels, threads, blocks,
+                                 cumulative_kernels,
+                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
+                                 matching_indices_d, ng, rank,
+                                 i, nlevels);
+                }
 
                 cudaMemcpy(Us_h[i+1], Up_d,
                         nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
@@ -1449,13 +1457,21 @@ void cuda_run(float * beta, float * gamma_up,
                     // restrict to coarse grid
                     // copy to device
                     cudaMemcpy(Up_d, Us_h[i-1], nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float), cudaMemcpyHostToDevice);
-                    // TODO: when have LM model as well, will need to select correct restrict function here
-                    restrict_comp_to_swe(kernels, threads, blocks,
+                    // select restriction algorithm
+                    if (models[i-1] == 'M' && models[i] == 'C') {
+                        restrict_comp_to_swe(kernels, threads, blocks,
                                   cumulative_kernels,
                                   Up_d, U_d, nxs_d, nys_d, nzs_d,
                                   dz/pow(r, i), zmin, matching_indices_d,
                                   rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
                                   i-1, nlevels);
+                    } else {
+                        restrict_comp_to_comp(kernels, threads, blocks,
+                                  cumulative_kernels,
+                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
+                                  matching_indices_d,
+                                  ng, rank, i-1, nlevels);
+                    }
                     err = cudaGetLastError();
                     if (err != cudaSuccess){
                         cout << "After restricting\n";

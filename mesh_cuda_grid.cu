@@ -869,7 +869,7 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
 
             Sym *= phi(r);
 
-            // vertically interpolated component of q_comp
+            // vertically interpolated component of q_c
             float interp_q_cp = 0.75 *
                 q_c[(((z+1) * nys[clevel] + c_y) * nxs[clevel] + c_x)*6+n] +
                 0.25 *
