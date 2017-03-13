@@ -1106,6 +1106,13 @@ void cuda_run(float * beta, float * gamma_up,
     float * Up_h = new float[grid_size];
     float * F_h = new float[grid_size];
 
+    // initialise
+    for (int i = 0; i < grid_size; i++) {
+        U_h[i] = 0.0;
+        Up_h[i] = 0.0;
+        F_h[i] = 0.0;
+    }
+
     float * U_d, * U_half_d, * Up_d, * F_d;
 
     cudaMalloc((void**)&U_d, grid_size*sizeof(float));
@@ -1119,10 +1126,8 @@ void cuda_run(float * beta, float * gamma_up,
     }
     cudaMemcpy(U_d, U_h, nxs[0]*nys[0]*nzs[0]*vec_dims[0]*sizeof(float), cudaMemcpyHostToDevice);
 
-    // initialise
-    for (int i = 0; i < grid_size; i++) {
-        Up_h[i] = 0.0;
-    }
+    cudaMemcpy(Up_d, Up_h, grid_size*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(F_d, F_h, grid_size*sizeof(float), cudaMemcpyHostToDevice);
 
     float *qx_p_d, *qx_m_d, *qy_p_d, *qy_m_d, *qz_p_d, *qz_m_d, *fx_p_d, *fx_m_d, *fy_p_d, *fy_m_d, *fz_p_d, *fz_m_d;
 
@@ -1254,23 +1259,50 @@ void cuda_run(float * beta, float * gamma_up,
                 // prolong to fine grid
                 // select prolongation algorithm
                 if (models[i] == 'M' && models[i+1] == 'C') {
+                    cout << "multilayer swe to compressible\n";
                     prolong_swe_to_comp(kernels, threads, blocks,
                                  cumulative_kernels,
                                  U_d, Up_d, nxs_d, nys_d, nzs_d,
                                  dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
                                  rho_d, gamma, matching_indices_d, ng, rank,
                                  q_comp_d, old_phi_d, i, nlevels);
-                } else {
+                } else if (models[i] == 'C' && models[i+1] == 'C') {
+                    cout << "compressible to compressible\n";
                     prolong_comp_to_comp(kernels, threads, blocks,
                                  cumulative_kernels,
                                  U_d, Up_d, nxs_d, nys_d, nzs_d,
                                  matching_indices_d, ng, rank,
                                  i, nlevels);
+                } else if (models[i] == 'S' && models[i+1] == 'M') {
+                    cout << "single layer swe to multilayer swe\n";
+                    prolong_swe_to_swe(kernels, threads, blocks,
+                                 cumulative_kernels,
+                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
+                                 dx/pow(r, i), dy/pow(r, i), dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
+                                 rho_d, gamma, matching_indices_d, ng, rank,
+                                 i, nlevels);
+                }
+
+                err = cudaGetLastError();
+                if (err != cudaSuccess){
+                    cout << "After prolonging\n";
+                    printf("Error: %s\n", cudaGetErrorString(err));
                 }
 
                 cudaMemcpy(Us_h[i+1], Up_d,
                         nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
                         cudaMemcpyDeviceToHost);
+
+                err = cudaGetLastError();
+                if (err != cudaSuccess){
+                    cout << "After copying\n";
+                    printf("Error: %s\n", cudaGetErrorString(err));
+                }
+
+                bool do_z = true;
+                if (models[i+1] == 'M') {
+                    do_z = false;
+                }
 
                 // enforce boundaries
                 if (n_processes == 1) {
@@ -1280,15 +1312,11 @@ void cuda_run(float * beta, float * gamma_up,
                     int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
                     bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
                             vec_dims[i+1], ng, comm, status, rank,
-                            n_processes, y_size, true);
+                            n_processes, y_size, do_z);
                 }
+
             }
 
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "After prolonging\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
 
             // Do evolutions on grids
             for (int i = (nlevels-1); i >= 0; i--) {
@@ -1465,8 +1493,14 @@ void cuda_run(float * beta, float * gamma_up,
                                   dz/pow(r, i), zmin, matching_indices_d,
                                   rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
                                   i-1, nlevels);
-                    } else {
+                    } else if (models[i-1] == 'C' && models[i] == 'C') {
                         restrict_comp_to_comp(kernels, threads, blocks,
+                                  cumulative_kernels,
+                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
+                                  matching_indices_d,
+                                  ng, rank, i-1, nlevels);
+                    } else if (models[i-1] == 'S' && models[i] == 'M') {
+                        restrict_swe_to_swe(kernels, threads, blocks,
                                   cumulative_kernels,
                                   Up_d, U_d, nxs_d, nys_d, nzs_d,
                                   matching_indices_d,

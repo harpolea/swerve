@@ -438,6 +438,9 @@ Sea::Sea(char * filename)
 
     for (int i = 0; i < nlevels; i++) {
         Us[i] = new float[nxs[i]*nys[i]*nzs[i]*vec_dims[i]];
+        for (int j = 0; j < nxs[i]*nys[i]*nzs[i]*vec_dims[i]; j++) {
+            Us[i][j] = 0.0;
+        }
     }
 
     matching_indices = new int[4 * (nlevels-1)];

@@ -534,6 +534,63 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
                   int * matching_indices_d, int ng, int rank, int coarse_level, int nlevels);
+
+/**
+Reconstruct multilayer swe fine grid variables from single layer swe variables on coarse grid
+
+\param q_comp
+  compressible variables on coarse grid
+\param q_f
+  fine grid state vector
+\param q_c
+  coarse grid swe state vector
+\param nxs, nys, nzs
+  grid dimensions
+\param matching_indices_d
+  position of fine grid wrt coarse grid
+\param kx_offset, ky_offset
+  kernel offsets in the x and y directions
+\param clevel
+index of coarser level
+\param nlevels
+  total number of levels
+*/
+__global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
+                  int * nxs, int * nys, int * nzs,
+                  float zmin,
+                  int * matching_indices_d, float * gamma_up,
+                  int kx_offset, int ky_offset, int clevel, int nlevels);
+
+/**
+Prolong coarse grid single layer swe data to fine multilayer swe grid.
+
+\param kernels, threads, blocks
+    number of kernels, threads and blocks for each process/kernel
+\param cumulative_kernels
+    cumulative number of kernels in mpi processes of r < rank
+\param q_cd, q_fd
+    coarse and fine grids of state vectors
+\param nxs, nys, nzs
+    dimensions of grids
+\param matching_indices_d
+    position of fine grid wrt coarse grid
+\param ng
+    number of ghost cells
+\param rank
+    rank of MPI process
+\param coarse_level
+  index of coarser level
+\param nlevels
+    total number of levels
+*/
+void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                int * cumulative_kernels, float * q_cd, float * q_fd,
+                int * nxs, int * nys, int * nzs,
+                float dx, float dy, float dz, float dt, float zmin,
+                float * gamma_up_d, float * rho, float gamma,
+                int * matching_indices_d, int ng, int rank,
+                int coarse_level, int nlevels);
+
 /**
 Calculates the SWE state vector from the compressible variables.
 
@@ -673,6 +730,55 @@ void restrict_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * matching_indices,
                     int ng, int rank,
                     int coarse_level, int nlevels);
+
+/**
+Interpolate multilayer SWE variables on fine grid to get them on single layer SWE coarse grid.
+
+\param qf
+    variables on fine grid
+\param qc
+    coarse grid state vector
+\param nxs, nys, nzs
+    grid dimensions
+\param matching_indices
+    position of fine grid wrt coarse grid
+\param kx_offset, ky_offset
+    kernel offsets in the x and y directions
+\param clevel, nlevels
+   index of coarser level and total number of levels
+*/
+__global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
+                                     int * nxs, int * nys, int * nzs,
+                                     int * matching_indices,
+                                     int kx_offset, int ky_offset,
+                                     int clevel, int nlevels);
+
+/**
+Restrict fine multilayer swe grid data to coarse single layer swe grid.
+
+\param kernels, threads, blocks
+    number of kernels, threads and blocks for each process/kernel
+\param cumulative_kernels
+    cumulative number of kernels in mpi processes of r < rank
+\param q_cd, q_fd
+    coarse and fine grids of state vectors
+\param nxs, nys, nzs
+    dimensions of grids
+\param matching_indices
+    position of fine grid wrt coarse grid
+\param ng
+    number of ghost cells
+\param rank
+    rank of MPI process
+\param coarse_level, nlevels
+    index of coarser level and total number of levels
+*/
+void restrict_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                 int * cumulative_kernels, float * q_cd, float * q_fd,
+                 int * nxs, int * nys, int * nzs,
+                 int * matching_indices,
+                 int ng, int rank,
+                 int coarse_level, int nlevels);
 
 /**
 First part of evolution through one timestep using finite volume methods.
