@@ -9,7 +9,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      float * fx_plus_half, float * fx_minus_half,
                      float * fy_plus_half, float * fy_minus_half,
                      int nx, int ny, int nz, int vec_dim, float alpha,
-                     float gamma, float dt,
+                     float gamma,
                      int kx_offset, int ky_offset) {
     /**
     First part of evolution through one timestep using finite volume methods.
@@ -40,8 +40,6 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         dimensions of grid
     alpha, gamma : float
         lapse function and adiabatic index
-    dt : float
-        timestep
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -146,7 +144,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
                      float * fz_plus_half, float * fz_minus_half,
                      int nx, int ny, int nz, int vec_dim, float alpha,
                      float gamma,
-                     float dz, float dt,
                      int kx_offset, int ky_offset) {
     /**
     First part of evolution through one timestep using finite volume methods.
@@ -175,8 +172,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         dimension of state vector
     alpha, gamma : float
         lapse function and adiabatic index
-    dz, dt : float
-        vertical grid spacing and timestep
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -236,7 +231,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
     free(q_m);
     free(f);
 }
-
 
 __global__ void evolve_fv_fluxes(float * F,
                      float * qx_plus_half, float * qx_minus_half,
@@ -495,12 +489,10 @@ __global__ void evolve_fv_heating(float * gamma_up,
 
         if (z < (nlayers - 1)) {
             sum_qs += (Q_d[z + 1] - Q_d[z]);
-            deltaQx = Q_d[z] *
-                (U_half[offset*4+1] -
+            deltaQx = Q_d[z] * (U_half[offset*4+1] -
                  U_half[(((z + 1) * ny + y) * nx + x)*4+1]) /
                 (W * U_half[offset*4]);
-            deltaQy = (Q_d[z]) *
-                (U_half[offset*4+2] -
+            deltaQy = (Q_d[z]) * (U_half[offset*4+2] -
                  U_half[(((z + 1) * ny + y) * nx + x)*4+2]) /
                 (W * U_half[offset*4]);
         }
@@ -682,13 +674,13 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
-                  dt, kx_offset, ky_offset);
+                  kx_offset, ky_offset);
            if (do_z) {
                evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
                       qz_p_d, qz_m_d,
                       fz_p_d, fz_m_d,
                       nx, ny, nz, vec_dim, alpha, gamma,
-                      dz, dt, kx_offset, ky_offset);
+                      kx_offset, ky_offset);
            }
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1104,19 +1096,20 @@ void cuda_run(float * beta, float * gamma_up,
     // set device
     cudaSetDevice(rank);
 
-    // TODO: work out where I want rho to be defined.
+    // index of first multilayer SWE grid level
+    int m_in = (models[0] == 'S') ? 1 : 0;
 
     // allocate memory on device
     cudaMalloc((void**)&beta_d, 3*sizeof(float));
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
-    cudaMalloc((void**)&rho_d, nzs[0]*sizeof(float));
-    cudaMalloc((void**)&Q_d, nzs[0]*sizeof(float));
+    cudaMalloc((void**)&rho_d, nzs[m_in]*sizeof(float));
+    cudaMalloc((void**)&Q_d, nzs[m_in]*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(rho_d, rho, nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(Q_d, Q, nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(rho_d, rho, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(Q_d, Q, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
 
     int grid_size = nxs[0]*nys[0]*nzs[0]*vec_dims[0];
     for (int i = 1; i < nlevels; i++) {
@@ -1356,8 +1349,7 @@ void cuda_run(float * beta, float * gamma_up,
                 prolong_swe_to_comp(kernels, threads, blocks,
                              cumulative_kernels,
                              U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                             dt/pow(r, i), zmin, gamma_up_d,
+                             dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
                              rho_d, gamma, matching_indices_d, ng, rank,
                              q_comp_d, old_phi_d, i);
             } else if (models[i] == 'C' && models[i+1] == 'C') {
@@ -1371,9 +1363,7 @@ void cuda_run(float * beta, float * gamma_up,
                 prolong_swe_to_swe(kernels, threads, blocks,
                              cumulative_kernels,
                              U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                             dt/pow(r, i), zmin, gamma_up_d,
-                             rho_d, gamma, matching_indices_d, ng, rank, i);
+                             matching_indices_d, ng, rank, i);
             }
 
             err = cudaGetLastError();

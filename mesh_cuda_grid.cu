@@ -1,7 +1,7 @@
 /*
 File containing routines which deal with multigrid operations.
 
-TODO: need to interpolate rho onto fine grid at start (probably in mes constructor)
+TODO: need to interpolate rho onto fine grid at start (probably in mesh constructor)
 */
 
 #include <stdio.h>
@@ -61,7 +61,6 @@ void getNumKernels(int nx, int ny, int nz, int ng, int n_processes,
                 kernels[i].y = 0;
             }
         } else {
-
             // split up in the y direction to keep stuff contiguous in memory
             int strip_width = int(floor(float(kernels_y) /
                               float(n_processes)));
@@ -505,11 +504,10 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
     delete[] yrbuf;
 }
 
-
 __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                     float * q_f, float * q_c,
                     int * nxs, int * nys, int * nzs,
-                    float dx, float dy, float dz, float zmin,
+                    float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
                     int kx_offset, int ky_offset, int clevel) {
     /**
@@ -525,8 +523,8 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         coarse grid swe state vector
     nxs, nys, nzs : int *
         grid dimensions
-    dx, dy, dz : float
-        coarse grid spacings
+    dz : float
+        coarse grid vertical spacing
     matching_indices_d : int *
         position of fine grid wrt coarse grid
     gamma_up : float *
@@ -689,7 +687,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
 void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
-                  float dx, float dy, float dz, float dt, float zmin,
+                  float dz, float dt, float zmin,
                   float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
                   float * old_phi_d, int clevel) {
@@ -706,8 +704,8 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
         coarse and fine grids of state vectors
     nxs, nys, nzs : int *
         dimensions of grids
-    dx, dy, dz : float
-        coarse grid cell spacings
+    dz : float
+        coarse grid cell vertical spacings
     dt : float
         timestep
     zmin : float
@@ -754,7 +752,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, dx, dy, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1071,8 +1069,6 @@ __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
 void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
-                  float dx, float dy, float dz, float dt, float zmin,
-                  float * gamma_up_d, float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank,
                   int clevel) {
     /**
@@ -1088,16 +1084,6 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
         coarse and fine grids of state vectors
     nxs, nys, nzs : int *
         dimensions of grids
-    dx, dy, dz : float
-        coarse grid cell spacings
-    dt : float
-        timestep
-    zmin : float
-        height of sea floor
-    gamma_up_d : float *
-        spatial metric
-    rho, gamma : float
-        density and adiabatic index
     matching_indices_d : int *
         position of fine grid wrt coarse grid
     ng : int
@@ -1411,7 +1397,6 @@ __global__ void restrict_interpolate_comp(float * qf, float * qc,
         }
     }
 }
-
 
 void restrict_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * cumulative_kernels, float * q_cd, float * q_fd,

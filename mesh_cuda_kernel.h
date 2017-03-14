@@ -421,8 +421,8 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     coarse grid swe state vector
 \param nxs, nys, nzs
     grid dimensions
-\param dx, dy, dz
-    coarse grid spacings
+\param dz
+    coarse grid vertical spacing
 \param matching_indices_d
     position of fine grid wrt coarse grid
 \param gamma_up
@@ -432,8 +432,9 @@ Reconstruct fine grid variables from compressible variables on coarse grid
 \param coarse_level
   index of coarser level
 */
-__global__ void prolong_reconstruct_comp_from_swe(float * q_comp, float * q_f, float * q_c,
-                  int * nxs, int * nys, int * nzs, float dx, float dy, float dz, float zmin,
+__global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
+                  float * q_f, float * q_c,
+                  int * nxs, int * nys, int * nzs, float dz, float zmin,
                   int * matching_indices_d, float * gamma_up,
                   int kx_offset, int ky_offset, int coarse_level);
 
@@ -448,8 +449,8 @@ Prolong coarse grid data to fine grid
   coarse and fine grids of state vectors
 \param nxs, nys, nzs
   dimensions of grids
-\param dx, dy, dz
-  coarse grid cell spacings
+\param dz
+  coarse grid cell vertical spacing
 \param dt
   timestep
 \param zmin
@@ -474,7 +475,7 @@ Prolong coarse grid data to fine grid
 void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 int * cumulative_kernels, float * q_cd, float * q_fd,
                 int * nxs, int * nys, int * nzs,
-                float dx, float dy, float dz, float dt, float zmin,
+                float dz, float dt, float zmin,
                 float * gamma_up_d, float * rho, float gamma,
                 int * matching_indices_d, int ng, int rank, float * qc_comp,
                 float * old_phi_d, int coarse_level);
@@ -571,8 +572,6 @@ Prolong coarse grid single layer swe data to fine multilayer swe grid.
 void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 int * cumulative_kernels, float * q_cd, float * q_fd,
                 int * nxs, int * nys, int * nzs,
-                float dx, float dy, float dz, float dt, float zmin,
-                float * gamma_up_d, float * rho, float gamma,
                 int * matching_indices_d, int ng, int rank,
                 int coarse_level);
 
@@ -792,8 +791,6 @@ NOTE: we assume that beta is smooth so can get value at cell boundaries with sim
    dimensions of grid
 \param alpha, gamma
    lapse function and adiabatic index
-\param dt
-   timestep
 \param kx_offset, ky_offset
    x, y offset for current kernel
 */
@@ -803,8 +800,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                     float * qy_plus_half, float * qy_minus_half,
                     float * fx_plus_half, float * fx_minus_half,
                     float * fy_plus_half, float * fy_minus_half,
-                    int nx, int ny, int nz, int vec_dim, float alpha, float gamma,
-                    float dt,
+                    int nx, int ny, int nz, int vec_dim,
+                    float alpha, float gamma,
                     int kx_offset, int ky_offset);
 
 /**
@@ -832,8 +829,6 @@ NOTE: we assume that beta is smooth so can get value at cell boundaries with sim
     dimension of state vector
 \param alpha, gamma
     lapse function and adiabatic index
-\param dz, dt
-    vertical grid spacing and timestep
 \param kx_offset, ky_offset
     x, y offset for current kernel
 */
@@ -841,8 +836,8 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
                      float * Un_d, flux_func_ptr flux_func,
                      float * qz_plus_half, float * qz_minus_half,
                      float * fz_plus_half, float * fz_minus_half,
-                     int nx, int ny, int nz, int vec_dim, float alpha, float gamma,
-                     float dz, float dt,
+                     int nx, int ny, int nz, int vec_dim,
+                     float alpha, float gamma,
                      int kx_offset, int ky_offset);
 
 /**

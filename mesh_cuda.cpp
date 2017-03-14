@@ -209,8 +209,6 @@ Sea::Sea(char * filename)
                 inputFile >> value;
                 nzs[i] = int(value);
             }
-            // TODO: work out where to define rhos
-            rho = new float[nzs[0]];
         } else if (variableName == "nt") {
             inputFile >> value;
             nt = int(value);
@@ -232,7 +230,9 @@ Sea::Sea(char * filename)
         } else if (variableName == "zmax") {
             inputFile >> zmax;
         } else if (variableName == "rho") {
-            for (int i = 0; i < nzs[0]; i++) {
+            int m_in = (models[0] == 'S') ? 1 : 0;
+            rho = new float[nzs[m_in]];
+            for (int i = 0; i < nzs[m_in]; i++) {
                 inputFile >> rho[i];
             }
         } else if (variableName == "Q") {
@@ -530,13 +530,7 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     */
     // find coarsest multilayer SWE grid
     // TODO: make sure ensure this exists when initialise object
-    int grid_index = 0;
-    for (int i = 0; i < nlevels; i++) {
-        if (models[i] == 'M') {
-            grid_index = i;
-            break;
-        }
-    }
+    int grid_index = (models[0] == 'S') ? 1 : 0;
 
     for (int i = 0; i < nxs[grid_index]*nys[grid_index]*nzs[grid_index]; i++) {
         // it's on a SWE grid so know vec_dim = 4
@@ -636,9 +630,10 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /**
     run code
     */
+    int m_in = (models[0] == 'S') ? 1 : 0;
     // hack for now
-    float * Qs = new float[nzs[0]];
-    for (int i = 0; i < nzs[0]; i++) {
+    float * Qs = new float[nzs[m_in]];
+    for (int i = 0; i < nzs[m_in]; i++) {
         Qs[i] = Q;
     }
 
