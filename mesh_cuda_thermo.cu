@@ -939,8 +939,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
             }
         }
 
-        int c_x = round(x*0.5) + matching_indices[(nlevels-1)*coarse_level*4];
-        int c_y = round(y*0.5) + matching_indices[(nlevels-1)*coarse_level*4+2];
+        int c_x = round(x*0.5) + matching_indices[coarse_level*4];
+        int c_y = round(y*0.5) + matching_indices[coarse_level*4+2];
         float interp_q_comp = qc[(c_y * nxs[coarse_level] + c_x) * 4];
 
         float Sx = slope_limit(1.0, qc[(c_y * nxs[coarse_level] + c_x-1) * 4], qc[(c_y * nxs[coarse_level] + c_x) * 4], qc[(c_y * nxs[coarse_level] + c_x+1) * 4], 0.0, 0.0, 0.0);
