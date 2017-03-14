@@ -135,8 +135,12 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             ny = int(dat[0])
         elif name == 'nt':
             nt = int(dat[0])
-        elif name == 'nlayers':
-            nlayers = int(dat[0])
+        elif name == 'models':
+            models = dat
+        elif name == 'r':
+            r = int(dat[0])
+        elif name == 'df':
+            df = float(dat[0])
         elif name == 'xmin':
             xmin = float(dat[0])
         elif name == 'xmax':
@@ -157,6 +161,11 @@ def mesh_plot(input_filename=None, filename=None, start=0):
                 gamma_up = inv(gamma_up)
         elif name == 'dprint':
             dprint = int(dat[0])
+
+    if (models[0] == 'S'):
+        # coarsest layer is single layer SWE - adjust nx, ny to get multilayer dimensions
+        nx *= r * df
+        ny *= r * df
 
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
@@ -190,8 +199,6 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     name = filename.split('/')[-1]
 
     #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
-
-
 
     for i in range(start, len(D_2d[:,0,0,0])-1):
         #if i % 10 == 0:

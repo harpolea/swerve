@@ -9,8 +9,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
                      float * fx_plus_half, float * fx_minus_half,
                      float * fy_plus_half, float * fy_minus_half,
                      int nx, int ny, int nz, int vec_dim, float alpha,
-                     float gamma,
-                     float dx, float dy, float dt,
+                     float gamma, float dt,
                      int kx_offset, int ky_offset) {
     /**
     First part of evolution through one timestep using finite volume methods.
@@ -41,8 +40,8 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         dimensions of grid
     alpha, gamma : float
         lapse function and adiabatic index
-    dx, dy, dt : float
-        grid dimensions and timestep
+    dt : float
+        timestep
     kx_offset, ky_offset : int
         x, y offset for current kernel
     */
@@ -683,7 +682,7 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
-                  dx, dy, dt, kx_offset, ky_offset);
+                  dt, kx_offset, ky_offset);
            if (do_z) {
                evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
                       qz_p_d, qz_m_d,
@@ -1230,111 +1229,421 @@ void cuda_run(float * beta, float * gamma_up,
                          sizeof(flux_func_ptr));
 
     // TODO: this is the grid that shall be printed - need to set this in input file / calculate from first multilayer SWE grid.
-    int p = 0;
+    int p = (models[0] == 'S') ? 1 : 0;
 
-    if (strcmp(filename, "na") != 0) {
-        hid_t outFile, dset, mem_space, file_space;
+    // if first layer is single layer SWE, need to restrict multilayer SWE
+    // data (where initial data has been defined) to this
+    if (models[0] == 'S') {
+        // TODO: check if need to do BCS stuff here
+        cudaMemcpy(Up_d, Us_h[1],
+            nxs[1]*nys[1]*nzs[1]*vec_dims[1]*sizeof(float),
+            cudaMemcpyHostToDevice);
+        restrict_swe_to_swe(kernels, threads, blocks,
+                  cumulative_kernels,
+                  U_d, Up_d, nxs_d, nys_d, nzs_d,
+                  matching_indices_d,
+                  ng, rank, 0);
+        cudaMemcpy(Us_h[0], U_d,
+              nxs[0]*nys[0]*nzs[0]*vec_dims[0]*sizeof(float),
+              cudaMemcpyDeviceToHost);
 
-        if (rank == 0) {
-            // create file
-            outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
-                                H5P_DEFAULT);
-
-            // create dataspace
-            int ndims = 5;
-            hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nzs[p]),
-                              (nys[p]), hsize_t(nxs[p]), vec_dims[p]};
-            file_space = H5Screate_simple(ndims, dims, NULL);
-
-            hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-            H5Pset_layout(plist, H5D_CHUNKED);
-            hsize_t chunk_dims[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
-                                    hsize_t(nxs[p]), vec_dims[p]};
-            H5Pset_chunk(plist, ndims, chunk_dims);
-
-            // create dataset
-            dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT,
-                             file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
-
-            H5Pclose(plist);
-
-            // make a memory dataspace
-            mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
-
-            // select a hyperslab
-            file_space = H5Dget_space(dset);
-            hsize_t start[] = {0, 0, 0, 0, 0};
-            hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
-                                hsize_t(nxs[p]), vec_dims[p]};
-            H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL,
-                                hcount, NULL);
-            // write to dataset
-            printf("Printing t = %i\n", 0);
-            H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                     H5P_DEFAULT, Us_h[p]);
-            // close file dataspace
-            H5Sclose(file_space);
-        }
-
-        cudaError_t err;
-        err = cudaGetLastError();
-        if (err != cudaSuccess){
-            cout << "Before evolution\n";
-            printf("Error: %s\n", cudaGetErrorString(err));
-        }
-
-        // main loop
-        for (int t = 0; t < nt; t++) {
-
-            cout << "Evolving t = " << t << '\n';
-
-            int ky_offset =
-                (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
-
-            // first prolong data down from coarse grids to fine grids
-            for (int i = 0; i < (nlevels-1); i++) {
-                cudaMemcpy(U_d, Us_h[i],
-                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-                cudaMemcpy(Up_d, Us_h[i+1],
-                        nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-
-                // prolong to fine grid
-                // select prolongation algorithm
-                if (models[i] == 'M' && models[i+1] == 'C') {
-                    prolong_swe_to_comp(kernels, threads, blocks,
-                                 cumulative_kernels,
-                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
-                                 dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                                 dt/pow(r, i), zmin, gamma_up_d,
-                                 rho_d, gamma, matching_indices_d, ng, rank,
-                                 q_comp_d, old_phi_d, i, nlevels);
-                } else if (models[i] == 'C' && models[i+1] == 'C') {
-                    prolong_comp_to_comp(kernels, threads, blocks,
-                                 cumulative_kernels,
-                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
-                                 matching_indices_d, ng, rank,
-                                 i, nlevels);
-                } else if (models[i] == 'S' && models[i+1] == 'M') {
-                    prolong_swe_to_swe(kernels, threads, blocks,
-                                 cumulative_kernels,
-                                 U_d, Up_d, nxs_d, nys_d, nzs_d,
-                                 dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                                 dt/pow(r, i), zmin, gamma_up_d,
-                                 rho_d, gamma, matching_indices_d, ng, rank,
-                                 i, nlevels);
+        // enforce boundaries
+        for (int x = 0; x < matching_indices[0]+ng; x++) {
+            for (int y = 0; y < nys[0]; y++) {
+                for (int n = 0; n < 4; n++) {
+                    Us_h[0][(y * nxs[0] + x) * 4 + n] = Us_h[0][(y * nxs[0] + matching_indices[0]+ng) * 4 + n];
                 }
+            }
+        }
+        for (int x = matching_indices[1]; x < nxs[0]; x++) {
+            for (int y = 0; y < nys[0]; y++) {
+                for (int n = 0; n < 4; n++) {
+                    Us_h[0][(y * nxs[0] + x) * 4 + n] = Us_h[0][(y * nxs[0] + matching_indices[1]-2) * 4 + n];
+                }
+            }
+        }
+        for (int x = 0; x < nxs[0]; x++) {
+            for (int y = 0; y < matching_indices[2]+ng; y++) {
+                for (int n = 0; n < 4; n++) {
+                    Us_h[0][(y * nxs[0] + x) * 4 + n] = Us_h[0][((matching_indices[2]+ng) * nxs[0] + x) * 4 + n];
+                }
+            }
+        }
+        for (int x = 0; x < nxs[0]; x++) {
+            for (int y = matching_indices[3]; y < nys[0]; y++) {
+                for (int n = 0; n < 4; n++) {
+                    Us_h[0][(y * nxs[0] + x) * 4 + n] = Us_h[0][((matching_indices[3]-2) * nxs[0] + x) * 4 + n];
+                }
+            }
+        }
+
+        cudaMemcpy(U_d, Us_h[0],
+            nxs[0]*nys[0]*nzs[0]*vec_dims[0]*sizeof(float),
+            cudaMemcpyHostToDevice);
+    }
+
+    hid_t outFile, dset, mem_space, file_space;
+
+    if (rank == 0) {
+        // create file
+        outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
+                            H5P_DEFAULT);
+
+        // create dataspace
+        int ndims = 5;
+        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nzs[p]),
+                          (nys[p]), hsize_t(nxs[p]), vec_dims[p]};
+        file_space = H5Screate_simple(ndims, dims, NULL);
+
+        hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+        H5Pset_layout(plist, H5D_CHUNKED);
+        hsize_t chunk_dims[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
+                                hsize_t(nxs[p]), vec_dims[p]};
+        H5Pset_chunk(plist, ndims, chunk_dims);
+
+        // create dataset
+        dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT,
+                         file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+
+        H5Pclose(plist);
+
+        // make a memory dataspace
+        mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
+
+        // select a hyperslab
+        file_space = H5Dget_space(dset);
+        hsize_t start[] = {0, 0, 0, 0, 0};
+        hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
+                            hsize_t(nxs[p]), vec_dims[p]};
+        H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL,
+                            hcount, NULL);
+        // write to dataset
+        printf("Printing t = %i\n", 0);
+        H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
+                 H5P_DEFAULT, Us_h[p]);
+        // close file dataspace
+        H5Sclose(file_space);
+    }
+
+    cudaError_t err;
+    err = cudaGetLastError();
+    if (err != cudaSuccess){
+        cout << "Before evolution\n";
+        printf("Error: %s\n", cudaGetErrorString(err));
+    }
+
+    // main loop
+    for (int t = 0; t < nt; t++) {
+
+        cout << "Evolving t = " << t << '\n';
+
+        int ky_offset =
+            (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
+
+        // first prolong data down from coarse grids to fine grids
+        for (int i = 0; i < (nlevels-1); i++) {
+            cudaMemcpy(U_d, Us_h[i],
+                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+            cudaMemcpy(Up_d, Us_h[i+1],
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+
+            // prolong to fine grid
+            // select prolongation algorithm
+            if (models[i] == 'M' && models[i+1] == 'C') {
+                // multilayer SWE to compressible
+                prolong_swe_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
+                             dt/pow(r, i), zmin, gamma_up_d,
+                             rho_d, gamma, matching_indices_d, ng, rank,
+                             q_comp_d, old_phi_d, i);
+            } else if (models[i] == 'C' && models[i+1] == 'C') {
+                // compressible to compressible
+                prolong_comp_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             matching_indices_d, ng, rank, i);
+            } else if (models[i] == 'S' && models[i+1] == 'M') {
+                // single layer SWE to multilayer SWE
+                prolong_swe_to_swe(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
+                             dt/pow(r, i), zmin, gamma_up_d,
+                             rho_d, gamma, matching_indices_d, ng, rank, i);
+            }
+
+            err = cudaGetLastError();
+            if (err != cudaSuccess){
+                cout << "After prolonging\n";
+                printf("Error: %s\n", cudaGetErrorString(err));
+            }
+
+            cudaMemcpy(Us_h[i+1], Up_d,
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyDeviceToHost);
+
+            err = cudaGetLastError();
+            if (err != cudaSuccess){
+                cout << "After copying\n";
+                printf("Error: %s\n", cudaGetErrorString(err));
+            }
+
+            bool do_z = true;
+            if (models[i+1] == 'M' || models[i+1] == 'S') {
+                do_z = false;
+            }
+
+            // enforce boundaries
+            if (n_processes == 1) {
+                bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                        ng, vec_dims[i+1]);
+            } else {
+                int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
+                bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                        vec_dims[i+1], ng, comm, status, rank,
+                        n_processes, y_size, do_z);
+            }
+        }
+
+        // Do evolutions on grids
+        for (int i = (nlevels-1); i >= 0; i--) {
+            cudaMemcpy(U_d, Us_h[i],
+                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+
+            flux_func_ptr flux_func = h_compressible_fluxes;
+            bool do_z = true;
+            if (models[i] == 'M' || models[i] == 'S') { // SWE
+                flux_func = h_shallow_water_fluxes;
+                do_z = false;
+            }
+
+            for (int j = 0; j < pow(r, i); j++) {
+                // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
 
                 err = cudaGetLastError();
-                if (err != cudaSuccess){
-                    cout << "After prolonging\n";
+                if (err != cudaSuccess) {
+                    cout << "Before rk3\n";
                     printf("Error: %s\n", cudaGetErrorString(err));
                 }
 
-                cudaMemcpy(Us_h[i+1], Up_d,
-                        nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                        cudaMemcpyDeviceToHost);
+                rk3(kernels, threads, blocks, cumulative_kernels,
+                        beta_d, gamma_up_d, U_d, U_half_d, Up_d,
+                        qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
+                        fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
+                        nxs[i], nys[i], nzs[i], vec_dims[i], ng,
+                        alpha, gamma,
+                        dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
+                        dt/pow(r, i),
+                        Up_h, F_h, Us_h[i],
+                        comm, status, rank, n_processes,
+                        flux_func, do_z);
+
+                cudaDeviceSynchronize();
+
+                if (models[i] == 'C') {
+                    // hack on the burning
+                    float * H = new float[nxs[i]*nys[i]*nzs[i]];
+                    calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma,
+                           gamma_up, H, Cv);
+                    for (int z = 0; z < nzs[i]; z++) {
+                        for (int y = ng; y < nys[i]-ng; y++) {
+                            for (int x = ng; x < nxs[i] - ng; x++) {
+                                // tau
+                                Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6 + 4] +=
+                                    dt/pow(r, i) * 0.5 * alpha *
+                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
+                                    H[(z * nys[i] + y) * nxs[i] + x];
+                                float X_dot =
+                                    H[(z*nys[i] + y)*nxs[i] + x] / E_He;
+                                // DX
+                                Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
+                                    dt/pow(r, i) * 0.5 * alpha * rho[0] *
+                                    X_dot;
+                            }
+                        }
+                    }
+                    delete[] H;
+                } else if (models[i] == 'M') { // SWE burning
+                    // update old_phi
+                    for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
+                        pphi[j] = Us_h[i][j*4];
+                    }
+                    cudaMemcpy(old_phi_d, pphi,
+                            nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                            cudaMemcpyHostToDevice);
+
+                    cudaMemcpy(Up_d, Us_h[i],
+                            nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                            cudaMemcpyHostToDevice);
+                    cudaMemcpy(U_half_d, Us_h[i],
+                            nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                            cudaMemcpyHostToDevice);
+
+                    float kx_offset = 0;
+                    ky_offset = (kernels[0].y * blocks[0].y *
+                                 threads[0].y - 2*ng) * rank;
+
+                    for (int l = 0; l < kernels[rank].y; l++) {
+                        kx_offset = 0;
+                        for (int k = 0; k < kernels[rank].x; k++) {
+                            evolve_fv_heating<<<blocks[k_offset + l * kernels[rank].x + k], threads[k_offset + l * kernels[rank].x + k]>>>(
+                                   gamma_up_d,
+                                   Up_d, U_half_d,
+                                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
+                                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
+                                   sum_phs_d, rho_d, Q_d,
+                                   nxs[i], nys[i], nzs[i], alpha, gamma,
+                                   dx/pow(r, i), dy/pow(r, i),
+                                   dt/pow(r, i),
+                                   burning, Cv, E_He,
+                                   kx_offset, ky_offset);
+                            kx_offset += blocks[k_offset + l *
+                                kernels[rank].x + k].x *
+                                threads[k_offset+l*kernels[rank].x+k].x -
+                                2*ng;
+                        }
+                        ky_offset += blocks[k_offset + l *
+                            kernels[rank].x].y *
+                            threads[k_offset + l * kernels[rank].x].y -
+                            2*ng;
+                    }
+
+                    cudaMemcpy(Up_h, Up_d,
+                            nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                            cudaMemcpyDeviceToHost);
+                    cudaMemcpy(sum_phs_h, sum_phs_d,
+                            nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                            cudaMemcpyDeviceToHost);
+
+                    // enforce boundaries
+                    if (n_processes == 1) {
+                        bcs_fv(Up_h, nxs[i], nys[i], nzs[i], ng, 4);
+                        bcs_fv(sum_phs_h, nxs[i], nys[i], nzs[i], ng, 1);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y *
+                                     threads[0].y - 2*ng;
+                        bcs_mpi(Up_h, nxs[i], nys[i], nzs[i], 4, ng, comm,
+                                status, rank, n_processes, y_size, false);
+                        bcs_mpi(sum_phs_h, nxs[i], nys[i], nzs[i], 1, ng,
+                                comm, status, rank, n_processes, y_size,
+                                false);
+                    }
+
+                    cudaMemcpy(Up_d, Up_h,
+                               nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                               cudaMemcpyHostToDevice);
+                    cudaMemcpy(sum_phs_d, sum_phs_h,
+                               nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                               cudaMemcpyHostToDevice);
+
+                    kx_offset = 0;
+                    ky_offset = (kernels[0].y * blocks[0].y *
+                                 threads[0].y - 2*ng) * rank;
+
+                    for (int p = 0; p < kernels[rank].y; p++) {
+                        kx_offset = 0;
+                        for (int q = 0; q < kernels[rank].x; q++) {
+                            evolve2<<<blocks[k_offset + p * kernels[rank].x + q], threads[k_offset + p * kernels[rank].x + q]>>>(U_d,
+                                   Up_d, U_half_d, sum_phs_d,
+                                   nxs[i], nys[i], nzs[i], ng, alpha,
+                                   dx/pow(r, i), dy/pow(r, i), dt/pow(r, i),
+                                   kx_offset, ky_offset);
+                            kx_offset +=
+                                blocks[k_offset+p*kernels[rank].x + q].x *
+                                threads[k_offset+p*kernels[rank].x+q].x -
+                                2*ng;
+                        }
+                        ky_offset += blocks[k_offset + p *
+                            kernels[rank].x].y *
+                            threads[k_offset + p * kernels[rank].x].y -
+                            2*ng;
+                    }
+
+                    cudaDeviceSynchronize();
+
+                    err = cudaGetLastError();
+
+                    if (err != cudaSuccess)
+                        printf("Error: %s\n", cudaGetErrorString(err));
+
+                    // boundaries
+                    cudaMemcpy(Us_h[i], U_d,
+                               nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                               cudaMemcpyDeviceToHost);
+                    if (n_processes == 1) {
+                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, 4);
+                    } else {
+                        int y_size = kernels[0].y * blocks[0].y *
+                                     threads[0].y - 2*ng;
+                        bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], 4, ng,
+                                comm, status, rank, n_processes, y_size,
+                                false);
+                    }
+                    cudaMemcpy(U_d, Us_h[i],
+                               nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
+                               cudaMemcpyHostToDevice);
+                }
+
+                if (n_processes == 1) {
+                    bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng,
+                           vec_dims[i]);
+                } else {
+                    int y_size = kernels[0].y * blocks[0].y *
+                                 threads[0].y - 2*ng;
+                    bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i],
+                            ng, comm, status, rank, n_processes, y_size,
+                            false);
+                }
+
+                // copy to device
+                cudaMemcpy(U_d, Us_h[i],
+                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+            }
+
+            if (i > 0) {
+                // restrict to coarse grid
+                // copy to device
+                cudaMemcpy(Up_d, Us_h[i-1],
+                    nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+                // select restriction algorithm
+                if (models[i-1] == 'M' && models[i] == 'C') {
+                    // compressible to multilayer SWE
+                    restrict_comp_to_swe(kernels, threads, blocks,
+                              cumulative_kernels,
+                              Up_d, U_d, nxs_d, nys_d, nzs_d,
+                              dz/pow(r, i), zmin, matching_indices_d,
+                              rho_d, gamma, gamma_up_d, ng, rank, qf_swe, i-1);
+                } else if (models[i-1] == 'C' && models[i] == 'C') {
+                    // compressible to compressible
+                    restrict_comp_to_comp(kernels, threads, blocks,
+                              cumulative_kernels,
+                              Up_d, U_d, nxs_d, nys_d, nzs_d,
+                              matching_indices_d,
+                              ng, rank, i-1);
+                } else if (models[i-1] == 'S' && models[i] == 'M') {
+                    // multilayer SWE to single layer SWE
+                    restrict_swe_to_swe(kernels, threads, blocks,
+                              cumulative_kernels,
+                              Up_d, U_d, nxs_d, nys_d, nzs_d,
+                              matching_indices_d,
+                              ng, rank, i-1);
+                }
+                err = cudaGetLastError();
+                if (err != cudaSuccess){
+                    cout << "After restricting\n";
+                    printf("Error: %s\n", cudaGetErrorString(err));
+                }
+
+                cudaMemcpy(Us_h[i-1], Up_d,
+                    nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                    cudaMemcpyDeviceToHost);
 
                 err = cudaGetLastError();
                 if (err != cudaSuccess){
@@ -1342,519 +1651,83 @@ void cuda_run(float * beta, float * gamma_up,
                     printf("Error: %s\n", cudaGetErrorString(err));
                 }
 
-                bool do_z = true;
-                if (models[i+1] == 'M') {
-                    do_z = false;
-                }
-
                 // enforce boundaries
                 if (n_processes == 1) {
-                    bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                            ng, vec_dims[i+1]);
+                    bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
+                        vec_dims[i-1]);
                 } else {
-                    int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
-                    bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                            vec_dims[i+1], ng, comm, status, rank,
-                            n_processes, y_size, do_z);
-                }
-
-            }
-
-
-            // Do evolutions on grids
-            for (int i = (nlevels-1); i >= 0; i--) {
-                cudaMemcpy(U_d, Us_h[i],
-                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-
-                flux_func_ptr flux_func = h_compressible_fluxes;
-                bool do_z = true;
-                if (models[i] == 'M') {
-                    flux_func = h_shallow_water_fluxes;
-                    do_z = false;
-                } //else {
-                    //flux_func = h_compressible_fluxes;
-                    //do_z = true;
-                //}
-
-                for (int j = 0; j < pow(r, i); j++) {
-                    // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
-
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess) {
-                        cout << "Before rk3\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    rk3(kernels, threads, blocks, cumulative_kernels,
-                            beta_d, gamma_up_d, U_d, U_half_d, Up_d,
-                            qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                            fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                            nxs[i], nys[i], nzs[i], vec_dims[i], ng,
-                            alpha, gamma,
-                            dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                            dt/pow(r, i),
-                            Up_h, F_h, Us_h[i],
-                            comm, status, rank, n_processes,
-                            flux_func, do_z);
-
-                    cudaDeviceSynchronize();
-
-                    if (models[i] == 'C') {
-                        // hack on the burning
-                        float * H = new float[nxs[i]*nys[i]*nzs[i]];
-                        calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma,
-                               gamma_up, H, Cv);
-                        for (int z = 0; z < nzs[i]; z++) {
-                            for (int y = ng; y < nys[i]-ng; y++) {
-                                for (int x = ng; x < nxs[i] - ng; x++) {
-                                    // tau
-                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6 + 4] +=
-                                        dt/pow(r, i) * 0.5 * alpha *
-                                        Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
-                                        H[(z * nys[i] + y) * nxs[i] + x];
-                                    float X_dot =
-                                        H[(z*nys[i] + y)*nxs[i] + x] / E_He;
-                                    // DX
-                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
-                                        dt/pow(r, i) * 0.5 * alpha * rho[0] *
-                                        X_dot;
-                                }
-                            }
-                        }
-                        delete[] H;
-                    } else if (models[i] == 'M') { // SWE burning
-                        // update old_phi
-                        for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
-                            pphi[j] = Us_h[i][j*4];
-                        }
-                        cudaMemcpy(old_phi_d, pphi,
-                                nxs[i]*nys[i]*nzs[i]*sizeof(float),
-                                cudaMemcpyHostToDevice);
-
-                        cudaMemcpy(Up_d, Us_h[i],
-                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                cudaMemcpyHostToDevice);
-                        cudaMemcpy(U_half_d, Us_h[i],
-                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                cudaMemcpyHostToDevice);
-
-                        float kx_offset = 0;
-                        ky_offset = (kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng) * rank;
-
-                        for (int l = 0; l < kernels[rank].y; l++) {
-                            kx_offset = 0;
-                            for (int k = 0; k < kernels[rank].x; k++) {
-                                evolve_fv_heating<<<blocks[k_offset + l * kernels[rank].x + k], threads[k_offset + l * kernels[rank].x + k]>>>(
-                                       gamma_up_d,
-                                       Up_d, U_half_d,
-                                       qx_p_d, qx_m_d, qy_p_d, qy_m_d,
-                                       fx_p_d, fx_m_d, fy_p_d, fy_m_d,
-                                       sum_phs_d, rho_d, Q_d,
-                                       nxs[i], nys[i], nzs[i], alpha, gamma,
-                                       dx/pow(r, i), dy/pow(r, i),
-                                       dt/pow(r, i),
-                                       burning, Cv, E_He,
-                                       kx_offset, ky_offset);
-                                kx_offset += blocks[k_offset + l *
-                                    kernels[rank].x + k].x *
-                                    threads[k_offset+l*kernels[rank].x+k].x -
-                                    2*ng;
-                            }
-                            ky_offset += blocks[k_offset + l *
-                                kernels[rank].x].y *
-                                threads[k_offset + l * kernels[rank].x].y -
-                                2*ng;
-                        }
-
-                        cudaMemcpy(Up_h, Up_d,
-                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                cudaMemcpyDeviceToHost);
-                        cudaMemcpy(sum_phs_h, sum_phs_d,
-                                nxs[i]*nys[i]*nzs[i]*sizeof(float),
-                                cudaMemcpyDeviceToHost);
-
-                        // enforce boundaries
-                        if (n_processes == 1) {
-                            bcs_fv(Up_h, nxs[i], nys[i], nzs[i], ng, 4);
-                            bcs_fv(sum_phs_h, nxs[i], nys[i], nzs[i], ng, 1);
-                        } else {
-                            int y_size = kernels[0].y * blocks[0].y *
-                                         threads[0].y - 2*ng;
-                            bcs_mpi(Up_h, nxs[i], nys[i], nzs[i], 4, ng, comm,
-                                    status, rank, n_processes, y_size, false);
-                            bcs_mpi(sum_phs_h, nxs[i], nys[i], nzs[i], 1, ng,
-                                    comm, status, rank, n_processes, y_size,
-                                    false);
-                        }
-
-                        cudaMemcpy(Up_d, Up_h,
-                                   nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                   cudaMemcpyHostToDevice);
-                        cudaMemcpy(sum_phs_d, sum_phs_h,
-                                   nxs[i]*nys[i]*nzs[i]*sizeof(float),
-                                   cudaMemcpyHostToDevice);
-
-                        kx_offset = 0;
-                        ky_offset = (kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng) * rank;
-
-                        for (int p = 0; p < kernels[rank].y; p++) {
-                            kx_offset = 0;
-                            for (int q = 0; q < kernels[rank].x; q++) {
-                                evolve2<<<blocks[k_offset + p * kernels[rank].x + q], threads[k_offset + p * kernels[rank].x + q]>>>(U_d,
-                                       Up_d, U_half_d, sum_phs_d,
-                                       nxs[i], nys[i], nzs[i], ng, alpha,
-                                       dx/pow(r, i), dy/pow(r, i), dt/pow(r, i),
-                                       kx_offset, ky_offset);
-                                kx_offset +=
-                                    blocks[k_offset+p*kernels[rank].x + q].x *
-                                    threads[k_offset+p*kernels[rank].x+q].x -
-                                    2*ng;
-                            }
-                            ky_offset += blocks[k_offset + p *
-                                kernels[rank].x].y *
-                                threads[k_offset + p * kernels[rank].x].y -
-                                2*ng;
-                        }
-
-                        cudaDeviceSynchronize();
-
-                        err = cudaGetLastError();
-
-                        if (err != cudaSuccess)
-                            printf("Error: %s\n", cudaGetErrorString(err));
-
-                        // boundaries
-                        cudaMemcpy(Us_h[i], U_d,
-                                   nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                   cudaMemcpyDeviceToHost);
-                        if (n_processes == 1) {
-                            bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, 4);
-                        } else {
-                            int y_size = kernels[0].y * blocks[0].y *
-                                         threads[0].y - 2*ng;
-                            bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], 4, ng,
-                                    comm, status, rank, n_processes, y_size,
-                                    false);
-                        }
-                        cudaMemcpy(U_d, Us_h[i],
-                                   nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
-                                   cudaMemcpyHostToDevice);
-                    }
-
-                    if (n_processes == 1) {
-                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng,
-                               vec_dims[i]);
-                    } else {
-                        int y_size = kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng;
-                        bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i],
-                                ng, comm, status, rank, n_processes, y_size,
-                                false);
-                    }
-
-                    // copy to device
-                    cudaMemcpy(U_d, Us_h[i],
-                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-                }
-
-                if (i > 0) {
-                    // restrict to coarse grid
-                    // copy to device
-                    cudaMemcpy(Up_d, Us_h[i-1],
-                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-                    // select restriction algorithm
-                    if (models[i-1] == 'M' && models[i] == 'C') {
-                        restrict_comp_to_swe(kernels, threads, blocks,
-                                  cumulative_kernels,
-                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  dz/pow(r, i), zmin, matching_indices_d,
-                                  rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-                                  i-1, nlevels);
-                    } else if (models[i-1] == 'C' && models[i] == 'C') {
-                        restrict_comp_to_comp(kernels, threads, blocks,
-                                  cumulative_kernels,
-                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  matching_indices_d,
-                                  ng, rank, i-1, nlevels);
-                    } else if (models[i-1] == 'S' && models[i] == 'M') {
-                        restrict_swe_to_swe(kernels, threads, blocks,
-                                  cumulative_kernels,
-                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  matching_indices_d,
-                                  ng, rank, i-1, nlevels);
-                    }
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess){
-                        cout << "After restricting\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    cudaMemcpy(Us_h[i-1], Up_d,
-                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-                        cudaMemcpyDeviceToHost);
-
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess){
-                        cout << "After copying\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    // enforce boundaries
-                    if (n_processes == 1) {
-                        bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
-                            vec_dims[i-1]);
-                    } else {
-                        int y_size = kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng;
-                        bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
-                            vec_dims[i-1], ng, comm, status, rank,
-                            n_processes, y_size, false);
-                    }
+                    do_z = (models[i-1] == 'M' || models[i-1] == 'S') ? false : true;
+                    int y_size = kernels[0].y * blocks[0].y *
+                                 threads[0].y - 2*ng;
+                    bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
+                        vec_dims[i-1], ng, comm, status, rank,
+                        n_processes, y_size, do_z);
                 }
             }
+        }
 
-            int mpi_err;
+        int mpi_err;
 
-            if ((t+1) % dprint == 0) {
-                if (rank == 0) {
-                    printf("Printing t = %i\n", t+1);
+        if ((t+1) % dprint == 0) {
+            if (rank == 0) {
+                printf("Printing t = %i\n", t+1);
 
-                    if (n_processes > 1) { // only do MPI stuff if needed
-                        float * buf =
-                            new float[nxs[p]*nys[p]*nzs[p]*vec_dims[p]];
-                        int tag = 0;
-                        for (int source = 1; source < n_processes; source++) {
-                            mpi_err = MPI_Recv(buf,
-                                nxs[p]*nys[p]*nzs[p]*vec_dims[p], MPI_FLOAT,
-                                source, tag, comm, &status);
+                if (n_processes > 1) { // only do MPI stuff if needed
+                    float * buf =
+                        new float[nxs[p]*nys[p]*nzs[p]*vec_dims[p]];
+                    int tag = 0;
+                    for (int source = 1; source < n_processes; source++) {
+                        mpi_err = MPI_Recv(buf,
+                            nxs[p]*nys[p]*nzs[p]*vec_dims[p], MPI_FLOAT,
+                            source, tag, comm, &status);
 
-                            check_mpi_error(mpi_err);
+                        check_mpi_error(mpi_err);
 
-                            // copy data back to grid
-                            ky_offset = (kernels[0].y * blocks[0].y *
-                                         threads[0].y - 2*ng) * rank;
-                            // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
-                            for (int z = 0; z < nzs[p]; z++) {
-                                for (int y = ky_offset; y < nys[p]; y++) {
-                                    for (int x = 0; x < nxs[p]; x++) {
-                                        for (int i = 0; i < 4; i++) {
-                                            Us_h[p][((z*nys[p]+y)*nxs[p]+x)*4+i] =
-                                                buf[((z*nys[p]+y)*nxs[p]+x)*4+i];
-                                        }
+                        // copy data back to grid
+                        ky_offset = (kernels[0].y * blocks[0].y *
+                                     threads[0].y - 2*ng) * rank;
+                        // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
+                        for (int z = 0; z < nzs[p]; z++) {
+                            for (int y = ky_offset; y < nys[p]; y++) {
+                                for (int x = 0; x < nxs[p]; x++) {
+                                    for (int i = 0; i < 4; i++) {
+                                        Us_h[p][((z*nys[p]+y)*nxs[p]+x)*4+i] =
+                                            buf[((z*nys[p]+y)*nxs[p]+x)*4+i];
                                     }
                                 }
                             }
                         }
-                        delete[] buf;
                     }
-
-                    // receive data from other processes and copy to grid
-
-                    // select a hyperslab
-                    file_space = H5Dget_space(dset);
-                    hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                    hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
-                                        hsize_t(nxs[p]), vec_dims[p]};
-                    H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start,
-                                        NULL, hcount, NULL);
-                    // write to dataset
-                    H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                             H5P_DEFAULT, Us_h[p]);
-                    // close file dataspae
-                    H5Sclose(file_space);
-                } else { // send data to rank 0
-                    int tag = 0;
-                    mpi_err = MPI_Ssend(Us_h[p],
-                                        nys[p]*nxs[p]*nzs[p]*vec_dims[p],
-                                        MPI_FLOAT, 0, tag, comm);
-                    check_mpi_error(mpi_err);
+                    delete[] buf;
                 }
+
+                // receive data from other processes and copy to grid
+
+                // select a hyperslab
+                file_space = H5Dget_space(dset);
+                hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
+                hsize_t hcount[] = {1, hsize_t(nzs[p]), hsize_t(nys[p]),
+                                    hsize_t(nxs[p]), vec_dims[p]};
+                H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start,
+                                    NULL, hcount, NULL);
+                // write to dataset
+                H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
+                         H5P_DEFAULT, Us_h[p]);
+                // close file dataspae
+                H5Sclose(file_space);
+            } else { // send data to rank 0
+                int tag = 0;
+                mpi_err = MPI_Ssend(Us_h[p],
+                                    nys[p]*nxs[p]*nzs[p]*vec_dims[p],
+                                    MPI_FLOAT, 0, tag, comm);
+                check_mpi_error(mpi_err);
             }
         }
+    }
 
-        if (rank == 0) {
-            H5Sclose(mem_space);
-            H5Fclose(outFile);
-        }
-
-    } else { // don't print
-
-        cudaError_t err;
-
-        for (int t = 0; t < nt; t++) {
-
-            for (int i = 0; i < (nlevels-1); i++) {
-                cudaMemcpy(U_d, Us_h[i],
-                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                    cudaMemcpyHostToDevice);
-                cudaMemcpy(Up_d, Us_h[i+1],
-                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                    cudaMemcpyHostToDevice);
-
-                // prolong to fine grid
-                prolong_swe_to_comp(kernels, threads, blocks,
-                             cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d, dx/pow(r, i),
-                             dy/pow(r, i), dz/pow(r, i), dt/pow(r, i),
-                             zmin, gamma_up_d,
-                             rho_d, gamma, matching_indices_d, ng, rank,
-                             q_comp_d, old_phi_d, i, nlevels);
-
-                cudaMemcpy(Us_h[i+1], Up_d,
-                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                    cudaMemcpyDeviceToHost);
-
-                // enforce boundaries
-                if (n_processes == 1) {
-                    bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1], ng,
-                        vec_dims[i+1]);
-                } else {
-                    int y_size = kernels[0].y * blocks[0].y *
-                                 threads[0].y - 2*ng;
-                    bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                        vec_dims[i+1], ng, comm, status, rank, n_processes,
-                        y_size, true);
-                }
-            }
-
-            // Do evolutions on grids
-            for (int i = (nlevels-1); i >= 0; i--) {
-                cudaMemcpy(U_d, Us_h[i],
-                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-
-                flux_func_ptr flux_func = h_compressible_fluxes;
-                bool do_z = true;
-                if (models[i] == 'M') {
-                    flux_func = h_shallow_water_fluxes;
-                    do_z = false;
-                } //else {
-                    //flux_func = h_compressible_fluxes;
-                    //do_z = true;
-                //}
-
-                for (int j = 0; j < pow(r, i); j++) {
-                    // TODO: fix dz calculation (i.e. need to work out how to store it in a way such that the compressible grids are getting the correct value)
-
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess) {
-                        cout << "Before rk3\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    rk3(kernels, threads, blocks, cumulative_kernels,
-                            beta_d, gamma_up_d, U_d, U_half_d, Up_d,
-                            qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
-                            fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
-                            nxs[i], nys[i], nzs[i], vec_dims[i], ng,
-                            alpha, gamma,
-                            dx/pow(r, i), dy/pow(r, i), dz/pow(r, i),
-                            dt/pow(r, i),
-                            Up_h, F_h, Us_h[i],
-                            comm, status, rank, n_processes,
-                            flux_func, do_z);
-
-                    cudaDeviceSynchronize();
-
-                    if (models[i] == 'C') {
-                        // hack on the burning
-                        float * H = new float[nxs[i]*nys[i]*nzs[i]];
-                        calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma,
-                               gamma_up, H, Cv);
-                        for (int z = 0; z < nzs[i]; z++) {
-                            for (int y = ng; y < nys[i]-ng; y++) {
-                                for (int x = ng; x < nxs[i] - ng; x++) {
-                                    // tau
-                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+4] +=
-                                        dt/pow(r, i) * 0.5 * alpha *
-                                        Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6] *
-                                        H[(z * nys[i] + y) * nxs[i] + x];
-                                    float X_dot =
-                                        H[(z*nys[i]+y)*nxs[i] + x] / E_He;
-                                    // DX
-                                    Us_h[i][((z*nys[i]+y)*nxs[i]+x)*6+5] +=
-                                        dt/pow(r, i) * 0.5 * alpha * rho[0] *
-                                        X_dot;
-                                }
-                            }
-                        }
-                        delete[] H;
-                    }
-
-                    if (n_processes == 1) {
-                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng,
-                               vec_dims[i]);
-                    } else {
-                        int y_size = kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng;
-                        bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i],
-                            ng, comm, status, rank, n_processes, y_size,
-                            false);
-                    }
-
-                    // copy to device
-                    cudaMemcpy(U_d, Us_h[i],
-                        nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-                }
-
-                if (i > 0) {
-                    // restrict to coarse grid
-                    // copy to device
-                    cudaMemcpy(Up_d, Us_h[i-1],
-                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-                        cudaMemcpyHostToDevice);
-                    // TODO: fix dz
-                    restrict_comp_to_swe(kernels, threads, blocks,
-                                  cumulative_kernels,
-                                  Up_d, U_d, nxs_d, nys_d, nzs_d,
-                                  dz/pow(r, i), zmin, matching_indices_d,
-                                  rho_d, gamma, gamma_up_d, ng, rank, qf_swe,
-                                  i-1, nlevels);
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess){
-                        cout << "After restricting\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    cudaMemcpy(Us_h[i-1], Up_d,
-                        nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-                        cudaMemcpyDeviceToHost);
-
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess){
-                        cout << "After copying\n";
-                        printf("Error: %s\n", cudaGetErrorString(err));
-                    }
-
-                    // enforce boundaries
-                    if (n_processes == 1) {
-                        bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
-                            vec_dims[i-1]);
-                    } else {
-                        int y_size = kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng;
-                        bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
-                            vec_dims[i-1], ng, comm, status, rank,
-                            n_processes, y_size, false);
-                    }
-
-
-                }
-            }
-
-            cudaDeviceSynchronize();
-
-            cudaError_t err = cudaGetLastError();
-
-            if (err != cudaSuccess)
-                printf("Error: %s\n", cudaGetErrorString(err));
-        }
+    if (rank == 0) {
+        H5Sclose(mem_space);
+        H5Fclose(outFile);
     }
 
     // delete some stuff

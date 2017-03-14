@@ -388,6 +388,8 @@ Sea::Sea(char * filename)
         exit(EXIT_FAILURE);
     }
 
+    inputFile.close();
+
     nxs[0] = nx;
     nys[0] = ny;
 
@@ -396,21 +398,23 @@ Sea::Sea(char * filename)
         nys[i] = int(r * df * nys[i-1]);
     }
 
-    inputFile.close();
+    // index of first multilayer SWE level
+    int m_in = (models[0] == 'S') ? 1 : 0;
 
-    xs = new float[nx];
-    for (int i = 0; i < nx; i++) {
-        xs[i] = xmin + (i-ng) * (xmax - xmin) / (nx-2*ng);
+    xs = new float[nxs[m_in]];
+    for (int i = 0; i < nxs[m_in]; i++) {
+        xs[i] = xmin + (i-ng) * (xmax - xmin) / (nxs[m_in]-2*ng);
     }
 
-    ys = new float[ny];
-    for (int i = 0; i < ny; i++) {
-        ys[i] = ymin + (i-ng) * (ymax - ymin) / (ny-2*ng);
+    ys = new float[nys[m_in]];
+    for (int i = 0; i < nys[m_in]; i++) {
+        ys[i] = ymin + (i-ng) * (ymax - ymin) / (nys[m_in]-2*ng);
     }
 
-    dx = xs[1] - xs[0];
-    dy = ys[1] - ys[0];
-    // NOTE: need to define this in such a way that it is calculated using layer separation on first compressible grid
+    dx = (xmax - xmin) / (nxs[0]-2*ng);
+    dy = (ymax - ymin) / (nys[0]-2*ng);
+
+    // need to define this in such a way that it is calculated using layer separation on first compressible grid
     for (int i = 0; i < nlevels; i++) {
         // first compressible layer
         if (models[i] == 'C') {
@@ -446,15 +450,15 @@ Sea::Sea(char * filename)
     matching_indices = new int[4 * (nlevels-1)];
 
     for (int i = 0; i < nlevels-1; i++) {
-        matching_indices[i*(nlevels-1)] = int(ceil(nxs[i]*0.5*(1-df)));
-        matching_indices[i*(nlevels-1)+1] = int(floor(nxs[i]*0.5*(1+df)));
-        matching_indices[i*(nlevels-1)+2] = int(ceil(nys[i]*0.5*(1-df)));
-        matching_indices[i*(nlevels-1)+3] = int(floor(nys[i]*0.5*(1+df)));
+        matching_indices[i*4] = int(ceil(nxs[i]*0.5*(1-df)));
+        matching_indices[i*4+1] = int(floor(nxs[i]*0.5*(1+df)));
+        matching_indices[i*4+2] = int(ceil(nys[i]*0.5*(1-df)));
+        matching_indices[i*4+3] = int(floor(nys[i]*0.5*(1+df)));
 
-        cout << "Matching indices: " << matching_indices[i*(nlevels-1)] << ',' << matching_indices[i*(nlevels-1)+1] << ',' << matching_indices[i*(nlevels-1)+2] << ',' << matching_indices[i*(nlevels-1)+3] << '\n';
+        cout << "Matching indices: " << matching_indices[i*4] << ',' << matching_indices[i*4+1] << ',' << matching_indices[i*4+2] << ',' << matching_indices[i*4+3] << '\n';
 
         cout << "matching_indices vs nxf: " <<
-            matching_indices[i*(nlevels-1)+1] - matching_indices[i*(nlevels-1)+0] << ',' << nxs[i+1] << '\n';
+            matching_indices[i*4+1] - matching_indices[i*4] << ',' << nxs[i+1] << '\n';
 
     }
     cout << "Made a Sea.\n";
@@ -539,10 +543,12 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
         Us[grid_index][i*4] = D0[i];
         Us[grid_index][i*4+1] = Sx0[i];
         Us[grid_index][i*4+2] = Sy0[i];
-        Us[grid_index][i*4+3] = 0.9 * float(i) / (nxs[grid_index]*nys[grid_index]*nzs[grid_index]);
+        Us[grid_index][i*4+3] =
+            0.9 * float(i) / (nxs[grid_index]*nys[grid_index]*nzs[grid_index]);
     }
 
-    bcs(Us[grid_index], nxs[grid_index], nys[grid_index], nzs[grid_index], vec_dims[grid_index]);
+    bcs(Us[grid_index], nxs[grid_index], nys[grid_index], nzs[grid_index],
+        vec_dims[grid_index]);
 
     cout << "Set initial data.\n";
 }

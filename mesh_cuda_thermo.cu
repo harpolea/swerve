@@ -848,7 +848,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
-                                      int coarse_level, int nlevels) {
+                                      int coarse_level) {
     /**
     Calculates the SWE state vector from the compressible variables.
 
@@ -870,8 +870,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         coarse grid
     matching_indices : int *
         indices of fine grid wrt coarse grid
-    coarse_level, nlevels : int
-        index of coarser grid and total number of levels
+    coarse_level : int
+        index of coarser grid 
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
