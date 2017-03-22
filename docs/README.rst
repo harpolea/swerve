@@ -19,6 +19,19 @@ This code outputs into an HDF5 file which can be viewed using the notebook ``Plo
 
 A version of the code which evolves a section of the domain using the compressible fluid equations on a finer grid can be compiled and run using `make mesh` and `./mesh`.
 
+Documentation
+=============
+
+In order to build the documentation, you must first ensure that ``doxygen`` and ``sphinx`` are installed on your system. From the main swerve directory, then execute
+
+::
+
+    doxygen Doxyfile
+    cd docs
+    make
+
+This will provide a list of the possible formats for the documentation. Follow the instructions to build the documentation in the format of your choice.
+
 Testing
 =======
 
