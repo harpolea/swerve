@@ -8,7 +8,7 @@ Welcome to swerve's documentation!
 
 **S**\hallow **W**\ater **E**\quations for **R**\elati **V**\istic **E**\nvironments
 
-`swerve` is a set of software designed to investigate the general relativistic form of the shallow water equations. The code is developed in the notebook `Shallow_Water_Equations.ipynb`, before being implemented in an optimized C++/CUDA version which runs on the GPU. MPI is used to run the code on multiple GPUs (if available).
+``swerve`` is a set of software designed to investigate the general relativistic form of the shallow water equations. The code is developed in the notebook ``Shallow_Water_Equations.ipynb``, before being implemented in an optimized C++/CUDA version which runs on the GPU. MPI is used to run the code on multiple GPUs (if available).
 
 .. toctree::
    :maxdepth: 2
