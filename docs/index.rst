@@ -15,6 +15,7 @@ Welcome to swerve's documentation!
    :caption: Contents:
 
    README.rst
+   input_file.rst
    classes.rst
 
 

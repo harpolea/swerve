@@ -305,6 +305,25 @@ Sea::Sea(char * filename)
             exit(EXIT_FAILURE);
         }
     }
+    if (models[0] == 'S') {
+        if (models[1] != 'M') {
+            printf("Single layer SWE level must be followed by multilayer SWE level.");
+            exit(EXIT_FAILURE);
+        }
+        for (int i = 1; i < nlevels; i++) {
+            if (models[i] == 'S') {
+                printf("Can only have one single layer SWE level at coarsest level.");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+    int m_in = (models[0] == 'M') ? 0 : 1;
+    for (int i = m_in+1; i < nlevels; i++) {
+        if (models[i] != 'C' || models[i] != 'L') {
+            printf("Multilayer SWE level can only be followed by compressible or Low Mach levels.");
+            exit(EXIT_FAILURE);
+        }
+    }
     if (ng < 0 || ng > 1e2) {
         printf("Invalid ng: %d\n", ng);
         exit(EXIT_FAILURE);
