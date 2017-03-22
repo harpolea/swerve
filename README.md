@@ -1,4 +1,4 @@
-[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=latest)](http://swerve.readthedocs.io/en/latest/?badge=latest)
+[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=lm)](http://swerve.readthedocs.io/en/latest/?badge=lm)
 
 # swerve
 **S**hallow **W**ater **E**quations for **R**elati**V**istic **E**nvironments

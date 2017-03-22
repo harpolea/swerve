@@ -5,15 +5,19 @@ Initial data in swerve is described in two ways: the first is an input file, des
 
 The input file is a text file which provides swerve with the system parameters. This input file is read in at the beginning of the program and used to set up the necessary data structures. Input data is validated at this point and will terminate if invalid parameters are encountered. The filename of this input file can be provided as an argument at runtime - if no argument is provided, then the program defaults to the file `mesh_input.txt`. The standard form of the input file is as follows:
 
-`nx`      Number of grid points in the $x$ dimension on the coarsest grid
-`ny`      Number of grid points in the $y$ dimension on the coarsest grid
-`nt`      Number of timesteps
-`ng`      Number of ghost cells
-`r`       Refinement ratio
-`nlevels` Number of levels of mesh refinement
-`models`  List of physical models to be used on each level, where `S` = single layer shallow water, `M` = multilayer shallow water, `C` = compressible and `L` = Low Mach
-`nzs`     Number of layers / grid points in the vertical direction for each grid.
-`df`      Fraction of the domain each level should cover with respect to the previous level.
+:`nx`:      Number of grid points in the $x$ dimension on the coarsest grid
+:`ny`:      Number of grid points in the $y$ dimension on the coarsest grid
+:`nt`:      Number of timesteps
+:`ng`:      Number of ghost cells
+:`r`:       Refinement ratio
+:`nlevels`: Number of levels of mesh refinement
+:`models`:  List of physical models to be used on each level, where
+    * `S` = single layer shallow water,
+    * `M` = multilayer shallow water,
+    * `C` = compressible and
+    * `L` = Low Mach
+:`nzs`:     Number of layers / grid points in the vertical direction for each grid.
+:`df`:      Fraction of the domain each level should cover with respect to the previous level.
 `xmin`    Minimum $x$ coordinate of coarsest grid
 `xmax`    Maximum $x$ coordinate of coarsest grid
 `ymin`    Minimum $y$ coordinate of coarsest grid
@@ -33,4 +37,4 @@ The input file is a text file which provides swerve with the system parameters. 
 `dprint`  Number of timesteps between outputting data to file
 `outfile` Path to output file (must be HDF5)
 
-The specific form of the initial data is described in the `main` function of the file `run_mesh_cuda.cpp`. The initial state vector must be provided for all points in the coarsest multilayer shallow water grid. 
+The specific form of the initial data is described in the `main` function of the file `run_mesh_cuda.cpp`. The initial state vector must be provided for all points in the coarsest multilayer shallow water grid.
