@@ -1,4 +1,4 @@
-[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=lm)](http://swerve.readthedocs.io/en/latest/?badge=lm)
+[![Documentation Status](https://readthedocs.org/projects/swerve/badge/?version=lm)](http://swerve.readthedocs.io/en/lm/?badge=lm)
 
 # swerve
 **S**hallow **W**ater **E**quations for **R**elati**V**istic **E**nvironments
@@ -23,7 +23,7 @@ A version of the code which evolves a section of the domain using the compressib
 
 ## Testing
 
-A set of tests can be compiled by executing
+A set of tests can be compiled by going to the main `swerve` directory and executing
 
     make test
 
