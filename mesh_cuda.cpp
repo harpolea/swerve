@@ -418,7 +418,7 @@ Sea::Sea(char * filename)
     }
 
     // index of first multilayer SWE level
-    int m_in = (models[0] == 'S') ? 1 : 0;
+    //int m_in = (models[0] == 'S') ? 1 : 0;
 
     xs = new float[nxs[m_in]];
     for (int i = 0; i < nxs[m_in]; i++) {
