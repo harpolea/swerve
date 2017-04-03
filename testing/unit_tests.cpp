@@ -81,12 +81,12 @@ bool test_cons_to_prim_comp() {
     int ny = 1;
     int nz = 1;
 
-    float * q_new_prim = new float[5];
+    float * q_new_prim = new float[6];
 
     for (int i = 0; i < 10000; i++) {
 
         // Define some primitive variables (rho, u, v, w, eps)
-        float q_prim[] = {10*r(), r()-0.5f, 1.2f*r()-0.6f, 1.2f*r()-0.6f, 15*r()};
+        float q_prim[] = {10*r(), r()-0.5f, 1.2f*r()-0.6f, 1.2f*r()-0.6f, 15*r(), r()};
 
         // Define corresponding conserved variables
         float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
@@ -94,12 +94,12 @@ bool test_cons_to_prim_comp() {
         float h = 1.0 + gamma * q_prim[4];
         float p = (gamma - 1.0) * q_prim[0] * q_prim[4];
 
-        float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p};
+        float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p, q_prim[0]*q_prim[5]*W};
 
         cons_to_prim_comp(q_cons, q_new_prim, nx, ny, nz, gamma, gamma_up);
 
         const float tol = 1.0e-4;
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             if ((abs((q_prim[i] - q_new_prim[i]) / q_prim[i]) > tol) && (abs(q_prim[i] - q_new_prim[i]) > 0.01*tol)) {
                 cout << i << ' ' << W << ' '<< q_prim[i] << ',' << q_new_prim[i] << '\n';
                 delete[] q_new_prim;
@@ -141,13 +141,13 @@ bool test_W_swe() {
 
     for (int i = 0; i < 100; i++) {
         // generate primitive variables
-        float q_prim[] = {0.5f*r()+1.1f, 1.2f*r()-0.6f, 1.2f*r()-0.6f};
+        float q_prim[] = {0.5f*r()+1.1f, 1.2f*r()-0.6f, 1.2f*r()-0.6f, r()};
 
         // calculate W
         float W = 1.0 / sqrt(1.0 - (q_prim[1] * q_prim[1]*gamma_up[0] + 2.0 * q_prim[1] * q_prim[2] * gamma_up[1] + q_prim[2] * q_prim[2] * gamma_up[4]));
 
         // turn into conserved variables
-        float q_cons[] = {q_prim[0] * W, q_prim[0]*q_prim[1]*W*W, q_prim[0]*q_prim[2]*W*W};
+        float q_cons[] = {q_prim[0] * W, q_prim[0]*q_prim[1]*W*W, q_prim[0]*q_prim[2]*W*W, q_prim[0]*q_prim[3]*W};
 
         const float tol = 1.0e-4;
         if ((abs((W - W_swe(q_cons, gamma_up)) / W) > tol) && (abs(W - W_swe(q_cons, gamma_up)) > 0.01*tol)) {

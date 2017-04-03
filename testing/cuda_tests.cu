@@ -18,17 +18,18 @@ bool test_cons_to_prim_comp_d_wrapper() {
     cudaMalloc((void**)&passed_vec_d, ntests*sizeof(bool));
 
     float * q_prim, *q_prim_d;
-    q_prim = (float *)malloc(5*ntests*sizeof(float));
-    cudaMalloc((void**)&q_prim_d, 5*ntests*sizeof(float));
+    q_prim = (float *)malloc(6*ntests*sizeof(float));
+    cudaMalloc((void**)&q_prim_d, 6*ntests*sizeof(float));
 
     for (int i = 0; i < ntests; i++) {
-        q_prim[i*5+0] = 10*r();
-        q_prim[i*5+1] = 0.8*r()-0.4;
-        q_prim[i*5+2] = r()-0.5;
-        q_prim[i*5+3] = r()-0.5;
-        q_prim[i*5+4] = 15*r();
+        q_prim[i*6+0] = 10*r();
+        q_prim[i*6+1] = 0.8*r()-0.4;
+        q_prim[i*6+2] = r()-0.5;
+        q_prim[i*6+3] = r()-0.5;
+        q_prim[i*6+4] = 15*r();
+        q_prim[i*6+5] = r();
     }
-    cudaMemcpy(q_prim_d, q_prim, ntests*5*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(q_prim_d, q_prim, ntests*6*sizeof(float), cudaMemcpyHostToDevice);
     test_cons_to_prim_comp_d<<<1,ntests>>>(passed_vec_d, q_prim_d);
     cudaMemcpy(passed_vec, passed_vec_d, ntests*sizeof(bool), cudaMemcpyDeviceToHost);
 
@@ -60,7 +61,7 @@ bool test_swe_from_compressible() {
     int nxs[] = {10, 5};
     int nys[] = {1,1};
     int nzs[] = {1, 2};
-    const int coarse_level = 1;
+    const int coarse_level = 0;
 
     float * gamma_up_d;
     cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
@@ -68,37 +69,37 @@ bool test_swe_from_compressible() {
 
     int matching_indices[] = {1, 10, 0, 0};
 
-    float q[] = {1.0,0.0,0.0,0.0,1.0,
-                 0.001, 0.0, 0.0, 0.0, 0.001,
-                 1000., 0.0, 0.0, 0.0, 1000.,
-                 1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966,
-                 1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062, 1.0,0.0,0.0,0.0,1.0,
-                  0.001, 0.0, 0.0, 0.0, 0.001,
-                  1000., 0.0, 0.0, 0.0, 1000.,
-                  1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966,
-                  1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062};
-    float qc[] = {0.39233170120469052, 0.0, -0.0,
-                     -2.3707704103881642, -0.0, 0.0,
-                     3.1554338127975452, 0.0, -0.0,
-                     0.41291207788984285, 0.086914406123075383, 0.086914406123075383,
-                     0.00068880264357815526, 0.000142453303890117, 0.000142453303890117};
-    float q_swe[] = {0.39233170120469052, 0.0, -0.0,
-                     -2.3707704103881642, -0.0, 0.0,
-                     3.1554338127975452, 0.0, -0.0,
-                     0.41291207788984285, 0.086914406123075383, 0.086914406123075383,
-                     0.00068880264357815526, 0.000142453303890117, 0.000142453303890117};
+    float q[] = {1.0,0.0,0.0,0.0,1.0, 0.0,
+                 0.001, 0.0, 0.0, 0.0, 0.001, 0.0,
+                 1000., 0.0, 0.0, 0.0, 1000., 0.0,
+                 1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966, 0.0,
+                 1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062, 0.0, 1.0,0.0,0.0,0.0,1.0, 0.0,
+                  0.001, 0.0, 0.0, 0.0, 0.001, 0.0,
+                  1000., 0.0, 0.0, 0.0, 1000., 0.0,
+                  1.05245657, 0.59075458, 0.59075458, 0.59075458, 1.23464966, 0.0,
+                  1.03406473, 0.2142144, 0.2142144, 0.0, 0.03634062, 0.0};
+    float qc[] = {0.39233170120469052, 0.0, -0.0, 0.0,
+                     -2.3707704103881642, -0.0, 0.0, 0.0,
+                     3.1554338127975452, 0.0, -0.0, 0.0,
+                     0.41291207788984285, 0.086914406123075383, 0.086914406123075383, 0.0,
+                     0.00068880264357815526, 0.000142453303890117, 0.000142453303890117, 0.0};
+    float q_swe[] = {0.39233170120469052, 0.0, -0.0, 0.0,
+                     -2.3707704103881642, -0.0, 0.0, 0.0,
+                     3.1554338127975452, 0.0, -0.0, 0.0,
+                     0.41291207788984285, 0.086914406123075383, 0.086914406123075383, 0.0,
+                     0.00068880264357815526, 0.000142453303890117, 0.000142453303890117, 0.0};
     float rho[] = {1.0, 1.0e-3, 1.0e3, 1.0, 1.0,1.0, 1.0e-3, 1.0e3, 1.0, 1.0};
 
     float * q_d, *q_swe_new, * q_swe_d, *rho_d, *qc_d;
-    cudaMalloc((void**)&q_d, 5*nxs[1]*nzs[1]*sizeof(float));
-    q_swe_new = (float *)malloc(3*nxs[1]*nzs[1]*sizeof(float));
-    cudaMalloc((void**)&q_swe_d, 3*nxs[1]*nzs[1]*sizeof(float));
+    cudaMalloc((void**)&q_d, 6*nxs[1]*nzs[1]*sizeof(float));
+    q_swe_new = (float *)malloc(4*nxs[1]*nzs[1]*sizeof(float));
+    cudaMalloc((void**)&q_swe_d, 4*nxs[1]*nzs[1]*sizeof(float));
 
     cudaMalloc((void**)&rho_d, nxs[1]*nzs[1]*sizeof(float));
-    cudaMemcpy(q_d, q, 5*nxs[1]*nzs[1]*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(q_d, q, 6*nxs[1]*nzs[1]*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nxs[1]*nzs[1]*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc((void**)&qc_d, 3*nxs[0]*nys[0]*nzs[0]*sizeof(float));
-    cudaMemcpy(qc_d, qc, 3*nxs[0]*nys[0]*nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMalloc((void**)&qc_d, 4*nxs[0]*nys[0]*nzs[0]*sizeof(float));
+    cudaMemcpy(qc_d, qc, 4*nxs[0]*nys[0]*nzs[0]*sizeof(float), cudaMemcpyHostToDevice);
 
     int *nxs_d, * nys_d, * nzs_d;
     cudaMalloc((void**)&nxs_d, 2*sizeof(int));
@@ -119,13 +120,13 @@ bool test_swe_from_compressible() {
                                    rho_d, gamma, kx_offset, ky_offset,
                                    qc_d, matching_indices_d, coarse_level);
 
-    cudaMemcpy(q_swe_new, q_swe_d, 3*nxs[1]*nzs[1]*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(q_swe_new, q_swe_d, 4*nxs[1]*nzs[1]*sizeof(float), cudaMemcpyDeviceToHost);
 
     const float tol = 1.0e-5;
     for (int i = 0; i < nxs[1]; i++) {
-        for (int n = 0; n < 3; n++) {
-            if ((abs((q_swe[i*3+n] - q_swe_new[i*3+n]) / q_swe[i*3+n]) > tol) && (abs(q_swe[i*3+n] - q_swe_new[i*3+n]) > 0.1*tol)) {
-                printf("%f, %f\n", q_swe[i*3+n], q_swe_new[i*3+n]);
+        for (int n = 0; n < 4; n++) {
+            if ((abs((q_swe[i*4+n] - q_swe_new[i*4+n]) / q_swe[i*4+n]) > tol) && (abs(q_swe[i*4+n] - q_swe_new[i*4+n]) > 0.1*tol)) {
+                printf("component %d: %f, %f\n", n, q_swe[i*4+n], q_swe_new[i*4+n]);
                 passed = false;
             }
         }
