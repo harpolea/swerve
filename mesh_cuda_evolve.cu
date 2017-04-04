@@ -50,12 +50,12 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
     int offset = ((z * ny + y) * nx + x) * vec_dim;
 
-    float * q_p, *q_m, * f;
-    q_p = (float *)malloc(vec_dim * sizeof(float));
-    q_m = (float *)malloc(vec_dim * sizeof(float));
-    f = (float *)malloc(vec_dim * sizeof(float));
-
     if ((x > 0) && (x < (nx-1)) && (y > 0) && (y < (ny-1)) && (z < nz)) {
+
+        float * q_p, *q_m, * f;
+        q_p = (float *)malloc(vec_dim * sizeof(float));
+        q_m = (float *)malloc(vec_dim * sizeof(float));
+        f = (float *)malloc(vec_dim * sizeof(float));
 
         // x-direction
         for (int i = 0; i < vec_dim; i++) {
@@ -131,11 +131,11 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
             fy_minus_half[offset + i] = f[i];
             //if (nan_check(q_p[i]) || nan_check(q_m[i])) printf("(%d, %d, %d) i: %d, qy_p: %f, qy_m: %f\n", x, y, z, i, q_p[i], q_m[i]);
         }
-    }
 
-    free(q_p);
-    free(q_m);
-    free(f);
+        free(q_p);
+        free(q_m);
+        free(f);
+    }
 }
 
 __global__ void evolve_z(float * beta_d, float * gamma_up_d,
@@ -182,14 +182,15 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
 
     int offset = ((z * ny + y) * nx + x) * vec_dim;
 
-    float * q_p, *q_m, * f;
-    q_p = (float *)malloc(vec_dim * sizeof(float));
-    q_m = (float *)malloc(vec_dim * sizeof(float));
-    f = (float *)malloc(vec_dim * sizeof(float));
-
     if ((x > 0) && (x < (nx-1)) &&
         (y > 0) && (y < (ny-1)) &&
         (z > 0) && (z < (nz-1))) {
+
+
+        float * q_p, *q_m, * f;
+        q_p = (float *)malloc(vec_dim * sizeof(float));
+        q_m = (float *)malloc(vec_dim * sizeof(float));
+        f = (float *)malloc(vec_dim * sizeof(float));
 
         // z-direction
         for (int i = 0; i < vec_dim; i++) {
@@ -226,10 +227,10 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
             qz_minus_half[offset + i] = q_m[i];
             fz_minus_half[offset + i] = f[i];
         }
+        free(q_p);
+        free(q_m);
+        free(f);
     }
-    free(q_p);
-    free(q_m);
-    free(f);
 }
 
 __global__ void evolve_fv_fluxes(float * F,
@@ -1053,7 +1054,7 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     int maxThreads = 256;
-    int maxBlocks = 256; //64;
+    int maxBlocks = 160; //64;
 
     dim3 *kernels = new dim3[n_processes];
     int *cumulative_kernels = new int[n_processes];

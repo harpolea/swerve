@@ -22,7 +22,7 @@ __host__ __device__ bool nan_check(float a) {
     }
 }
 
-__host__ __device__ float zbrent(fptr func, const float x1, const float x2,
+__host__ __device__ float zbrent(fptr func, const float x1, float b,
              const float tol,
              float D, float Sx, float Sy, float Sz, float tau, float gamma,
              float * gamma_up) {
@@ -35,7 +35,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
     ----------
     func : fptr
         function pointer to shallow water or compressible flux function.
-    x1, x2 : const float
+    x1, b : const float
         limits of root
     tol : const float
         tolerance to which root shall be calculated to
@@ -47,10 +47,10 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
         spatial metric
     */
 
-    const int ITMAX = 300;
+    const int ITMAX = 100;
 
-    float a = x1, b = x2;
-    float c, d=0.0, e=0.0;
+    float a = x1;
+    float c, d=0.0;
     float fa = func(a, D, Sx, Sy, Sz, tau, gamma, gamma_up);
     float fb = func(b, D, Sx, Sy, Sz, tau, gamma, gamma_up);
     float fc=0.0, fs, s;
@@ -58,7 +58,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
     if (fa * fb >= 0.0) {
         //cout << "Root must be bracketed in zbrent.\n";
         //printf("Root must be bracketed in zbrent.\n");
-        return x2;
+        return b;
     }
 
     if (abs(fa) < abs(fb)) {
@@ -88,28 +88,15 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
         // list of conditions
         bool con1 = false;
         if (0.25*(3.0 * a + b) < b) {
-            if (s < 0.25*(3.0 * a + b) || s > b) {
+            if (s < 0.25*(3.0 * a + b) || s > b)
                 con1 = true;
-            }
         } else if (s < b || s > 0.25*(3.0 * a + b)) {
             con1 = true;
         }
-        bool con2 = false;
-        if (mflag && abs(s-b) >= 0.5*abs(b-c)) {
-            con2 = true;
-        }
-        bool con3 = false;
-        if (!(mflag) && abs(s-b) >= 0.5 * abs(c-d)) {
-            con3 = true;
-        }
-        bool con4 = false;
-        if (mflag && abs(b-c) < tol) {
-            con4 = true;
-        }
-        bool con5 = false;
-        if (!(mflag) && abs(c-d) < tol) {
-            con5 = true;
-        }
+        bool con2 = (mflag && abs(s-b) >= 0.5*abs(b-c));
+        bool con3 = (!(mflag) && abs(s-b) >= 0.5 * abs(c-d));
+        bool con4 =  (mflag && abs(b-c) < tol);
+        bool con5 = (!(mflag) && abs(c-d) < tol);
 
         if (con1 || con2 || con3 || con4 || con5) {
             s = 0.5 * (a+b);
@@ -119,6 +106,16 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
         }
 
         fs = func(s, D, Sx, Sy, Sz, tau, gamma, gamma_up);
+
+        if (abs(fa) < abs(fb)) {
+            d = a;
+            a = b;
+            b = d;
+
+            d = fa;
+            fa = fb;
+            fb = d;
+        }
 
         d = c;
         c = b;
@@ -132,20 +129,9 @@ __host__ __device__ float zbrent(fptr func, const float x1, const float x2,
             fa = fs;
         }
 
-        if (abs(fa) < abs(fb)) {
-            e = a;
-            a = b;
-            b = e;
-
-            e = fa;
-            fa = fb;
-            fb = e;
-        }
-
         // test for convegence
-        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol) {
+        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol)
             return b;
-        }
     }
     //printf("Maximum number of iterations exceeded in zbrent.\n");
     return x1;
@@ -273,16 +259,17 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
         spatial metric
     */
 
-    float sq = sqrt(pow(tau + p + D, 2) -
+    float sq = sqrt((tau + p + D)*(tau + p + D) -
         Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - 2.0*Sx*Sz*gamma_up[2] -
         Sy*Sy*gamma_up[4] - 2.0*Sy*Sz*gamma_up[5] - Sz*Sz*gamma_up[8]);
 
     //if (nan_check(sq)) cout << "sq is nan :(\n";
 
-    float rho = D * sq / (tau + p + D);
-    float eps = (sq - p * (tau + p + D) / sq - D) / D;
+    //float rho = D * sq / (tau + p + D);
+    //float eps = (sq - p * (tau + p + D) / sq - D) / D;
 
-    return (gamma - 1.0) * rho * eps - p;
+    //return (gamma - 1.0) * rho * eps - p;
+    return (gamma - 1.0) * sq / (tau + p + D) * (sq - p * (tau + p + D) / sq - D) - p;
 }
 
 __device__ float h_dot(float phi, float old_phi, float dt) {
@@ -408,7 +395,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     float Sy = q_cons[2];
     float Sz = q_cons[3];
     float tau = q_cons[4];
-    float DX = q_cons[5];
+    //float DX = q_cons[5];
 
     // S^2
     float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
@@ -447,17 +434,16 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
         //printf("\n\n\n sq is nan!!!! %f, %f, %f, %f, %f, %f\n\n\n", pow(tau + p + D, 2), p, Ssq, Sx, Sy, Sz);
         sq = tau + p + D;
     }
-    float eps = (sq - p * (tau + p + D)/sq - D) / D;
-    float h = 1.0 + gamma * eps;
+    //float eps = (sq - p * (tau + p + D)/sq - D) / D;
+    float h = 1.0 + gamma * (sq - p * (tau + p + D)/sq - D) / D;
     float W = sqrt(1.0 + Ssq / (D*D*h*h));
-    float X = DX / D;
 
     q_prim[0] = D * sq / (tau + p + D);//D / W;
     q_prim[1] = Sx / (W*W * h * q_prim[0]);
     q_prim[2] = Sy / (W*W * h * q_prim[0]);
     q_prim[3] = Sz / (W*W * h * q_prim[0]);
-    q_prim[4] = eps;
-    q_prim[5] = X;
+    q_prim[4] = (sq - p * (tau + p + D)/sq - D) / D;
+    q_prim[5] = q_cons[5] / D;
 }
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
@@ -623,38 +609,35 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
     cons_to_prim_comp_d(q, q_prim, gamma, gamma_up);
 
     float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
-    float u = q_prim[1];
-    float v = q_prim[2];
-    float w = q_prim[3];
 
     //printf("p: %f, D: %f, rho: %f, u: %f, v: %f, w: %f, tau: %f, eps: %f\n", p, q[0], q_prim[0], u, v, w, q[4], q_prim[4]);
 
     if (dir == 0) {
-        float qx = u * gamma_up[0] + v * gamma_up[1] + w * gamma_up[2] - beta[0] / alpha;
+        float qx = q_prim[1] * gamma_up[0] + q_prim[2] * gamma_up[1] + q_prim[3] * gamma_up[2] - beta[0] / alpha;
 
         f[0] = q[0] * qx;
         f[1] = q[1] * qx + p;
         f[2] = q[2] * qx;
         f[3] = q[3] * qx;
-        f[4] = q[4] * qx + p * u;
+        f[4] = q[4] * qx + p * q_prim[1];
         f[5] = q[5] * qx;
     } else if (dir == 1){
-        float qy = v * gamma_up[4] + u * gamma_up[1] + w * gamma_up[5] - beta[1] / alpha;
+        float qy = q_prim[2] * gamma_up[4] + q_prim[1] * gamma_up[1] + q_prim[3] * gamma_up[5] - beta[1] / alpha;
 
         f[0] = q[0] * qy;
         f[1] = q[1] * qy;
         f[2] = q[2] * qy + p;
         f[3] = q[3] * qy;
-        f[4] = q[4] * qy + p * v;
+        f[4] = q[4] * qy + p * q_prim[2];
         f[5] = q[5] * qy;
     } else {
-        float qz = w * gamma_up[8] + u * gamma_up[2] + v * gamma_up[5] - beta[2] / alpha;
+        float qz = q_prim[3] * gamma_up[8] + q_prim[1] * gamma_up[2] + q_prim[2] * gamma_up[5] - beta[2] / alpha;
 
         f[0] = q[0] * qz;
         f[1] = q[1] * qz;
         f[2] = q[2] * qz;
         f[3] = q[3] * qz + p;
-        f[4] = q[4] * qz + p * w;
+        f[4] = q[4] * qz + p * q_prim[3];
         f[5] = q[5] * qz;
     }
 
@@ -871,7 +854,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     matching_indices : int *
         indices of fine grid wrt coarse grid
     coarse_level : int
-        index of coarser grid 
+        index of coarser grid
     */
     int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;

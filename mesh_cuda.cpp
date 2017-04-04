@@ -319,8 +319,9 @@ Sea::Sea(char * filename)
     }
     int m_in = (models[0] == 'M') ? 0 : 1;
     for (int i = m_in+1; i < nlevels; i++) {
-        if (models[i] != 'C' || models[i] != 'L') {
-            printf("Multilayer SWE level can only be followed by compressible or Low Mach levels.");
+        if (models[i] != 'C' && models[i] != 'L') {
+            printf("Multilayer SWE level can only be followed by compressible or Low Mach levels.\n");
+            printf("Models: %c, %c\n", models[m_in], models[m_in+1]);
             exit(EXIT_FAILURE);
         }
     }

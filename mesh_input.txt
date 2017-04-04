@@ -1,11 +1,11 @@
-nx      150
-ny      150
+nx      50
+ny      50
 nt      5
 ng      2
 r       2
-nlevels 5
-models  S M C C C
-nzs     1 3 10 20 40
+nlevels 2
+models  M C
+nzs     3 10
 df      0.3
 xmin    0.0
 xmax    10.0
