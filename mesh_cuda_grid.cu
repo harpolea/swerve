@@ -506,7 +506,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
 
 __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                     float * q_f, float * q_c,
-                    int * nxs, int * nys, int * nzs,
+                    int * nxs, int * nys, int * nzs, int ng,
                     float dz, float zmin,
                     int * matching_indices_d, float * gamma_up,
                     int kx_offset, int ky_offset, int clevel) {
@@ -523,6 +523,8 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         coarse grid swe state vector
     nxs, nys, nzs : int *
         grid dimensions
+    ng: int
+        number of ghost cells
     dz : float
         coarse grid vertical spacing
     matching_indices_d : int *
@@ -539,8 +541,10 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x>0) && (x < int(round(nxs[clevel+1]*0.5)+1)) &&
-        (y > 0) && (y < int(round(nys[clevel+1]*0.5)+1)) &&
+    if ((((x>0) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
+        (((y > 0) && (y < ng)) ||
+        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
         (z < nzs[clevel+1])) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
@@ -752,7 +756,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -763,7 +767,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
-                    int * nxs, int * nys, int * nzs,
+                    int * nxs, int * nys, int * nzs, int ng,
                     int * matching_indices_d,
                     int kx_offset, int ky_offset, int clevel) {
     /**
@@ -777,6 +781,8 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
         coarse grid swe state vector
     nxs, nys, nzs : int *
         grid dimensions
+    ng : int
+        number of ghost cells
     matching_indices_d : int *
         position of fine grid wrt coarse grid
     kx_offset, ky_offset : int
@@ -789,8 +795,12 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x > 0) && (x < int(round(nxs[clevel+1]*0.5)+1)) &&
-        (y > 0) && (y < int(round(nys[clevel+1]*0.5)+1)) &&
+
+
+    if ((((x > 0) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
+        (((y > 0) && (y < ng)) ||
+        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
         (z >= 0) && (z < (nzs[clevel]-1))) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
@@ -946,6 +956,8 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
         coarse and fine grids of state vectors
     nxs, nys, nzs : int *
         dimensions of grids
+    ng : int
+        number of ghost cells
     matching_indices_d : int *
         position of fine grid wrt coarse grid
     ng : int
@@ -967,7 +979,7 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, matching_indices_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -978,7 +990,7 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
-                    int * nxs, int * nys, int * nzs,
+                    int * nxs, int * nys, int * nzs, int ng,
                     int * matching_indices_d,
                     int kx_offset, int ky_offset, int clevel) {
     /**
@@ -992,6 +1004,8 @@ __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
         coarse grid swe state vector
     nxs, nys, nzs : int *
         grid dimensions
+    ng : int
+        number of ghost cells
     matching_indices_d : int *
         position of fine grid wrt coarse grid
     kx_offset, ky_offset : int
@@ -1004,8 +1018,10 @@ __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x>0) && (x < int(round(nxs[clevel+1]*0.5)+1)) &&
-        (y > 0) && (y < int(round(nys[clevel+1]*0.5)+1)) &&
+    if ((((x > 0) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
+        (((y > 0) && (y < ng)) ||
+        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
         (z == 0)) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
@@ -1105,7 +1121,7 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_swe_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, matching_indices_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_swe_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1116,7 +1132,7 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
-                                     int * nxs, int * nys, int * nzs,
+                                     int * nxs, int * nys, int * nzs, int ng,
                                      float dz, float zmin,
                                      int * matching_indices,
                                      float * gamma_up,
@@ -1134,6 +1150,8 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
         coarse grid state vector
     nxs, nys, nzs : int *
         coarse grid dimensions
+    ng : int
+        number of ghost cells
     matching_indices : int *
         position of fine grid wrt coarse grid
     gamma_up : float *
@@ -1149,8 +1167,10 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
     int z = threadIdx.z;
 
     // note we're not going to restrict the top layer
-    if ((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1) &&
-        (y > 1) && (y < int(round(nys[clevel+1]*0.5))-1) &&
+    if ((((x > 1) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z > 1) && (z < nzs[clevel]-2)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1326,7 +1346,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset, clevel);
+           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1337,7 +1357,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void restrict_interpolate_comp(float * qf, float * qc,
-                                     int * nxs, int * nys, int * nzs,
+                                     int * nxs, int * nys, int * nzs, int ng,
                                      int * matching_indices,
                                      int kx_offset, int ky_offset,
                                      int clevel) {
@@ -1353,6 +1373,8 @@ __global__ void restrict_interpolate_comp(float * qf, float * qc,
         coarse grid state vector
     nxs, nys, nzs : int *
         coarse grid dimensions
+    ng : int
+        number of ghost cells
     matching_indices : int *
         position of fine grid wrt coarse grid
     kx_offset, ky_offset : int
@@ -1364,8 +1386,10 @@ __global__ void restrict_interpolate_comp(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1) &&
-        (y > 1) && (y < int(round(nys[clevel+1]*0.5))-1) &&
+    if ((((x > 1) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z > 0) && (z < nzs[clevel]-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1437,7 +1461,7 @@ void restrict_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, matching_indices, kx_offset, ky_offset, clevel);
+           restrict_interpolate_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1448,7 +1472,7 @@ void restrict_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
-                                     int * nxs, int * nys, int * nzs,
+                                     int * nxs, int * nys, int * nzs, int ng,
                                      int * matching_indices,
                                      int kx_offset, int ky_offset,
                                      int clevel) {
@@ -1464,6 +1488,8 @@ __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
         coarse grid state vector
     nxs, nys, nzs : int *
         coarse grid dimensions
+    ng : int
+        number of ghost cells
     matching_indices : int *
         position of fine grid wrt coarse grid
     gamma_up : float *
@@ -1478,8 +1504,10 @@ __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1) &&
-        (y > 1) && (y < int(round(nys[clevel+1]*0.5))-1) &&
+    if ((((x > 1) && (x < ng)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z==0)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((y + matching_indices[clevel*4+2]) * nxs[clevel] +
@@ -1534,7 +1562,7 @@ void restrict_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate_swe_to_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, matching_indices, kx_offset, ky_offset, clevel);
+           restrict_interpolate_swe_to_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;

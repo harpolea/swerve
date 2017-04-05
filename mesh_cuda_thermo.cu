@@ -49,7 +49,7 @@ __host__ __device__ float zbrent(fptr func, const float x1, float b,
 
     const int ITMAX = 100;
 
-    float a = x1;
+    float a=x1;
     float c, d=0.0;
     float fa = func(a, D, Sx, Sy, Sz, tau, gamma, gamma_up);
     float fb = func(b, D, Sx, Sy, Sz, tau, gamma, gamma_up);
@@ -259,7 +259,7 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
         spatial metric
     */
 
-    float sq = sqrt((tau + p + D)*(tau + p + D) -
+    float sq = sqrt((tau + p + D) * (tau + p + D) -
         Sx*Sx*gamma_up[0] - 2.0*Sx*Sy*gamma_up[1] - 2.0*Sx*Sz*gamma_up[2] -
         Sy*Sy*gamma_up[4] - 2.0*Sy*Sz*gamma_up[5] - Sz*Sz*gamma_up[8]);
 
@@ -289,10 +289,7 @@ __device__ float h_dot(float phi, float old_phi, float dt) {
         timestep
     */
 
-    float h = find_height(phi);
-    //float old_h = ight(old_phi);
-
-    return -2.0 * h * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
+    return -2.0 * find_height(phi) * (phi - old_phi) / (dt * (exp(2.0 * phi) - 1.0));
 }
 
 __device__ float calc_Q_swe(float rho, float p, float gamma, float Y, float Cv) {
@@ -305,9 +302,8 @@ __device__ float calc_Q_swe(float rho, float p, float gamma, float Y, float Cv) 
 
     float X_dot = A*rho*rho*Y*Y*Y / (T*T*T) * exp(-44.0 / T);
 
-    if (nan_check(X_dot)) {
+    if (nan_check(X_dot))
         X_dot = 0.0;
-    }
 
     return X_dot;
 
@@ -430,10 +426,8 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     }
 
     float sq = sqrt(pow(tau + p + D, 2) - Ssq);
-    if (nan_check(sq)) {
-        //printf("\n\n\n sq is nan!!!! %f, %f, %f, %f, %f, %f\n\n\n", pow(tau + p + D, 2), p, Ssq, Sx, Sy, Sz);
+    if (nan_check(sq))
         sq = tau + p + D;
-    }
     //float eps = (sq - p * (tau + p + D)/sq - D) / D;
     float h = 1.0 + gamma * (sq - p * (tau + p + D)/sq - D) / D;
     float W = sqrt(1.0 + Ssq / (D*D*h*h));
@@ -791,14 +785,13 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         //printf("s2c (%d, %d, %d): %f, %f\n", x, y, z, q_comp[offset*6+4], p);
 
         // NOTE: hack?
-        if (q_comp[offset*6+4] < 0.0) {
-            //printf("tau < 0, p: %f, tau: %f\n", p, q_comp[offset*6+4]);
+        if (q_comp[offset*6+4] < 0.0)
             q_comp[offset*6+4] = 0.0;
-        }
+
         // cannot have X < 0.0
-        if (q_comp[offset*6+5] < 0.0) {
+        if (q_comp[offset*6+5] < 0.0)
             q_comp[offset*6+5] = 0.0;
-        }
+
 
         free(q_swe);
     }
@@ -817,9 +810,9 @@ __device__ float slope_limit(float layer_frac, float left, float middle, float r
     float S = 0.5 * (S_upwind + S_downwind);
 
     float r = 1.0e6;
-    if (abs(S_downwind) > 1.0e-10) {
+    if (abs(S_downwind) > 1.0e-10)
         r = S_upwind / S_downwind;
-    }
+
 
     return S * phi(r);
 }
@@ -874,7 +867,10 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     q_con = (float *)malloc(6 * sizeof(float));
     q_prim = (float *)malloc(6 * sizeof(float));
 
-    if ((x < nxs[coarse_level+1]) && (y < nys[coarse_level+1]) && (z < nzs[coarse_level+1])) {
+    if ((x < nxs[coarse_level+1]) &&
+        (y < nys[coarse_level+1]) &&
+        (z < nzs[coarse_level+1])) {
+
         for (int i = 0; i < 6; i++) {
             q_con[i] = q[offset*6 + i];
         }
@@ -906,16 +902,21 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     __syncthreads();
     float ph;
 
-    if ((x < nxs[coarse_level+1]) && (y < nys[coarse_level+1]) && (z < nzs[coarse_level+1])) {
+    if ((x < nxs[coarse_level+1]) &&
+        (y < nys[coarse_level+1]) &&
+        (z < nzs[coarse_level+1])) {
+
         float * A, * phis, *rhos;
         A = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         phis = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         rhos = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         for (int i = 0; i < nzs[coarse_level+1]; i++) {
-            phis[i] = q_swe[((i * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x)*4];
+            phis[i] = q_swe[((i * nys[coarse_level+1] + y) *
+                            nxs[coarse_level+1] + x)*4];
             if (sizeof(rho) > nzs[coarse_level+1]) {
                 // rho varies with position
-                rhos[i] = rho[(i * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x];
+                rhos[i] = rho[(i * nys[coarse_level+1] + y) *
+                              nxs[coarse_level+1] + x];
             } else {
                 // HACK: rho is only nlayers long - need to find a way to define on fine grid too
                 rhos[i] = rho[0];
@@ -926,8 +927,14 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         int c_y = round(y*0.5) + matching_indices[coarse_level*4+2];
         float interp_q_comp = qc[(c_y * nxs[coarse_level] + c_x) * 4];
 
-        float Sx = slope_limit(1.0, qc[(c_y * nxs[coarse_level] + c_x-1) * 4], qc[(c_y * nxs[coarse_level] + c_x) * 4], qc[(c_y * nxs[coarse_level] + c_x+1) * 4], 0.0, 0.0, 0.0);
-        float Sy = slope_limit(1.0, qc[((c_y-1) * nxs[coarse_level] + c_x) * 4], qc[(c_y * nxs[coarse_level] + c_x) * 4], qc[((c_y+1) * nxs[coarse_level] + c_x) * 4], 0.0, 0.0, 0.0);
+        float Sx = slope_limit(1.0,
+            qc[(c_y * nxs[coarse_level] + c_x-1) * 4],
+            qc[(c_y * nxs[coarse_level] + c_x) * 4],
+            qc[(c_y * nxs[coarse_level] + c_x+1) * 4], 0.0, 0.0, 0.0);
+        float Sy = slope_limit(1.0,
+            qc[((c_y-1) * nxs[coarse_level] + c_x) * 4],
+            qc[(c_y * nxs[coarse_level] + c_x) * 4],
+            qc[((c_y+1) * nxs[coarse_level] + c_x) * 4], 0.0, 0.0, 0.0);
 
         float phi_surface = interp_q_comp;
         if (x % 2 == 1) {
@@ -957,7 +964,10 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         //printf("W: %f, ph: %f, tau: %f, eps: %f, A[z]: %f, p: %f, rho: %f\n", W, ph, q_con[4], q_prim[4], A[z], p, q_prim[0]);
     }
     __syncthreads();
-    if ((x < nxs[coarse_level+1]) && (y < nys[coarse_level+1]) && (z < nzs[coarse_level+1])) {
+    if ((x < nxs[coarse_level+1]) &&
+        (y < nys[coarse_level+1]) &&
+        (z < nzs[coarse_level+1])) {
+
         q_swe[offset*4] = ph * W;
         q_swe[offset*4+1] = ph * W * W * u;
         q_swe[offset*4+2] = ph * W * W * v;

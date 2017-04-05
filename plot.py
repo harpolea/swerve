@@ -222,6 +222,5 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
 
 if __name__ == '__main__':
-    #quick_plot(filename="../../Documents/Work/swerve/mpi")
-
+    #mesh_plot(input_filename="testing/multiscale_input.txt", filename="../../Documents/Work/swerve/mesh_test")
     mesh_plot(filename="../../Documents/Work/swerve/mesh_test")

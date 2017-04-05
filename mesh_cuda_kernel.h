@@ -421,6 +421,8 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     coarse grid swe state vector
 \param nxs, nys, nzs
     grid dimensions
+\param ng
+    number of ghost cells
 \param dz
     coarse grid vertical spacing
 \param matching_indices_d
@@ -434,7 +436,8 @@ Reconstruct fine grid variables from compressible variables on coarse grid
 */
 __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                   float * q_f, float * q_c,
-                  int * nxs, int * nys, int * nzs, float dz, float zmin,
+                  int * nxs, int * nys, int * nzs, int ng,
+                  float dz, float zmin,
                   int * matching_indices_d, float * gamma_up,
                   int kx_offset, int ky_offset, int coarse_level);
 
@@ -449,6 +452,8 @@ Prolong coarse grid data to fine grid
   coarse and fine grids of state vectors
 \param nxs, nys, nzs
   dimensions of grids
+\param ng
+  number of ghost cells
 \param dz
   coarse grid cell vertical spacing
 \param dt
@@ -491,6 +496,8 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     coarse grid swe state vector
 \param nxs, nys, nzs
     grid dimensions
+\param ng
+    number of ghost cells
 \param matching_indices_d
     position of fine grid wrt coarse grid
 \param kx_offset, ky_offset
@@ -499,7 +506,7 @@ Reconstruct fine grid variables from compressible variables on coarse grid
   index of coarser level
 */
 __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
-                    int * nxs, int * nys, int * nzs,
+                    int * nxs, int * nys, int * nzs, int ng,
                     int * matching_indices_d,
                     int kx_offset, int ky_offset, int clevel);
 
@@ -537,6 +544,8 @@ Reconstruct multilayer swe fine grid variables from single layer swe variables o
   coarse grid swe state vector
 \param nxs, nys, nzs
   grid dimensions
+\param ng
+  number of ghost cells
 \param matching_indices_d
   position of fine grid wrt coarse grid
 \param kx_offset, ky_offset
@@ -545,7 +554,7 @@ Reconstruct multilayer swe fine grid variables from single layer swe variables o
 index of coarser level
 */
 __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
-                  int * nxs, int * nys, int * nzs,
+                  int * nxs, int * nys, int * nzs, int ng,
                   int * matching_indices_d,
                   int kx_offset, int ky_offset, int clevel);
 
@@ -615,6 +624,8 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
   coarse grid state vector
 \param nxs, nys, nzs
   grid dimensions
+\param ng
+  number of ghost cells
 \param matching_indices
   position of fine grid wrt coarse grid
 \param gamma_up
@@ -625,7 +636,7 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
     index of coarser level
 */
 __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
-                                   int * nxs, int * nys, int * nzs,
+                                   int * nxs, int * nys, int * nzs, int ng,
                                    float dz, float zmin,
                                    int * matching_indices,
                                    float * gamma_up,
@@ -675,6 +686,8 @@ Interpolate fine grid compressible variables to get them on coarser compressible
  coarse grid state vector
 \param nxs, nys, nzs
  grid dimensions
+\param ng
+ number of ghost cells
 \param matching_indices
  position of fine grid wrt coarse grid
 \param kx_offset, ky_offset
@@ -683,7 +696,7 @@ Interpolate fine grid compressible variables to get them on coarser compressible
    index of coarser level
 */
 __global__ void restrict_interpolate_comp(float * qf, float * qc,
-                                    int * nxs, int * nys, int * nzs,
+                                    int * nxs, int * nys, int * nzs, int ng,
                                     int * matching_indices,
                                     int kx_offset, int ky_offset,
                                     int clevel);
@@ -724,6 +737,8 @@ Interpolate multilayer SWE variables on fine grid to get them on single layer SW
     coarse grid state vector
 \param nxs, nys, nzs
     grid dimensions
+\param ng
+    number of ghost cells
 \param matching_indices
     position of fine grid wrt coarse grid
 \param kx_offset, ky_offset
@@ -732,7 +747,7 @@ Interpolate multilayer SWE variables on fine grid to get them on single layer SW
    index of coarser level
 */
 __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
-                                     int * nxs, int * nys, int * nzs,
+                                     int * nxs, int * nys, int * nzs, int ng,
                                      int * matching_indices,
                                      int kx_offset, int ky_offset,
                                      int clevel);
