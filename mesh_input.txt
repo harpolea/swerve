@@ -1,6 +1,6 @@
 nx      100
 ny      100
-nt      50
+nt      5
 ng      2
 r       2
 nlevels 2

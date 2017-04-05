@@ -153,8 +153,8 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
     passed[i] = true;
 
     float gamma = 5.0 / 3.0;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        0.0,  0.0,  0.0,  0.80999862};
+    //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        //0.0,  0.0,  0.0,  0.80999862};
 
     float * q_new_prim, *q_prim;
     q_new_prim = (float *)malloc(6*sizeof(float));
@@ -166,14 +166,14 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
     }
 
     // Define corresponding conserved variables
-    float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up[2] + q_prim[2]*q_prim[2]*gamma_up[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up[5] + q_prim[3]*q_prim[3]*gamma_up[8]));
+    float W = 1.0 / sqrt(1.0 - (q_prim[1]*q_prim[1]*gamma_up_d[0] + 2.0*q_prim[1]*q_prim[2]*gamma_up_d[1] + 2.0*q_prim[1]*q_prim[3]*gamma_up_d[2] + q_prim[2]*q_prim[2]*gamma_up_d[4] + 2.0*q_prim[2]*q_prim[3]*gamma_up_d[5] + q_prim[3]*q_prim[3]*gamma_up_d[8]));
 
     float h = 1.0 + gamma * q_prim[4];
     float p = (gamma - 1.0) * q_prim[0] * q_prim[4];
 
     float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p, q_prim[0]*q_prim[5]*W};
 
-    cons_to_prim_comp_d(q_cons, q_new_prim, gamma, gamma_up);
+    cons_to_prim_comp_d(q_cons, q_new_prim, gamma);
 
     const float tol = 1.0e-4;
     for (int j = 0; j < 6; j++) {
@@ -190,10 +190,10 @@ __global__ void test_shallow_water_fluxes(bool * passed) {
     *passed = true;
 
     float gamma = 5.0 / 3.0;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        0.0,  0.0,  0.0,  0.80999862};
+    //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        //0.0,  0.0,  0.0,  0.80999862};
     float alpha = 0.9;
-    float beta[] = {0.1, -0.2};
+    //beta_d = {0.1, -0.2, 0.0};
 
     float qs[] = {0.1,0.0,0.0,0.0,
                   0.1,0.0,0.0,0.0,
@@ -217,7 +217,7 @@ __global__ void test_shallow_water_fluxes(bool * passed) {
         for (int n = 0; n < 4; n++) {
             q[n] = qs[4*i+n];
         }
-        shallow_water_fluxes(q, f, dirs[i], gamma_up, alpha, beta, gamma);
+        shallow_water_fluxes(q, f, dirs[i], alpha, gamma);
         for (int n = 0; n < 4; n++) {
             if ((abs((fs[4*i+n] - f[n]) / fs[4*i+n]) > tol) && (abs(fs[4*i+n] - f[n]) > 0.1*tol)) {
                 printf("%f, %f\n", fs[4*i+n], f[n]);
@@ -233,10 +233,10 @@ __global__ void test_compressible_fluxes(bool * passed) {
     *passed = true;
 
     float gamma = 5.0 / 3.0;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        0.0,  0.0,  0.0,  0.80999862};
+    //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        //0.0,  0.0,  0.0,  0.80999862};
     float alpha = 0.9;
-    float beta[] = {0.1, -0.2, 0.3};
+    //beta_d = {0.1, -0.2, 0.3};
 
     float qs[] = {1.,  0.,  0.,  0.,  1., 0.0,
                   1.,  0.,  0.,  0.,  1., 0.0,
@@ -264,7 +264,7 @@ __global__ void test_compressible_fluxes(bool * passed) {
         for (int n = 0; n < 6; n++) {
             q[n] = qs[6*i+n];
         }
-        compressible_fluxes(q, f, dirs[i], gamma_up, alpha, beta, gamma);
+        compressible_fluxes(q, f, dirs[i], alpha, gamma);
         for (int n = 0; n < 6; n++) {
             if ((abs((fs[6*i+n] - f[n]) / fs[6*i+n]) > tol) && (abs(fs[6*i+n] - f[n]) > 0.1*tol)) {
                 printf("%f, %f\n", fs[6*i+n], f[n]);
@@ -279,9 +279,9 @@ __global__ void test_compressible_fluxes(bool * passed) {
 __global__ void test_p_from_swe(bool * passed) {
     *passed = true;
     float gamma = 5.0 / 3.0;
-    float gamma_up[] = {0.80999862,  0.0 ,  0.0,
-                        0.0,  0.80999862, 0.0,
-                        0.0,  0.0,  0.80999862};
+    //gamma_up_d = {0.80999862,  0.0 ,  0.0,
+                        //0.0,  0.80999862, 0.0,
+                        //0.0,  0.0,  0.80999862};
 
     float qs[] = {1.0, 0.0, 0.0, 0.0,
                   1.0, 0.5, 0.5, 0.0,
@@ -301,7 +301,7 @@ __global__ void test_p_from_swe(bool * passed) {
         for (int n = 0; n < 4; n++) {
             q[n] = qs[i*4+n];
         }
-        float p = p_from_swe(q, gamma_up, rhos[i], gamma, Ws[i], As[i]);
+        float p = p_from_swe(q, rhos[i], gamma, Ws[i], As[i]);
 
         if ((abs((ps[i] - p) / ps[i]) > tol) && (abs(ps[i] - p) > 0.1*tol)) {
             printf("%f, %f\n", ps[i], p);

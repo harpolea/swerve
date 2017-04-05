@@ -22,7 +22,119 @@ __host__ __device__ bool nan_check(float a) {
     }
 }
 
-__host__ __device__ float zbrent(fptr func, const float x1, float b,
+__device__ float zbrent(fptr func, const float x1, float b,
+             const float tol,
+             float D, float Sx, float Sy, float Sz, float tau, float gamma) {
+    /**
+    Using Brent's method, return the root of a function or functor func known
+    to lie between x1 and x2. The root will be regined until its accuracy is
+    tol.
+
+    Parameters
+    ----------
+    func : fptr
+        function pointer to shallow water or compressible flux function.
+    x1, b : const float
+        limits of root
+    tol : const float
+        tolerance to which root shall be calculated to
+    D, Sx, Sy, tau: float
+        conserved variables
+    gamma : float
+        adiabatic index
+    */
+
+    const int ITMAX = 100;
+
+    float a=x1;
+    float c, d=0.0;
+    float fa = func(a, D, Sx, Sy, Sz, tau, gamma);
+    float fb = func(b, D, Sx, Sy, Sz, tau, gamma);
+    float fc=0.0, fs, s;
+
+    if (fa * fb >= 0.0) {
+        //cout << "Root must be bracketed in zbrent.\n";
+        //printf("Root must be bracketed in zbrent.\n");
+        return b;
+    }
+
+    if (abs(fa) < abs(fb)) {
+        // swap a, b
+        d = a;
+        a = b;
+        b = d;
+
+        d = fa;
+        fa = fb;
+        fb = d;
+    }
+
+    c = a;
+    fc = fa;
+
+    bool mflag = true;
+
+    for (int i = 0; i < ITMAX; i++) {
+        if (fa != fc && fb != fc) {
+            s = a*fb*fc / ((fa-fb) * (fa-fc)) + b*fa*fc / ((fb-fa)*(fb-fc)) +
+                c*fa*fb / ((fc-fa)*(fc-fb));
+        } else {
+            s = b - fb * (b-a) / (fb-fa);
+        }
+
+        // list of conditions
+        bool con1 = false;
+        if (0.25*(3.0 * a + b) < b) {
+            if (s < 0.25*(3.0 * a + b) || s > b)
+                con1 = true;
+        } else if (s < b || s > 0.25*(3.0 * a + b)) {
+            con1 = true;
+        }
+        bool con2 = (mflag && abs(s-b) >= 0.5*abs(b-c));
+        bool con3 = (!(mflag) && abs(s-b) >= 0.5 * abs(c-d));
+        bool con4 =  (mflag && abs(b-c) < tol);
+        bool con5 = (!(mflag) && abs(c-d) < tol);
+
+        if (con1 || con2 || con3 || con4 || con5) {
+            s = 0.5 * (a+b);
+            mflag = true;
+        } else {
+            mflag = false;
+        }
+
+        fs = func(s, D, Sx, Sy, Sz, tau, gamma);
+
+        if (abs(fa) < abs(fb)) {
+            d = a;
+            a = b;
+            b = d;
+
+            d = fa;
+            fa = fb;
+            fb = d;
+        }
+
+        d = c;
+        c = b;
+        fc = fb;
+
+        if (fa * fs < 0.0) {
+            b = s;
+            fb = fs;
+        } else {
+            a = s;
+            fa = fs;
+        }
+
+        // test for convegence
+        if (fb == 0.0 || fs == 0.0 || abs(b-a) < tol)
+            return b;
+    }
+    //printf("Maximum number of iterations exceeded in zbrent.\n");
+    return x1;
+}
+
+__host__ float zbrent(fptr_h func, const float x1, float b,
              const float tol,
              float D, float Sx, float Sy, float Sz, float tau, float gamma,
              float * gamma_up) {
@@ -43,8 +155,6 @@ __host__ __device__ float zbrent(fptr func, const float x1, float b,
         conserved variables
     gamma : float
         adiabatic index
-    gamma_up : float *
-        spatial metric
     */
 
     const int ITMAX = 100;
@@ -161,7 +271,16 @@ void check_mpi_error(int mpi_err) {
     }
 }
 
-__host__ __device__ float W_swe(float * q, float * gamma_up) {
+__device__ float W_swe(float * q) {
+    /**
+    calculate Lorentz factor for conserved swe state vector
+    */
+    return sqrt((q[1]*q[1] * gamma_up_d[0] +
+            2.0 * q[1] * q[2] * gamma_up_d[1] +
+            q[2] * q[2] * gamma_up_d[4]) / (q[0]*q[0]) + 1.0);
+}
+
+__host__ float W_swe(float * q, float * gamma_up) {
     /**
     calculate Lorentz factor for conserved swe state vector
     */
@@ -240,9 +359,8 @@ __device__ __host__ float phi_from_p(float p, float rho, float gamma, float A) {
         log((rho + gamma * p / (gamma - 1.0)) / A);
 }
 
-__device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
-                                 float Sz, float tau, float gamma,
-                                 float * gamma_up) {
+__device__ float f_of_p(float p, float D, float Sx, float Sy,
+                                 float Sz, float tau, float gamma) {
     /**
     Function of p whose root is to be found when doing conserved to
     primitive variable conversion
@@ -255,8 +373,35 @@ __device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
         components of conserved state vector
     gamma : float
         adiabatic index
-    gamma_up : float *
-        spatial metric
+    */
+
+    float sq = sqrt((tau + p + D) * (tau + p + D) -
+        Sx*Sx*gamma_up_d[0] - 2.0*Sx*Sy*gamma_up_d[1] - 2.0*Sx*Sz*gamma_up_d[2] -
+        Sy*Sy*gamma_up_d[4] - 2.0*Sy*Sz*gamma_up_d[5] - Sz*Sz*gamma_up_d[8]);
+
+    //if (nan_check(sq)) cout << "sq is nan :(\n";
+
+    //float rho = D * sq / (tau + p + D);
+    //float eps = (sq - p * (tau + p + D) / sq - D) / D;
+
+    //return (gamma - 1.0) * rho * eps - p;
+    return (gamma - 1.0) * sq / (tau + p + D) * (sq - p * (tau + p + D) / sq - D) - p;
+}
+
+__host__ float f_of_p(float p, float D, float Sx, float Sy,
+                                 float Sz, float tau, float gamma, float * gamma_up) {
+    /**
+    Function of p whose root is to be found when doing conserved to
+    primitive variable conversion
+
+    Parameters
+    ----------
+    p : float
+        pressure
+    D, Sx, Sy, Sz, tau :float
+        components of conserved state vector
+    gamma : float
+        adiabatic index
     */
 
     float sq = sqrt((tau + p + D) * (tau + p + D) -
@@ -310,7 +455,7 @@ __device__ float calc_Q_swe(float rho, float p, float gamma, float Y, float Cv) 
 }
 
 void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
-            float gamma, float * gamma_up, float * Q, float Cv) {
+            float gamma, float * Q, float Cv, float * gamma_up) {
     /**
     Calculate the heating rate per unit mass
     */
@@ -369,7 +514,7 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
 }
 
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
-                       float gamma, float * gamma_up) {
+                       float gamma) {
     /**
     Convert compressible conserved variables to primitive variables
 
@@ -381,8 +526,6 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
         state vector of primitive variables
     gamma : float
         adiabatic index
-    gamma_up : float *
-        spatial metric
     */
 
     const float TOL = 1.0e-5;
@@ -394,9 +537,9 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     //float DX = q_cons[5];
 
     // S^2
-    float Ssq = Sx*Sx*gamma_up[0] + 2.0*Sx*Sy*gamma_up[1] +
-        2.0*Sx*Sz*gamma_up[2] + Sy*Sy*gamma_up[4] + 2.0*Sy*Sz*gamma_up[5] +
-        Sz*Sz*gamma_up[8];
+    float Ssq = Sx*Sx*gamma_up_d[0] + 2.0*Sx*Sy*gamma_up_d[1] +
+        2.0*Sx*Sz*gamma_up_d[2] + Sy*Sy*gamma_up_d[4] + 2.0*Sy*Sz*gamma_up_d[5] +
+        Sz*Sz*gamma_up_d[8];
 
     float pmin = (1.0 - Ssq) * (1.0 - Ssq) * tau * (gamma - 1.0);
     float pmax = (gamma - 1.0) * (tau + D) / (2.0 - gamma);
@@ -409,17 +552,17 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
     }
 
     // check sign change
-    if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma, gamma_up) *
-        f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma, gamma_up) > 0.0) {
+    if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma) *
+        f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma) > 0.0) {
         pmin = 0.0;
     }
-    if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma, gamma_up) *
-        f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma, gamma_up) > 0.0) {
+    if (f_of_p(pmin, D, Sx, Sy, Sz, tau, gamma) *
+        f_of_p(pmax, D, Sx, Sy, Sz, tau, gamma) > 0.0) {
         pmax *= 10.0;
     }
 
     float p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, Sz,
-                    tau, gamma, gamma_up);
+                    tau, gamma);
     if (nan_check(p) || p < 0.0 || p > 1.0e9){
         p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
             abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
@@ -441,8 +584,7 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
 }
 
 void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
-                       int nz,
-                       float gamma, float * gamma_up) {
+                       int nz, float gamma, float * gamma_up) {
     /**
     Convert compressible conserved variables to primitive variables
 
@@ -456,8 +598,6 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
         grid dimensions
     gamma : float
         adiabatic index
-    gamma_up : float *
-        contravariant spatial metric
     */
 
     const float TOL = 1.e-5;
@@ -493,14 +633,14 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
 
         float p;
         try {
-            p = zbrent((fptr)f_of_p, pmin, pmax, TOL, D, Sx, Sy, Sz,
+            p = zbrent((fptr_h)f_of_p, pmin, pmax, TOL, D, Sx, Sy, Sz,
                         tau, gamma, gamma_up);
         } catch (char const*){
             p = abs((gamma - 1.0) * (tau + D) / (2.0 - gamma)) > 1.0 ? 1.0 :
                 abs((gamma - 1.0) * (tau + D) / (2.0 - gamma));
         }
 
-        float sq = sqrt(pow(tau + p + D, 2) - Ssq);
+        float sq = sqrt((tau + p + D)*(tau + p + D) - Ssq);
         float eps = (sq - p * (tau + p + D)/sq - D) / D;
         float h = 1.0 + gamma * eps;
         float W = sqrt(1.0 + Ssq / (D*D*h*h));
@@ -516,8 +656,7 @@ void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
 }
 
 __device__ void shallow_water_fluxes(float * q, float * f, int dir,
-                          float * gamma_up, float alpha, float * beta,
-                          float gamma) {
+                          float alpha, float gamma) {
     /**
     Calculate the flux vector of the shallow water equations
 
@@ -529,12 +668,8 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
         grid where fluxes shall be stored
     dir : int
         0 if calculating flux in x-direction, 1 if in y-direction
-    gamma_up : float *
-        spatial metric
     alpha : float
         lapse function
-    beta : float *
-        shift vector
     gamma : float
         adiabatic index
     */
@@ -543,7 +678,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
     if (nan_check(q[2])) q[2] = 0.0;
     if (nan_check(q[3])) q[3] = 0.0;
 
-    float W = W_swe(q, gamma_up);
+    float W = W_swe(q);
     if (nan_check(W)) {
         printf("W is nan! q0, q1, q2: %f, %f, %f\n", q[0], q[1], q[2]);
         W = 1.0;
@@ -553,16 +688,16 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
     float v = q[2] / (q[0] * W);
 
     if (dir == 0) {
-        float qx = u * gamma_up[0] + v * gamma_up[1] -
-            beta[0] / alpha;
+        float qx = u * gamma_up_d[0] + v * gamma_up_d[1] -
+            beta_d[0] / alpha;
 
         f[0] = q[0] * qx;
         f[1] = q[1] * qx + 0.5 * q[0] * q[0] / (W * W);
         f[2] = q[2] * qx;
         f[3] = q[3] * qx;
     } else {
-        float qy = v * gamma_up[4] + u * gamma_up[1] -
-            beta[1] / alpha;
+        float qy = v * gamma_up_d[4] + u * gamma_up_d[1] -
+            beta_d[1] / alpha;
 
         f[0] = q[0] * qy;
         f[1] = q[1] * qy;
@@ -572,8 +707,7 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
 }
 
 __device__ void compressible_fluxes(float * q, float * f, int dir,
-                         float * gamma_up, float alpha, float * beta,
-                         float gamma) {
+                         float alpha, float gamma) {
     /**
     Calculate the flux vector of the compressible GR hydrodynamics equations
 
@@ -586,12 +720,8 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
     dir : int
         0 if calculating flux in x-direction, 1 if in y-direction,
         2 if in z-direction
-    gamma_up : float *
-        spatial metric
     alpha : float
         lapse function
-    beta : float *
-        shift vector
     gamma : float
         adiabatic index
     */
@@ -600,14 +730,14 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
     float * q_prim;
     q_prim = (float *)malloc(6 * sizeof(float));
 
-    cons_to_prim_comp_d(q, q_prim, gamma, gamma_up);
+    cons_to_prim_comp_d(q, q_prim, gamma);
 
     float p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
 
     //printf("p: %f, D: %f, rho: %f, u: %f, v: %f, w: %f, tau: %f, eps: %f\n", p, q[0], q_prim[0], u, v, w, q[4], q_prim[4]);
 
     if (dir == 0) {
-        float qx = q_prim[1] * gamma_up[0] + q_prim[2] * gamma_up[1] + q_prim[3] * gamma_up[2] - beta[0] / alpha;
+        float qx = q_prim[1] * gamma_up_d[0] + q_prim[2] * gamma_up_d[1] + q_prim[3] * gamma_up_d[2] - beta_d[0] / alpha;
 
         f[0] = q[0] * qx;
         f[1] = q[1] * qx + p;
@@ -616,7 +746,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[4] = q[4] * qx + p * q_prim[1];
         f[5] = q[5] * qx;
     } else if (dir == 1){
-        float qy = q_prim[2] * gamma_up[4] + q_prim[1] * gamma_up[1] + q_prim[3] * gamma_up[5] - beta[1] / alpha;
+        float qy = q_prim[2] * gamma_up_d[4] + q_prim[1] * gamma_up_d[1] + q_prim[3] * gamma_up_d[5] - beta_d[1] / alpha;
 
         f[0] = q[0] * qy;
         f[1] = q[1] * qy;
@@ -625,7 +755,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
         f[4] = q[4] * qy + p * q_prim[2];
         f[5] = q[5] * qy;
     } else {
-        float qz = q_prim[3] * gamma_up[8] + q_prim[1] * gamma_up[2] + q_prim[2] * gamma_up[5] - beta[2] / alpha;
+        float qz = q_prim[3] * gamma_up_d[8] + q_prim[1] * gamma_up_d[2] + q_prim[2] * gamma_up_d[5] - beta_d[2] / alpha;
 
         f[0] = q[0] * qz;
         f[1] = q[1] * qz;
@@ -641,7 +771,7 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
 }
 
 void p_from_swe(float * q, float * p, int nx, int ny, int nz,
-                 float * gamma_up, float rho, float gamma, float A) {
+                 float rho, float gamma, float A, float * gamma_up) {
     /**
     Calculate p using SWE conserved variables
 
@@ -653,8 +783,6 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
         grid where pressure shall be stored
     nx, ny, nz : int
         grid dimensions
-    gamma_up : float *
-        spatial metric
     rho : float
         density
     gamma : float
@@ -673,7 +801,7 @@ void p_from_swe(float * q, float * p, int nx, int ny, int nz,
     }
 }
 
-__device__ float p_from_swe(float * q, float * gamma_up, float rho,
+__device__ float p_from_swe(float * q, float rho,
                             float gamma, float W, float A) {
     /**
     Calculates p and returns using SWE conserved variables
@@ -682,8 +810,6 @@ __device__ float p_from_swe(float * q, float * gamma_up, float rho,
     ----------
     q : float *
         state vector
-    gamma_up : float *
-        spatial metric
     rho : float
         density
     gamma : float
@@ -702,7 +828,7 @@ __device__ float p_from_swe(float * q, float * gamma_up, float rho,
 
 __global__ void compressible_from_swe(float * q, float * q_comp,
                            int * nxs, int * nys, int * nzs,
-                           float * gamma_up, float * rho, float gamma,
+                           float * rho, float gamma,
                            int kx_offset, int ky_offset, float dt,
                            float * old_phi, int level) {
     /**
@@ -716,8 +842,6 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         grid where compressible state vector to be stored
     nxs, nys, nzs : int *
         grid dimensions
-    gamma_up : float *
-        spatial metric
     rho, gamma : float
         density and adiabatic index
     kx_offset, ky_offset : int
@@ -749,14 +873,14 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         float hdot = h_dot(q[offset*4], old_phi[offset], dt);
         //printf("hdot(%d, %d, %d): %f, \n", x, y, z, hdot);
 
-        float W = sqrt((q[offset*4+1] * q[offset*4+1] * gamma_up[0] +
-                2.0 * q[offset*4+1] * q[offset*4+2] * gamma_up[1] +
-                q[offset*4+2] * q[offset*4+2] * gamma_up[4]) /
+        float W = sqrt((q[offset*4+1] * q[offset*4+1] * gamma_up_d[0] +
+                2.0 * q[offset*4+1] * q[offset*4+2] * gamma_up_d[1] +
+                q[offset*4+2] * q[offset*4+2] * gamma_up_d[4]) /
                 (q[offset*4] * q[offset*4]) +
-                2.0 * hdot * (q[offset*4+1] * gamma_up[2] +
-                q[offset*4+2] * gamma_up[5]) / q[offset*4] +
-                hdot * hdot * gamma_up[8] + 1.0);
-        //printf("%d\n",  gamma_up[8]);
+                2.0 * hdot * (q[offset*4+1] * gamma_up_d[2] +
+                q[offset*4+2] * gamma_up_d[5]) / q[offset*4] +
+                hdot * hdot * gamma_up_d[8] + 1.0);
+        //printf("%d\n",  gamma_up_d[8]);
         //printf("W(%d, %d, %d): %f, \n", x, y, z, W);
         // TODO: this is really inefficient as redoing the same calculation
         // on differnt layers
@@ -769,7 +893,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
 
         calc_As(rho, phis, A, nzs[level], gamma, phis[0], rho[0]);
 
-        float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
+        float p = p_from_swe(q_swe, rho[z], gamma, W, A[z]);
         float rhoh = rhoh_from_p(p, rho[z], gamma);
 
         free(phis);
@@ -819,8 +943,7 @@ __device__ float slope_limit(float layer_frac, float left, float middle, float r
 
 __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int * nxs, int * nys, int * nzs,
-                                      float * gamma_up, float * rho,
-                                      float gamma,
+                                      float * rho, float gamma,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
@@ -836,8 +959,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         grid where SWE state vector to be stored
     nxs, nys, nzs : int *
         grid dimensions
-    gamma_up : float *
-        spatial metric
     rho, gamma : float
         density and adiabatic index
     kx_offset, ky_offset : int
@@ -876,7 +997,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         }
 
         // find primitive variables
-        cons_to_prim_comp_d(q_con, q_prim, gamma, gamma_up);
+        cons_to_prim_comp_d(q_con, q_prim, gamma);
 
         u = q_prim[1];
         v = q_prim[2];
@@ -884,9 +1005,9 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         X = q_prim[5];
 
         W = 1.0 / sqrt(1.0 -
-                u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -
-                2.0 * u*w * gamma_up[2] - v*v*gamma_up[4] -
-                2.0 * v*w*gamma_up[5] - w*w*gamma_up[8]);
+                u*u*gamma_up_d[0] - 2.0 * u*v * gamma_up_d[1] -
+                2.0 * u*w * gamma_up_d[2] - v*v*gamma_up_d[4] -
+                2.0 * v*w*gamma_up_d[5] - w*w*gamma_up_d[8]);
 
         //rho = q_prim[0];
 

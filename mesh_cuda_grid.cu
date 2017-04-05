@@ -508,7 +508,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                     float * q_f, float * q_c,
                     int * nxs, int * nys, int * nzs, int ng,
                     float dz, float zmin,
-                    int * matching_indices_d, float * gamma_up,
+                    int * matching_indices_d,
                     int kx_offset, int ky_offset, int clevel) {
     /**
     Reconstruct fine grid variables from compressible variables on coarse grid
@@ -529,8 +529,6 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         coarse grid vertical spacing
     matching_indices_d : int *
         position of fine grid wrt coarse grid
-    gamma_up : float *
-        spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
     clevel : int
@@ -557,7 +555,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         for (int i = 0; i < 4; i++) {
             q_swe[i] = q_c[(c_y*nxs[clevel]+c_x)*4+i];
         }
-        float W = W_swe(q_swe, gamma_up);
+        float W = W_swe(q_swe);
         float r = find_height(q_c[(c_y * nxs[clevel] + c_x) * 4]/W);
         // Heights are sane here?
         //printf("z = %i, heights = %f, %f\n", z, height, r);
@@ -571,7 +569,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
             for (int i = 0; i < 4; i++) {
                 q_swe[i] = q_c[((nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
             }
-            W = W_swe(q_swe, gamma_up);
+            W = W_swe(q_swe);
             r = find_height(q_c[((nys[clevel]+c_y)*nxs[clevel]+c_x)*4] / W);
             layer_frac = (height - prev_r) / (r - prev_r);
         } else {
@@ -582,7 +580,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                 for (int i = 0; i < 4; i++) {
                     q_swe[i] = q_c[((l*nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
                 }
-                W = W_swe(q_swe, gamma_up);
+                W = W_swe(q_swe);
                 r = find_height(q_c[((l * nys[clevel] + c_y) * nxs[clevel] + c_x) * 4] / W);
                 if (height > r) {
                     neighbour_layer = l;
@@ -603,7 +601,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                         q_swe[i] =
                             q_c[((l*nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
                     }
-                    W = W_swe(q_swe, gamma_up);
+                    W = W_swe(q_swe);
                     r = find_height(q_c[((l * nys[clevel] + c_y) * nxs[clevel] + c_x) * 4] / W);
                     layer_frac = (height - prev_r) / (r - prev_r);
                     //printf("Lower layer frac: %f  ", layer_frac);
@@ -692,7 +690,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
                   float dz, float dt, float zmin,
-                  float * gamma_up_d, float * rho, float gamma,
+                  float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
                   float * old_phi_d, int clevel) {
     /**
@@ -714,8 +712,6 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
         timestep
     zmin : float
         height of sea floor
-    gamma_up_d : float *
-        spatial metric
     rho, gamma : float
         density and adiabatic index
     matching_indices_d : int *
@@ -743,7 +739,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nxs, nys, nzs, gamma_up_d, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, clevel);
+            compressible_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_cd, qc_comp, nxs, nys, nzs, rho, gamma, kx_offset, ky_offset, dt, old_phi_d, clevel);
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
        }
@@ -756,7 +752,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices_d, gamma_up_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices_d, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1135,7 +1131,6 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
                                      int * nxs, int * nys, int * nzs, int ng,
                                      float dz, float zmin,
                                      int * matching_indices,
-                                     float * gamma_up,
                                      int kx_offset, int ky_offset,
                                      int clevel) {
 
@@ -1154,8 +1149,6 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
         number of ghost cells
     matching_indices : int *
         position of fine grid wrt coarse grid
-    gamma_up : float *
-        spatial metric
     kx_offset, ky_offset : int
         kernel offsets in the x and y directions
     clevel : int
@@ -1184,7 +1177,7 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
             q_c_new[i] = q_c[coarse_index+i];
         }
 
-        float W = W_swe(q_c_new, gamma_up);
+        float W = W_swe(q_c_new);
         float r = find_height(q_c[coarse_index] / W);
         float height_guess = find_height(q_c[coarse_index] / W);
 
@@ -1220,12 +1213,12 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
                     q_c_new[k] =
                         qf_sw[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+k];
                 }
-                Ww[j*2+i] = W_swe(q_c_new, gamma_up);
+                Ww[j*2+i] = W_swe(q_c_new);
                 for (int k = 0; k < 4; k++) {
                     q_c_new[k] =
                         qf_sw[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+k];
                 }
-                Ww[(2+j)*2+i] = W_swe(q_c_new, gamma_up);
+                Ww[(2+j)*2+i] = W_swe(q_c_new);
             }
         }
 
@@ -1289,7 +1282,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     int * cumulative_kernels, float * q_cd, float * q_fd,
                     int * nxs, int * nys, int * nzs,
                     float dz, float zmin, int * matching_indices,
-                    float * rho, float gamma, float * gamma_up,
+                    float * rho, float gamma,
                     int ng, int rank, float * qf_swe,
                     int clevel) {
     /**
@@ -1309,8 +1302,6 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
         position of fine grid wrt coarse grid
     rho, gamma : float
         density and adiabatic index
-    gamma_up : float *
-        spatial metric
     ng : int
         number of ghost cells
     rank : int
@@ -1332,7 +1323,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxs, nys, nzs, gamma_up, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices, clevel);
+            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxs, nys, nzs, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices, clevel);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1346,7 +1337,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices, gamma_up, kx_offset, ky_offset, clevel);
+           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;

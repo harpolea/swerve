@@ -2,8 +2,7 @@
 File containing routines which model the evolution.
 **/
 
-__global__ void evolve_fv(float * beta_d, float * gamma_up_d,
-                     float * Un_d, flux_func_ptr flux_func,
+__global__ void evolve_fv(float * Un_d, flux_func_ptr flux_func,
                      float * qx_plus_half, float * qx_minus_half,
                      float * qy_plus_half, float * qy_minus_half,
                      float * fx_plus_half, float * fx_minus_half,
@@ -20,10 +19,6 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
     Parameters
     ----------
-    beta_d : float *
-        shift vector at each grid point.
-    gamma_up_d : float *
-        gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer
     flux_func : flux_func_ptr
@@ -79,14 +74,14 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
         }
 
         // fluxes
-        flux_func(q_p, f, 0, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_p, f, 0, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qx_plus_half[offset + i] = q_p[i];
             fx_plus_half[offset + i] = f[i];
         }
 
-        flux_func(q_m, f, 0, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_m, f, 0, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qx_minus_half[offset + i] = q_m[i];
@@ -117,14 +112,14 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
 
         // fluxes
 
-        flux_func(q_p, f, 1, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_p, f, 1, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qy_plus_half[offset + i] = q_p[i];
             fy_plus_half[offset + i] = f[i];
         }
 
-        flux_func(q_m, f, 1, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_m, f, 1, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qy_minus_half[offset + i] = q_m[i];
@@ -138,8 +133,7 @@ __global__ void evolve_fv(float * beta_d, float * gamma_up_d,
     }
 }
 
-__global__ void evolve_z(float * beta_d, float * gamma_up_d,
-                     float * Un_d, flux_func_ptr flux_func,
+__global__ void evolve_z(float * Un_d, flux_func_ptr flux_func,
                      float * qz_plus_half, float * qz_minus_half,
                      float * fz_plus_half, float * fz_minus_half,
                      int nx, int ny, int nz, int vec_dim, float alpha,
@@ -154,10 +148,6 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
 
     Parameters
     ----------
-    beta_d : float *
-        shift vector at each grid point.
-    gamma_up_d : float *
-        gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer
     flux_func : flux_func_ptr
@@ -214,14 +204,14 @@ __global__ void evolve_z(float * beta_d, float * gamma_up_d,
         }
 
         // fluxes
-        flux_func(q_p, f, 2, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_p, f, 2, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qz_plus_half[offset + i] = q_p[i];
             fz_plus_half[offset + i] = f[i];
         }
 
-        flux_func(q_m, f, 2, gamma_up_d, alpha, beta_d, gamma);
+        flux_func(q_m, f, 2, alpha, gamma);
 
         for (int i = 0; i < vec_dim; i++) {
             qz_minus_half[offset + i] = q_m[i];
@@ -384,8 +374,7 @@ __global__ void evolve_z_fluxes(float * F,
     }
 }
 
-__global__ void evolve_fv_heating(float * gamma_up,
-                     float * Up, float * U_half,
+__global__ void evolve_fv_heating(float * Up, float * U_half,
                      float * qx_plus_half, float * qx_minus_half,
                      float * qy_plus_half, float * qy_minus_half,
                      float * fx_plus_half, float * fx_minus_half,
@@ -400,8 +389,6 @@ __global__ void evolve_fv_heating(float * gamma_up,
 
     Parameters
     ----------
-    gamma_up : float *
-        gamma matrix at each grid point
     Up : float *
         state vector at next timestep
     U_half : float *
@@ -453,7 +440,7 @@ __global__ void evolve_fv_heating(float * gamma_up,
         for (int i = 0; i < 4; i++) {
             q_swe[i] = U_half[offset * 4 + i];
         }
-        W = W_swe(q_swe, gamma_up);
+        W = W_swe(q_swe);
 
         float * A, * phis;
         A = (float *)malloc(nlayers * sizeof(float));
@@ -464,7 +451,7 @@ __global__ void evolve_fv_heating(float * gamma_up,
 
         calc_As(rho, phis, A, nlayers, gamma, phis[0], rho[0]);
 
-        float p = p_from_swe(q_swe, gamma_up, rho[z], gamma, W, A[z]);
+        float p = p_from_swe(q_swe, rho[z], gamma, W, A[z]);
         float Y = q_swe[3] / q_swe[0];
 
         X_dot = calc_Q_swe(rho[z], p, gamma, Y, Cv) / E_He;
@@ -612,8 +599,7 @@ __global__ void evolve2(float * Un_d, float * Up, float * U_half,
 }
 
 void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
-       int * cumulative_kernels, float * beta_d, float * gamma_up_d,
-       float * Un_d, float * F_d,
+       int * cumulative_kernels, float * Un_d, float * F_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -630,10 +616,6 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
         number of kernels, threads and blocks for each process/kernel
     cumulative_kernels : int *
         Cumulative total of kernels in ranks < rank of current MPI process
-    beta_d : float *
-        shift vector at each grid point
-    gamma_up_d : float *
-        gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer at current timestep
     F_d : float *
@@ -671,13 +653,13 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           evolve_fv<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
+           evolve_fv<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(Un_d, h_flux_func,
                   qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                   fx_p_d, fx_m_d, fy_p_d, fy_m_d,
                   nx, ny, nz, vec_dim, alpha, gamma,
                   kx_offset, ky_offset);
            if (do_z) {
-               evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(beta_d, gamma_up_d, Un_d, h_flux_func,
+               evolve_z<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(Un_d, h_flux_func,
                       qz_p_d, qz_m_d,
                       fz_p_d, fz_m_d,
                       nx, ny, nz, vec_dim, alpha, gamma,
@@ -721,8 +703,7 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
 void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        int * cumulative_kernels,
-       float * beta_d, float * gamma_up_d, float * Un_d,
-       float * F_d, float * Up_d,
+       float * Un_d, float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -741,10 +722,6 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         number of kernels, threads and blocks for each process/kernel
     cumulative_kernels : int *
         Cumulative total of kernels in ranks < rank of current MPI process
-    beta_d : float *
-        shift vector at each grid point
-    gamma_up_d : float *
-        gamma matrix at each grid point
     Un_d : float *
         state vector at each grid point in each layer at current timestep on device
     F_d : float *
@@ -785,7 +762,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     //cout << "\nu1\n\n\n";
     // u1 = un + dt * F(un)
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
-          beta_d, gamma_up_d, Un_d, F_d,
+          Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
@@ -842,7 +819,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     //cout << "\nu2\n\n\n";
     // u2 = 0.25 * (3*un + u1 + dt*F(u1))
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
-          beta_d, gamma_up_d, Un_d, F_d,
+          Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
@@ -898,7 +875,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     //cout << "\nun+1\n\n\n";
     // un+1 = (1/3) * (un + 2*u2 + 2*dt*F(u2))
     homogeneuous_fv(kernels, threads, blocks, cumulative_kernels,
-          beta_d, gamma_up_d, Un_d, F_d,
+          Un_d, F_d,
           qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
           fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
           nx, ny, nz, vec_dim, ng, alpha, gamma,
@@ -1092,7 +1069,8 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     // gpu variables
-    float * beta_d, * gamma_up_d, * rho_d, * Q_d;
+    //float * beta_d, * gamma_up_d, * rho_d, * Q_d;
+    float * rho_d, * Q_d;
 
     // set device
     cudaSetDevice(rank);
@@ -1101,14 +1079,16 @@ void cuda_run(float * beta, float * gamma_up,
     int m_in = (models[0] == 'S') ? 1 : 0;
 
     // allocate memory on device
-    cudaMalloc((void**)&beta_d, 3*sizeof(float));
-    cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
+    //cudaMalloc((void**)&beta_d, 3*sizeof(float));
+    //cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
     cudaMalloc((void**)&rho_d, nzs[m_in]*sizeof(float));
     cudaMalloc((void**)&Q_d, nzs[m_in]*sizeof(float));
 
     // copy stuff to GPU
-    cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpyToSymbol(beta_d, beta, 3*sizeof(float));
+    cudaMemcpyToSymbol(gamma_up_d, gamma_up, 9*sizeof(float));
+    //cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
+    //cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Q_d, Q, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -1350,7 +1330,7 @@ void cuda_run(float * beta, float * gamma_up,
                 prolong_swe_to_comp(kernels, threads, blocks,
                              cumulative_kernels,
                              U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dz/pow(r, i), dt/pow(r, i), zmin, gamma_up_d,
+                             dz/pow(r, i), dt/pow(r, i), zmin,
                              rho_d, gamma, matching_indices_d, ng, rank,
                              q_comp_d, old_phi_d, i);
             } else if (models[i] == 'C' && models[i+1] == 'C') {
@@ -1423,7 +1403,7 @@ void cuda_run(float * beta, float * gamma_up,
                 }
 
                 rk3(kernels, threads, blocks, cumulative_kernels,
-                        beta_d, gamma_up_d, U_d, U_half_d, Up_d,
+                        U_d, U_half_d, Up_d,
                         qx_p_d, qx_m_d, qy_p_d, qy_m_d, qz_p_d, qz_m_d,
                         fx_p_d, fx_m_d, fy_p_d, fy_m_d, fz_p_d, fz_m_d,
                         nxs[i], nys[i], nzs[i], vec_dims[i], ng,
@@ -1440,7 +1420,7 @@ void cuda_run(float * beta, float * gamma_up,
                     // hack on the burning
                     float * H = new float[nxs[i]*nys[i]*nzs[i]];
                     calc_Q(rho, Us_h[i], nxs[i], nys[i], nzs[i], gamma,
-                           gamma_up, H, Cv);
+                           H, Cv, gamma_up);
                     for (int z = 0; z < nzs[i]; z++) {
                         for (int y = ng; y < nys[i]-ng; y++) {
                             for (int x = ng; x < nxs[i] - ng; x++) {
@@ -1483,7 +1463,6 @@ void cuda_run(float * beta, float * gamma_up,
                         kx_offset = 0;
                         for (int k = 0; k < kernels[rank].x; k++) {
                             evolve_fv_heating<<<blocks[k_offset + l * kernels[rank].x + k], threads[k_offset + l * kernels[rank].x + k]>>>(
-                                   gamma_up_d,
                                    Up_d, U_half_d,
                                    qx_p_d, qx_m_d, qy_p_d, qy_m_d,
                                    fx_p_d, fx_m_d, fy_p_d, fy_m_d,
@@ -1610,7 +1589,7 @@ void cuda_run(float * beta, float * gamma_up,
                               cumulative_kernels,
                               Up_d, U_d, nxs_d, nys_d, nzs_d,
                               dz/pow(r, i), zmin, matching_indices_d,
-                              rho_d, gamma, gamma_up_d, ng, rank, qf_swe, i-1);
+                              rho_d, gamma, ng, rank, qf_swe, i-1);
                 } else if (models[i-1] == 'C' && models[i] == 'C') {
                     // compressible to compressible
                     restrict_comp_to_comp(kernels, threads, blocks,
@@ -1722,8 +1701,8 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     // delete some stuff
-    cudaFree(beta_d);
-    cudaFree(gamma_up_d);
+    //cudaFree(beta_d);
+    //cudaFree(gamma_up_d);
     cudaFree(rho_d);
     cudaFree(Q_d);
     cudaFree(old_phi_d);

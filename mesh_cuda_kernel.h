@@ -5,11 +5,16 @@
 #include "mpi.h"
 
 typedef void (* flux_func_ptr)(float * q, float * f, int dir,
-                                float * gamma_up,
-                                float alpha, float * beta, float gamma);
+                                float alpha, float gamma);
 
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float Sz,
-                       float tau, float gamma, float * gamma_up);
+                       float tau, float gamma);
+
+typedef float (* fptr_h)(float p, float D, float Sx, float Sy, float Sz,
+                      float tau, float gamma, float * gamma_up);
+
+__constant__ float beta_d[3];
+__constant__ float gamma_up_d[9];
 
 unsigned int nextPow2(unsigned int x);
 
@@ -32,14 +37,32 @@ tol.
     conserved variables
 \param gamma
     adiabatic index
+*/
+__device__ float zbrent(fptr func, const float x1, const float x2,
+             const float tol,
+             float D, float Sx, float Sy, float Sz, float tau, float gamma);
+/**
+Using Brent's method, return the root of a function or functor func known
+to lie between x1 and x2. The root will be regined until its accuracy is
+tol.
+
+\param func
+ function pointer to shallow water or compressible flux function.
+\param x1, x2
+ limits of root
+\param tol
+ tolerance to which root shall be calculated to
+\param D, Sx, Sy, Sz, tau
+ conserved variables
+\param gamma
+ adiabatic index
 \param gamma_up
     spatial metric
 */
-__host__ __device__ float zbrent(fptr func, const float x1, const float x2,
-             const float tol,
-             float D, float Sx, float Sy, float Sz, float tau, float gamma,
-             float * gamma_up);
-
+__host__ float zbrent(fptr_h func, const float x1, const float x2,
+          const float tol,
+          float D, float Sx, float Sy, float Sz, float tau, float gamma,
+          float * gamma_up);
 /**
 Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
 */
@@ -121,7 +144,9 @@ Need to do non-blocking send, blocking receive then wait.
 */
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size, bool do_z);
 
-__host__ __device__ float W_swe(float * q, float * gamma_up); /**< calculate Lorentz factor for conserved swe state vector */
+__device__ float W_swe(float * q); /**< calculate Lorentz factor for conserved swe state vector */
+
+__host__ float W_swe(float * q, float * gamma_up); /**< calculate Lorentz factor for conserved swe state vector */
 
 /**
 calculate superbee slope limiter Phi(r)
@@ -176,12 +201,25 @@ primitive variable conversion
     components of conserved state vector
 \param gamma
     adiabatic index
+*/
+__device__ float f_of_p(float p, float D, float Sx, float Sy,
+                                 float Sz, float tau, float gamma);
+
+/**
+Function of p whose root is to be found when doing conserved to
+primitive variable conversion
+
+\param p
+ pressure
+\param D, Sx, Sy, Sz, tau
+ components of conserved state vector
+\param gamma
+ adiabatic index
 \param gamma_up
     spatial metric
 */
-__device__ __host__ float f_of_p(float p, float D, float Sx, float Sy,
-                                 float Sz, float tau, float gamma,
-                                 float * gamma_up);
+__host__ float f_of_p(float p, float D, float Sx, float Sy,
+                              float Sz, float tau, float gamma, float * gamma_up);
 
 /**
 Calculates the time derivative of the height given the shallow water
@@ -226,15 +264,15 @@ Calculate the heating rate per unit mass.
     dimensions of grid
 \param gamma
     adiabatic index
-\param gamma_up
-    contravariant spatial metric
 \param Q
     array that shall contain heating rate per unit mass
 \param Cv
     specific heat in constant volume
+\param gamma_up
+    spatial metric
 */
 void calc_Q(float * rho, float * q_cons, int nx, int ny, int nz,
-            float gamma, float * gamma_up, float * Q, float Cv);
+            float gamma, float * Q, float Cv, float * gamma_up);
 
 /**
 Calculates the As used to calculate the pressure given Phi, given
@@ -268,11 +306,9 @@ Convert compressible conserved variables to primitive variables
     state vector of primitive variables
 \param gamma
     adiabatic index
-\param gamma_up
-    spatial metric
 */
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
-                       float gamma, float * gamma_up);
+                       float gamma);
 
 /**
 Convert compressible conserved variables to primitive variables
@@ -286,10 +322,10 @@ Convert compressible conserved variables to primitive variables
 \param gamma
    adiabatic index
 \param gamma_up
-   contravariant spatial metric
+    spatial metric
 */
-void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf, int nz,
-                       float gamma, float * gamma_up);
+void cons_to_prim_comp(float * q_cons, float * q_prim, int nxf, int nyf,
+                       int nz, float gamma, float * gamma_up);
 
 /**
 Calculate the flux vector of the shallow water equations
@@ -300,18 +336,13 @@ Calculate the flux vector of the shallow water equations
    grid where fluxes shall be stored
 \param dir
    0 if calculating flux in x-direction, 1 if in y-direction
-\param gamma_up
-   spatial metric
 \param alpha
    lapse function
-\param beta
-   shift vector
 \param gamma
    adiabatic index
 */
 __device__ void shallow_water_fluxes(float * q, float * f, int dir,
-                         float * gamma_up, float alpha, float * beta,
-                         float gamma);
+                         float alpha, float gamma);
 
 /**
 Calculate the flux vector of the compressible GR hydrodynamics equations
@@ -323,18 +354,13 @@ Calculate the flux vector of the compressible GR hydrodynamics equations
 \param dir
     0 if calculating flux in x-direction, 1 if in y-direction,
     2 if in z-direction
-\param gamma_up
-    spatial metric
 \param alpha
     lapse function
-\param beta
-    shift vector
 \param gamma
     adiabatic index
 */
 __device__ void compressible_fluxes(float * q, float * f, int dir,
-                      float * gamma_up, float alpha, float * beta,
-                      float gamma);
+                      float alpha, float gamma);
 
 /**
 Calculate p using SWE conserved variables
@@ -345,25 +371,23 @@ Calculate p using SWE conserved variables
   grid where pressure shall be stored
 \param nx, ny, nz
   grid dimensions
-\param gamma_up
-  spatial metric
 \param rho
   density
 \param gamma
   adiabatic index
 \param A
   variable required in p(Phi) calculation
+\param gamma_up
+    spatial metric
 */
 void p_from_swe(float * q, float * p, int nx, int ny, int nz,
-               float * gamma_up, float rho, float gamma, float A);
+               float rho, float gamma, float A, float * gamma_up);
 
 /**
 Calculates p and returns using SWE conserved variables
 
 \param q
    state vector
-\param gamma_up
-   spatial metric
 \param rho
    density
 \param gamma
@@ -373,7 +397,7 @@ Calculates p and returns using SWE conserved variables
 \param A
    variable required in p(Phi) calculation
 */
-__device__ float p_from_swe(float * q, float * gamma_up, float rho,
+__device__ float p_from_swe(float * q, float rho,
                            float gamma, float W, float A);
 
 /**
@@ -385,8 +409,6 @@ Calculates the compressible state vector from the SWE variables.
    grid where compressible state vector to be stored
 \param nxs, nys, nzs
    grid dimensions
-\param gamma_up
-   spatial metric
 \param rho, gamma
    density and adiabatic index
 \param kx_offset, ky_offset
@@ -400,7 +422,7 @@ Calculates the compressible state vector from the SWE variables.
 */
 __global__ void compressible_from_swe(float * q, float * q_comp,
                           int * nxs, int * nys, int * nzs,
-                          float * gamma_up, float * rho, float gamma,
+                          float * rho, float gamma,
                           int kx_offset, int ky_offset, float dt,
                           float * old_phi, int level);
 
@@ -427,8 +449,6 @@ Reconstruct fine grid variables from compressible variables on coarse grid
     coarse grid vertical spacing
 \param matching_indices_d
     position of fine grid wrt coarse grid
-\param gamma_up
-    spatial metric
 \param kx_offset, ky_offset
     kernel offsets in the x and y directions
 \param coarse_level
@@ -438,7 +458,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                   float * q_f, float * q_c,
                   int * nxs, int * nys, int * nzs, int ng,
                   float dz, float zmin,
-                  int * matching_indices_d, float * gamma_up,
+                  int * matching_indices_d,
                   int kx_offset, int ky_offset, int coarse_level);
 
 /**
@@ -460,8 +480,6 @@ Prolong coarse grid data to fine grid
   timestep
 \param zmin
   height of sea floor
-\param gamma_up_d
-  spatial metric
 \param rho, gamma
   density and adiabatic index
 \param matching_indices_d
@@ -481,7 +499,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 int * cumulative_kernels, float * q_cd, float * q_fd,
                 int * nxs, int * nys, int * nzs,
                 float dz, float dt, float zmin,
-                float * gamma_up_d, float * rho, float gamma,
+                float * rho, float gamma,
                 int * matching_indices_d, int ng, int rank, float * qc_comp,
                 float * old_phi_d, int coarse_level);
 
@@ -593,8 +611,6 @@ Calculates the SWE state vector from the compressible variables.
     grid where SWE state vector to be stored
 \param nxs, nys, nzs
     grid dimensions
-\param gamma_up
-    spatial metric
 \param rho, gamma
     density and adiabatic index
 \param kx_offset, ky_offset
@@ -608,8 +624,7 @@ Calculates the SWE state vector from the compressible variables.
 */
 __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int * nxs, int * nys, int * nzs,
-                                      float * gamma_up, float * rho,
-                                      float gamma,
+                                      float * rho, float gamma,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
@@ -628,8 +643,6 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
   number of ghost cells
 \param matching_indices
   position of fine grid wrt coarse grid
-\param gamma_up
-  spatial metric
 \param kx_offset, ky_offset
   kernel offsets in the x and y directions
 \param coarse_level
@@ -639,7 +652,6 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
                                    int * nxs, int * nys, int * nzs, int ng,
                                    float dz, float zmin,
                                    int * matching_indices,
-                                   float * gamma_up,
                                    int kx_offset, int ky_offset,
                                    int coarse_level);
 
@@ -658,8 +670,6 @@ Restrict fine grid data to coarse grid
    position of fine grid wrt coarse grid
 \param rho, gamma
    density and adiabatic index
-\param gamma_up
-   spatial metric
 \param ng
    number of ghost cells
 \param rank
@@ -673,7 +683,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                    int * cumulative_kernels, float * q_cd, float * q_fd,
                    int * nxs, int * nys, int * nzs,
                    float dz, float zmin, int * matching_indices,
-                   float * rho, float gamma, float * gamma_up,
+                   float * rho, float gamma,
                    int ng, int rank, float * qf_swe,
                    int coarse_level);
 
@@ -786,10 +796,6 @@ and calculates fluxes there.
 
 NOTE: we assume that beta is smooth so can get value at cell boundaries with simple averaging
 
-\param beta_d
-   shift vector at each grid point.
-\param gamma_up_d
-   gamma matrix at each grid point
 \param Un_d
    state vector at each grid point in each layer
 \param flux_func
@@ -809,8 +815,7 @@ NOTE: we assume that beta is smooth so can get value at cell boundaries with sim
 \param kx_offset, ky_offset
    x, y offset for current kernel
 */
-__global__ void evolve_fv(float * beta_d, float * gamma_up_d,
-                    float * Un_d, flux_func_ptr flux_func,
+__global__ void evolve_fv(float * Un_d, flux_func_ptr flux_func,
                     float * qx_plus_half, float * qx_minus_half,
                     float * qy_plus_half, float * qy_minus_half,
                     float * fx_plus_half, float * fx_minus_half,
@@ -826,10 +831,6 @@ and calculates fluxes there.
 
 NOTE: we assume that beta is smooth so can get value at cell boundaries with simple averaging
 
-\param beta_d
-    shift vector at each grid point.
-\param gamma_up_d
-    gamma matrix at each grid point
 \param Un_d
     state vector at each grid point in each layer
 \param flux_func
@@ -847,8 +848,7 @@ NOTE: we assume that beta is smooth so can get value at cell boundaries with sim
 \param kx_offset, ky_offset
     x, y offset for current kernel
 */
-__global__ void evolve_z(float * beta_d, float * gamma_up_d,
-                     float * Un_d, flux_func_ptr flux_func,
+__global__ void evolve_z(float * Un_d, flux_func_ptr flux_func,
                      float * qz_plus_half, float * qz_minus_half,
                      float * fz_plus_half, float * fz_minus_half,
                      int nx, int ny, int nz, int vec_dim,
@@ -920,8 +920,6 @@ __global__ void evolve_z_fluxes(float * F,
 /**
 Does the heating part of the evolution.
 
-\param gamma_up_d
-   gamma matrix at each grid point
 \param Up
    state vector at next timestep
 \param U_half
@@ -955,8 +953,7 @@ Does the heating part of the evolution.
 \param kx_offset, ky_offset
    x, y offset for current kernel
 */
-__global__ void evolve_fv_heating(float * gamma_up_d,
-                    float * Up, float * U_half,
+__global__ void evolve_fv_heating(float * Up, float * U_half,
                     float * qx_plus_half, float * qx_minus_half,
                     float * qy_plus_half, float * qy_minus_half,
                     float * fx_plus_half, float * fx_minus_half,
@@ -1002,10 +999,6 @@ Solves the homogeneous part of the equation (ie the bit without source terms).
     number of kernels, threads and blocks for each process/kernel
 \param cumulative_kernels
     Cumulative total of kernels in ranks < rank of current MPI process
-\param beta_d
-    shift vector at each grid point
-\param gamma_up_d
-    gamma matrix at each grid point
 \param Un_d
     state vector at each grid point in each layer at current timestep
 \param F_d
@@ -1032,8 +1025,7 @@ Solves the homogeneous part of the equation (ie the bit without source terms).
     should we evolve in the z direction?
 */
 void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
-    int * cumulative_kernels, float * beta_d, float * gamma_up_d,
-    float * Un_d, float * F_d,
+    int * cumulative_kernels, float * Un_d, float * F_d,
     float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
     float * qz_p_d, float * qz_m_d,
     float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
@@ -1049,10 +1041,6 @@ Integrates the homogeneous part of the ODE in time using RK3.
     number of kernels, threads and blocks for each process/kernel
 \param cumulative_kernels
     Cumulative total of kernels in ranks < rank of current MPI process
-\param beta_d
-    shift vector at each grid point
-\param gamma_up_d
-    gamma matrix at each grid point
 \param Un_d
     state vector at each grid point in each layer at current timestep on device
 \param F_d
@@ -1092,8 +1080,7 @@ Integrates the homogeneous part of the ODE in time using RK3.
 */
 void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        int * cumulative_kernels,
-       float * beta_d, float * gamma_up_d, float * Un_d,
-       float * F_d, float * Up_d,
+       float * Un_d, float * F_d, float * Up_d,
        float * qx_p_d, float * qx_m_d, float * qy_p_d, float * qy_m_d,
        float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
