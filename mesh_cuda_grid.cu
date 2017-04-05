@@ -241,7 +241,8 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks,
     }
 }
 
-void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
+void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim,
+            bool periodic) {
     /**
     Enforce boundary conditions on section of grid.
 
@@ -255,28 +256,59 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
         number of ghost cells
     vec_dim : int
         dimension of state vector
+    periodic : bool
+        do we use periodic or outflow boudary conditions?
     */
-    // outflow
-    for (int z = 0; z < nz; z++) {
-        for (int y = 0; y < ny; y++){
-            for (int g = 0; g < ng; g++) {
-                for (int i = 0; i < vec_dim; i++) {
-                    grid[((z * ny + y) * nx + g) * vec_dim+i] =
-                        grid[((z * ny + y) * nx + ng)*vec_dim+i];
 
-                    grid[((z * ny + y) * nx + (nx-1-g))*vec_dim+i] =
-                        grid[((z * ny + y) * nx + (nx-1-ng))*vec_dim+i];
+    if (periodic) {
+        // periodic
+        for (int z = 0; z < nz; z++) {
+            for (int y = 0; y < ny; y++){
+                for (int g = 0; g < ng; g++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((z * ny + y) * nx + g) * vec_dim+i] =
+                            grid[((z * ny + y) * nx + (nx-2*ng+g))*vec_dim+i];
+
+                        grid[((z * ny + y) * nx + (nx-ng+g))*vec_dim+i] =
+                            grid[((z * ny + y) * nx + ng+g) * vec_dim+i];
+                    }
+                }
+            }
+            for (int g = 0; g < ng; g++) {
+                for (int x = 0; x < nx; x++){
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((z * ny + g) * nx + x)*vec_dim+i] =
+                            grid[((z * ny + ny-2*ng+g) * nx + x)*vec_dim+i];
+
+                        grid[((z * ny + ny-ng+g) * nx + x)*vec_dim+i] =
+                            grid[((z * ny + ng + g) * nx + x)*vec_dim+i];
+                    }
                 }
             }
         }
-        for (int g = 0; g < ng; g++) {
-            for (int x = 0; x < nx; x++){
-                for (int i = 0; i < vec_dim; i++) {
-                    grid[((z * ny + g) * nx + x)*vec_dim+i] =
-                        grid[((z * ny + ng) * nx + x)*vec_dim+i];
+    } else {
+        // outflow
+        for (int z = 0; z < nz; z++) {
+            for (int y = 0; y < ny; y++){
+                for (int g = 0; g < ng; g++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((z * ny + y) * nx + g) * vec_dim+i] =
+                            grid[((z * ny + y) * nx + ng)*vec_dim+i];
 
-                    grid[((z * ny + ny-1-g) * nx + x)*vec_dim+i] =
-                        grid[((z * ny + ny-1-ng) * nx + x)*vec_dim+i];
+                        grid[((z * ny + y) * nx + (nx-1-g))*vec_dim+i] =
+                            grid[((z * ny + y) * nx + (nx-1-ng))*vec_dim+i];
+                    }
+                }
+            }
+            for (int g = 0; g < ng; g++) {
+                for (int x = 0; x < nx; x++){
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((z * ny + g) * nx + x)*vec_dim+i] =
+                            grid[((z * ny + ng) * nx + x)*vec_dim+i];
+
+                        grid[((z * ny + ny-1-g) * nx + x)*vec_dim+i] =
+                            grid[((z * ny + ny-1-ng) * nx + x)*vec_dim+i];
+                    }
                 }
             }
         }
@@ -285,7 +317,7 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim) {
 
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
              MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-             int y_size, bool do_z) {
+             int y_size, bool do_z, bool periodic) {
     /**
     Enforce boundary conditions across processes / at edges of grid.
 
@@ -313,37 +345,58 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
         size of grid in y direction running on each process (except the last one)
     do_z : bool
         true if need to implement bcs in vertical direction as well
+    periodic : bool
+        do we use periodic or outflow boudary conditions?
     */
 
-    // x boundaries
-    for (int z = 0; z < nz; z++) {
-        for (int y = 0; y < ny; y++) {
-            for (int g = 0; g < ng; g++) {
-                for (int i = 0; i < vec_dim; i++) {
-                    grid[((z * ny + y) * nx + g) *vec_dim+i] =
-                        grid[((z * ny + y) * nx + ng) *vec_dim+i];
-
-                    grid[((z * ny + y) * nx + (nx-1-g))*vec_dim+i] =
-                        grid[((z * ny + y) * nx + (nx-1-ng))*vec_dim+i];
-                }
-            }
-        }
-    }
-
-    // z boundaries
-    /*if (do_z) {
-        for (int g = 0; g < ng; g++) {
+    if (periodic) {
+        // x boundaries
+        for (int z = 0; z < nz; z++) {
             for (int y = 0; y < ny; y++) {
-                for (int x = 0; x < nx; x++) {
+                for (int g = 0; g < ng; g++) {
                     for (int i = 0; i < vec_dim; i++) {
-                        grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
+                        grid[((z * ny + y) * nx + g) *vec_dim+i] =
+                            grid[((z * ny + y) * nx + (nx-2*ng+g))*vec_dim+i];
 
-                        grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                        grid[((z * ny + y) * nx + (nx-ng+g))*vec_dim+i] =
+                            grid[((z * ny + y) * nx + ng + g) *vec_dim+i];
                     }
                 }
             }
         }
-    }*/
+    } else {
+
+        // x boundaries
+        for (int z = 0; z < nz; z++) {
+            for (int y = 0; y < ny; y++) {
+                for (int g = 0; g < ng; g++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((z * ny + y) * nx + g) *vec_dim+i] =
+                            grid[((z * ny + y) * nx + ng) *vec_dim+i];
+
+                        grid[((z * ny + y) * nx + (nx-1-g))*vec_dim+i] =
+                            grid[((z * ny + y) * nx + (nx-1-ng))*vec_dim+i];
+                    }
+                }
+            }
+        }
+
+        // z boundaries
+        /*if (do_z) {
+            for (int g = 0; g < ng; g++) {
+                for (int y = 0; y < ny; y++) {
+                    for (int x = 0; x < nx; x++) {
+                        for (int i = 0; i < vec_dim; i++) {
+                            grid[((g * ny + y) * nx + x) *vec_dim+i] = grid[((ng * ny + y) * nx + x) *vec_dim+i];
+
+                            grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] = grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
+                        }
+                    }
+                }
+            }
+        }*/
+
+    }
 
     // interior cells between processes
 
@@ -447,13 +500,30 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
             }
         }
 
-        // outflow stuff on top boundary
-        for (int z = 0; z < nz; z++) {
-            for (int g = 0; g < ng; g++) {
-                for (int x = 0; x < nx; x++) {
-                    for (int i = 0; i < vec_dim; i++) {
-                        grid[((z * ny + g) * nx + x)*vec_dim+i] =
-                            grid[((z * ny + ng) * nx + x)*vec_dim+i];
+        if (periodic) {
+
+            // periodic stuff on top boundary
+            for (int z = 0; z < nz; z++) {
+                for (int g = 0; g < ng; g++) {
+                    for (int x = 0; x < nx; x++) {
+                        for (int i = 0; i < vec_dim; i++) {
+                            grid[((z * ny + g) * nx + x)*vec_dim+i] =
+                                grid[((z * ny + ny-2*ng+g) * nx + x)*vec_dim+i];
+                        }
+                    }
+                }
+            }
+
+        } else {
+
+            // outflow stuff on top boundary
+            for (int z = 0; z < nz; z++) {
+                for (int g = 0; g < ng; g++) {
+                    for (int x = 0; x < nx; x++) {
+                        for (int i = 0; i < vec_dim; i++) {
+                            grid[((z * ny + g) * nx + x)*vec_dim+i] =
+                                grid[((z * ny + ng) * nx + x)*vec_dim+i];
+                        }
                     }
                 }
             }
@@ -488,12 +558,27 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
                 }
             }
 
-            // outflow for bottom boundary
-            for (int g = 0; g < ng; g++) {
-                for (int x = 0; x < nx; x++) {
-                    for (int i = 0; i < vec_dim; i++) {
-                        grid[((z * ny + ny-1-g) * nx + x)*vec_dim+i] =
-                            grid[((z * ny + ny-1-ng) * nx + x)*vec_dim+i];
+            if (periodic) {
+
+                // periodic for bottom boundary
+                for (int g = 0; g < ng; g++) {
+                    for (int x = 0; x < nx; x++) {
+                        for (int i = 0; i < vec_dim; i++) {
+                            grid[((z * ny + ny-ng+g) * nx + x)*vec_dim+i] =
+                                grid[((z * ny + ng+g) * nx + x)*vec_dim+i];
+                        }
+                    }
+                }
+
+            } else {
+
+                // outflow for bottom boundary
+                for (int g = 0; g < ng; g++) {
+                    for (int x = 0; x < nx; x++) {
+                        for (int i = 0; i < vec_dim; i++) {
+                            grid[((z * ny + ny-1-g) * nx + x)*vec_dim+i] =
+                                grid[((z * ny + ny-1-ng) * nx + x)*vec_dim+i];
+                        }
                     }
                 }
             }
@@ -502,6 +587,7 @@ void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng,
 
     delete[] ysbuf;
     delete[] yrbuf;
+
 }
 
 __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
@@ -1160,10 +1246,10 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
     int z = threadIdx.z;
 
     // note we're not going to restrict the top layer
-    if ((((x > 1) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if ((((x > 1) && (x < ng+1)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng+1)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z > 1) && (z < nzs[clevel]-2)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1377,10 +1463,10 @@ __global__ void restrict_interpolate_comp(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x > 1) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if ((((x > 1) && (x < ng+1)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng+1)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z > 0) && (z < nzs[clevel]-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1495,10 +1581,10 @@ __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x > 1) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if ((((x > 1) && (x < ng+1)) ||
+        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
+        (((y > 1) && (y < ng+1)) ||
+        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
         (z==0)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((y + matching_indices[clevel*4+2]) * nxs[clevel] +

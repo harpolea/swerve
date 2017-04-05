@@ -598,22 +598,22 @@ void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
             for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {
                     for (int l = 0; l < vec_dim; l++) {
-                        grid[((z * n_z + y) * n_x + g) * vec_dim + l] =
-                            grid[((z * n_z + y) * n_x + (n_x-2*ng+g)) * vec_dim + l];
+                        grid[((z * n_y + y) * n_x + g) * vec_dim + l] =
+                            grid[((z * n_y + y) * n_x + (n_x-2*ng+g)) * vec_dim + l];
 
-                        grid[((z * n_z + y) * n_x + (n_x-ng+g)) * vec_dim + l] =
-                            grid[((z * n_z + y) * n_x + ng+g) * vec_dim + l];
+                        grid[((z * n_y + y) * n_x + (n_x-ng+g)) * vec_dim + l] =
+                            grid[((z * n_y + y) * n_x + ng+g) * vec_dim + l];
                     }
                 }
             }
             for (int g = 0; g < ng; g++) {
                 for (int x = 0; x < n_x; x++){
                     for (int l = 0; l < vec_dim; l++) {
-                        grid[((z * n_z + g) * n_x + x) * vec_dim + l] =
-                            grid[((z * n_z + n_y-ng-1) * n_x + x) * vec_dim + l];
+                        grid[((z * n_y + g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_y + n_y-2*ng+g) * n_x + x) * vec_dim + l];
 
-                        grid[((z * n_z + n_y-ng+g) * n_x + x) * vec_dim + l] =
-                            grid[((z * n_z + ng) * n_x + x) * vec_dim + l];
+                        grid[((z * n_y + n_y-ng+g) * n_x + x) * vec_dim + l] =
+                            grid[((z * n_y + ng+g) * n_x + x) * vec_dim + l];
                     }
                 }
             }
@@ -659,8 +659,8 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
 
     cuda_run(beta, gamma_up, Us, rho, Qs,
              nxs, nys, nzs, nlevels, models, vec_dims,
-             ng, nt,
-             alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning, dprint,
+             ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
+             periodic, dprint,
              outfile, comm, *status, rank, size, matching_indices, r);
 
     delete[] Qs;

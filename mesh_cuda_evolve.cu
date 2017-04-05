@@ -712,7 +712,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr flux_func, bool do_z) {
+       flux_func_ptr flux_func, bool do_z, bool periodic) {
     /**
     Integrates the homogeneous part of the ODE in time using RK3.
 
@@ -758,6 +758,8 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
         pointer to function to be used to calculate fluxes
     do_z : bool
         should we evolve in the z direction?
+    periodic : bool
+        do we use periodic or outflow boundary conditions?
     */
     //cout << "\nu1\n\n\n";
     // u1 = un + dt * F(un)
@@ -772,11 +774,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     cudaMemcpy(F_h, F_d, nx*ny*nz*vec_dim*sizeof(float),
         cudaMemcpyDeviceToHost);
     if (n_processes == 1) {
-        bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(F_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes,
-                y_size, do_z);
+                y_size, do_z, periodic);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -784,11 +786,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
     }
     // enforce boundaries and copy back
     if (n_processes == 1) {
-        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank,
-                n_processes, y_size, do_z);
+                n_processes, y_size, do_z, periodic);
     }
 
     if (do_z) {
@@ -830,11 +832,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
                cudaMemcpyDeviceToHost);
 
     if (n_processes == 1) {
-        bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(F_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes,
-                y_size, do_z);
+                y_size, do_z, periodic);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -843,11 +845,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries and copy back
     if (n_processes == 1) {
-        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank,
-                n_processes, y_size, do_z);
+                n_processes, y_size, do_z, periodic);
     }
 
     if (do_z) {
@@ -886,11 +888,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
                cudaMemcpyDeviceToHost);
 
     if (n_processes == 1) {
-        bcs_fv(F_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(F_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(F_h, nx, ny, nz, vec_dim, ng, comm, status, rank, n_processes,
-                y_size, do_z);
+                y_size, do_z, periodic);
     }
 
     for (int n = 0; n < nx*ny*nz*vec_dim; n++) {
@@ -899,11 +901,11 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
 
     // enforce boundaries
     if (n_processes == 1) {
-        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim);
+        bcs_fv(Up_h, nx, ny, nz, ng, vec_dim, periodic);
     } else {
         int y_size = kernels[0].y * blocks[0].y * threads[0].y - 2*ng;
         bcs_mpi(Up_h, nx, ny, nz, vec_dim, ng, comm, status, rank,
-                n_processes, y_size, do_z);
+                n_processes, y_size, do_z, periodic);
     }
 
     if (do_z) {
@@ -947,7 +949,7 @@ void cuda_run(float * beta, float * gamma_up,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
-         int dprint, char * filename,
+         bool periodic, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices, int r) {
     /**
@@ -983,6 +985,8 @@ void cuda_run(float * beta, float * gamma_up,
         height of sea floor
     dx, dy, dz, dt : float
         gridpoint spacing and timestep spacing
+    periodic : bool
+        do we use periodic or outflow boundary conditions?
     burning : bool
         is burning included in this system?
     dprint : int
@@ -1371,12 +1375,12 @@ void cuda_run(float * beta, float * gamma_up,
             // enforce boundaries
             if (n_processes == 1) {
                 bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                        ng, vec_dims[i+1]);
+                        ng, vec_dims[i+1], periodic);
             } else {
                 int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
                 bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
                         vec_dims[i+1], ng, comm, status, rank,
-                        n_processes, y_size, do_z);
+                        n_processes, y_size, do_z, periodic);
             }
         }
 
@@ -1412,7 +1416,7 @@ void cuda_run(float * beta, float * gamma_up,
                         dt/pow(r, i),
                         Up_h, F_h, Us_h[i],
                         comm, status, rank, n_processes,
-                        flux_func, do_z);
+                        flux_func, do_z, periodic);
 
                 cudaDeviceSynchronize();
 
@@ -1492,16 +1496,18 @@ void cuda_run(float * beta, float * gamma_up,
 
                     // enforce boundaries
                     if (n_processes == 1) {
-                        bcs_fv(Up_h, nxs[i], nys[i], nzs[i], ng, 4);
-                        bcs_fv(sum_phs_h, nxs[i], nys[i], nzs[i], ng, 1);
+                        bcs_fv(Up_h, nxs[i], nys[i], nzs[i], ng, 4, periodic);
+                        bcs_fv(sum_phs_h, nxs[i], nys[i], nzs[i], ng, 1,
+                               periodic);
                     } else {
                         int y_size = kernels[0].y * blocks[0].y *
                                      threads[0].y - 2*ng;
                         bcs_mpi(Up_h, nxs[i], nys[i], nzs[i], 4, ng, comm,
-                                status, rank, n_processes, y_size, false);
+                                status, rank, n_processes, y_size, false,
+                                periodic);
                         bcs_mpi(sum_phs_h, nxs[i], nys[i], nzs[i], 1, ng,
                                 comm, status, rank, n_processes, y_size,
-                                false);
+                                false, periodic);
                     }
 
                     cudaMemcpy(Up_d, Up_h,
@@ -1546,13 +1552,14 @@ void cuda_run(float * beta, float * gamma_up,
                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
                                cudaMemcpyDeviceToHost);
                     if (n_processes == 1) {
-                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, 4);
+                        bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng, 4,
+                               periodic);
                     } else {
                         int y_size = kernels[0].y * blocks[0].y *
                                      threads[0].y - 2*ng;
                         bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], 4, ng,
                                 comm, status, rank, n_processes, y_size,
-                                false);
+                                false, periodic);
                     }
                     cudaMemcpy(U_d, Us_h[i],
                                nxs[i]*nys[i]*nzs[i]*4*sizeof(float),
@@ -1561,13 +1568,13 @@ void cuda_run(float * beta, float * gamma_up,
 
                 if (n_processes == 1) {
                     bcs_fv(Us_h[i], nxs[i], nys[i], nzs[i], ng,
-                           vec_dims[i]);
+                           vec_dims[i], periodic);
                 } else {
                     int y_size = kernels[0].y * blocks[0].y *
                                  threads[0].y - 2*ng;
                     bcs_mpi(Us_h[i], nxs[i], nys[i], nzs[i], vec_dims[i],
                             ng, comm, status, rank, n_processes, y_size,
-                            false);
+                            false, periodic);
                 }
 
                 // copy to device
@@ -1624,14 +1631,14 @@ void cuda_run(float * beta, float * gamma_up,
                 // enforce boundaries
                 if (n_processes == 1) {
                     bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
-                        vec_dims[i-1]);
+                        vec_dims[i-1], periodic);
                 } else {
                     do_z = (models[i-1] == 'M' || models[i-1] == 'S') ? false : true;
                     int y_size = kernels[0].y * blocks[0].y *
                                  threads[0].y - 2*ng;
                     bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
                         vec_dims[i-1], ng, comm, status, rank,
-                        n_processes, y_size, do_z);
+                        n_processes, y_size, do_z, periodic);
                 }
             }
         }

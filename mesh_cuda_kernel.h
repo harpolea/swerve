@@ -113,8 +113,10 @@ Enforce boundary conditions on section of grid.
     number of ghost cells
 \param vec_dim
     dimension of state vector
+\param periodic
+    do we use periodic or outflow boudary conditions?
 */
-void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim);
+void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim, bool periodic);
 
 /**
 Enforce boundary conditions across processes / at edges of grid.
@@ -141,8 +143,10 @@ Need to do non-blocking send, blocking receive then wait.
     size of grid in y direction running on each process (except the last one)
 \param do_z
     true if need to implement bcs in vertical direction as well
+\param periodic
+    do we use periodic or outflow boudary conditions?
 */
-void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size, bool do_z);
+void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size, bool do_z, bool periodic);
 
 __device__ float W_swe(float * q); /**< calculate Lorentz factor for conserved swe state vector */
 
@@ -1077,6 +1081,8 @@ Integrates the homogeneous part of the ODE in time using RK3.
     pointer to function to be used to calculate fluxes
 \param do_z
     should we evolve in the z direction?
+\param periodic
+    do we use periodic or outflow boundary conditions?
 */
 void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        int * cumulative_kernels,
@@ -1089,7 +1095,7 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr h_flux_func, bool do_z);
+       flux_func_ptr h_flux_func, bool do_z, bool periodic);
 
 /**
 Evolve system through nt timesteps, saving data to filename every dprint timesteps.
@@ -1128,6 +1134,8 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    height of sea floor
 \param dx, dy, dz, dt
    gridpoint spacing and timestep spacing
+\param periodic
+    do we use periodic or outflow boudary conditions?
 \param burning
    is burning included in this system?
 \param dprint
@@ -1152,7 +1160,7 @@ void cuda_run(float * beta, float * gamma_up,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
-         int dprint, char * filename,
+         bool periodic, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices, int r);
 
