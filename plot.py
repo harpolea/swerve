@@ -129,13 +129,13 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     for line in inputs:
         name, *dat = line.split()
 
-        if name == 'nx':
-            nx = int(dat[0])
-        elif name == 'ny':
-            ny = int(dat[0])
-        elif name == 'nt':
-            nt = int(dat[0])
-        elif name == 'models':
+        #if name == 'nx':
+        #    nx = int(dat[0])
+        #elif name == 'ny':
+        #    ny = int(dat[0])
+        #elif name == 'nt':
+        #    nt = int(dat[0])
+        if name == 'models':
             models = dat
         elif name == 'r':
             r = int(dat[0])
@@ -162,15 +162,10 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         elif name == 'dprint':
             dprint = int(dat[0])
 
-    if (models[0] == 'S'):
+    #if (models[0] == 'S'):
         # coarsest layer is single layer SWE - adjust nx, ny to get multilayer dimensions
-        nx *= r * df
-        ny *= r * df
-
-    dx = (xmax - xmin) / (nx-2)
-    dy = (ymax - ymin) / (ny-2)
-    dt = 0.1 * min(dx, dy)
-    input_file.close()
+    #    nx *= r * df
+    #    ny *= r * df
 
     # read data
     f = tb.open_file(data_filename, 'r')
@@ -180,15 +175,25 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     Sy = table[:,:,:,:,2]
     DX = table[:,:,:,:,3]
 
+    # HACK
+    nx = len(D_2d[0,0,:,0])
+    ny = len(D_2d[0,0,0,:])
+    nt = len(D_2d[:,0,0,0])
+
+    dx = (xmax - xmin) / (nx-2)
+    dy = (ymax - ymin) / (ny-2)
+    dt = 0.1 * min(dx, dy)
+    input_file.close()
+
     v = np.sqrt(Sx**2 + Sy**2)
 
-    heights = find_height(D_2d, Sx, Sy, gamma_up)
+    heights = Sy#find_height(D_2d, Sx, Sy, gamma_up)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
 
-    x = np.linspace(0, xmax, num=nx-4, endpoint=False)
-    y = np.linspace(0, ymax, num=ny-4, endpoint=False)
+    x = np.linspace(0, xmax, num=nx, endpoint=False)
+    y = np.linspace(0, ymax, num=ny, endpoint=False)
 
     X, Y = np.meshgrid(x,y)
 
@@ -206,15 +211,15 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
         outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
         ax.clear()
-        ax.set_xlim(0,10)
-        ax.set_ylim(0,10)
-        ax.set_zlim(2.2,2.35)
-        for l in range(1,2):
-            face_colours = DX[i,l,2:-2,2:-2].T
+        #ax.set_xlim(0,10)
+        #ax.set_ylim(0,10)
+        #ax.set_zlim(2.2,2.35)
+        for l in range(2,3):
+            face_colours = DX[i,l,:,:].T
             if abs(np.amax(face_colours)) > 0.:
                 face_colours /= abs(np.amax(face_colours))
 
-            ax.plot_surface(X,Y,heights[i,l,2:-2,2:-2].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#, facecolors=cm.viridis_r(face_colours))
+            ax.plot_surface(X[:,:],Y[:,:],heights[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#, facecolors=cm.viridis_r(face_colours))
         plt.savefig(outname)
 
     # close hdf5 file

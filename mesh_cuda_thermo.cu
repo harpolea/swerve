@@ -767,6 +767,11 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
 
     //printf("f(tau): %f\n", f[4]);
 
+    // HACK
+    //for (int i = 0; i < 6; i++) {
+    //    f[i] = 0.0;
+    //}
+
     free(q_prim);
 }
 

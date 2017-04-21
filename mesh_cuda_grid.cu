@@ -242,7 +242,7 @@ void getNumBlocksAndThreads(int nx, int ny, int nz, int ng, int maxBlocks,
 }
 
 void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim,
-            bool periodic) {
+            bool periodic, bool do_z) {
     /**
     Enforce boundary conditions on section of grid.
 
@@ -258,6 +258,8 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim,
         dimension of state vector
     periodic : bool
         do we use periodic or outflow boudary conditions?
+    do_z : bool
+        true if need to implement bcs in vertical direction as well
     */
 
     if (periodic) {
@@ -308,6 +310,22 @@ void bcs_fv(float * grid, int nx, int ny, int nz, int ng, int vec_dim,
 
                         grid[((z * ny + ny-1-g) * nx + x)*vec_dim+i] =
                             grid[((z * ny + ny-1-ng) * nx + x)*vec_dim+i];
+                    }
+                }
+            }
+        }
+    }
+
+    if (do_z) { // outflow
+        for (int g = 0; g < ng; g++) {
+            for (int y = 0; y < ny; y++){
+                for (int x = 0; x < nx; x++) {
+                    for (int i = 0; i < vec_dim; i++) {
+                        grid[((g * ny + y) * nx + x) * vec_dim+i] =
+                            grid[((ng * ny + y) * nx + x)*vec_dim+i];
+
+                        grid[(((nz-1-g) * ny + y) * nx + x)*vec_dim+i] =
+                            grid[(((nz-1-ng) * ny + y) * nx + x)*vec_dim+i];
                     }
                 }
             }
@@ -595,7 +613,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                     int * nxs, int * nys, int * nzs, int ng,
                     float dz, float zmin,
                     int * matching_indices_d,
-                    int kx_offset, int ky_offset, int clevel) {
+                    int kx_offset, int ky_offset, int clevel, bool boundaries) {
     /**
     Reconstruct fine grid variables from compressible variables on coarse grid
 
@@ -625,11 +643,25 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x>0) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
-        (((y > 0) && (y < ng)) ||
-        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
-        (z < nzs[clevel+1])) {
+    bool prolong;
+
+    if (boundaries) {
+        prolong = ((x < ng) ||
+            ((x > int(round(nxs[clevel+1]*0.5)) - ng) &&
+            (x < int(round(nxs[clevel+1]*0.5)))) ||
+            (y < ng) ||
+            ((y > int(round(nys[clevel+1]*0.5)) - ng) &&
+            (y < int(round(nys[clevel+1]*0.5))))) &&
+            (z < nzs[clevel+1]);
+    } else {
+        prolong = (x < int(round(nxs[clevel+1]*0.5)+1)) &&
+            (y < int(round(nys[clevel+1]*0.5)+1)) &&
+            (z < nzs[clevel+1]);
+    }
+
+    prolong = prolong && 2*x < nxs[clevel+1] && 2*y < nys[clevel+1];
+
+    if (prolong) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
         int c_y = y + matching_indices_d[clevel*4+2];
@@ -751,17 +783,25 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                 (1.0 - layer_frac) *
                 q_comp[(((neighbour_layer-1) * nys[clevel] + c_y) * nxs[clevel] + c_x) * 6 + n];
 
-            q_f[((z * nys[clevel+1] + 2*y) * nxs[clevel+1] + 2*x) * 6 + n] =
-                interp_q_comp - 0.25 * (Sx + Sy);
+            if (2*x < nxs[clevel+1] && 2*y < nys[clevel+1]) {
+                q_f[((z * nys[clevel+1] + 2*y)*nxs[clevel+1] + 2*x) * 6 + n] =
+                    interp_q_comp - 0.25 * (Sx + Sy);
+            }
 
-            q_f[((z * nys[clevel+1] + 2*y) * nxs[clevel+1] + 2*x+1) * 6 + n] =
-                interp_q_comp + 0.25 * (Sx - Sy);
+            if (2*x+1 < nxs[clevel+1] && 2*y < nys[clevel+1]) {
+                q_f[((z * nys[clevel+1] + 2*y)*nxs[clevel+1] + 2*x+1)*6 + n] =
+                    interp_q_comp + 0.25 * (Sx - Sy);
+            }
 
-            q_f[((z * nys[clevel+1] + 2*y+1) * nxs[clevel+1] + 2*x) * 6 + n] =
-                interp_q_comp + 0.25 * (-Sx + Sy);
+            if (2*x < nxs[clevel+1] && 2*y+1 < nys[clevel+1]) {
+                q_f[((z * nys[clevel+1] + 2*y+1)*nxs[clevel+1] + 2*x)*6 + n] =
+                    interp_q_comp + 0.25 * (-Sx + Sy);
+            }
 
-            q_f[((z * nys[clevel+1] + 2*y+1) * nxs[clevel+1] + 2*x+1) * 6 + n] =
-                interp_q_comp + 0.25 * (Sx + Sy);
+            if (2*x+1 < nxs[clevel+1] && 2*y+1 < nys[clevel+1]) {
+                q_f[((z * nys[clevel+1]+2*y+1)*nxs[clevel+1] + 2*x+1)*6 + n] =
+                    interp_q_comp + 0.25 * (Sx + Sy);
+            }
 
         }
 
@@ -778,7 +818,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   float dz, float dt, float zmin,
                   float * rho, float gamma,
                   int * matching_indices_d, int ng, int rank, float * qc_comp,
-                  float * old_phi_d, int clevel) {
+                  float * old_phi_d, int clevel, bool boundaries) {
     /**
     Prolong coarse grid data to fine grid
 
@@ -838,7 +878,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qc_comp, q_fd, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices_d, kx_offset, ky_offset, clevel, boundaries);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -851,7 +891,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
 __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
                     int * nxs, int * nys, int * nzs, int ng,
                     int * matching_indices_d,
-                    int kx_offset, int ky_offset, int clevel) {
+                    int kx_offset, int ky_offset, int clevel, bool boundaries) {
     /**
     Reconstruct fine grid variables from compressible variables on coarse grid
 
@@ -877,13 +917,23 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
+    bool prolong;
 
+    if (boundaries) {
+        prolong = ((x < ng) ||
+            ((x > int(round(nxs[clevel+1]*0.5)) - ng) &&
+            (x < int(round(nxs[clevel+1]*0.5)))) ||
+            (y < ng) ||
+            ((y > int(round(nys[clevel+1]*0.5)) - ng) &&
+            (y < int(round(nys[clevel+1]*0.5))))) &&
+            (z < nzs[clevel+1]-1);
+    } else {
+        prolong = (x >= 0) && (x < int(round(nxs[clevel+1]*0.5)+1)) &&
+            (y >= 0) && (y < int(round(nys[clevel+1]*0.5)+1)) &&
+            (z >= 0) && (z < (nzs[clevel]-1));
+    }
 
-    if ((((x > 0) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
-        (((y > 0) && (y < ng)) ||
-        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
-        (z >= 0) && (z < (nzs[clevel]-1))) {
+    if (prolong) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
         int c_y = y + matching_indices_d[clevel*4+2];
@@ -993,28 +1043,44 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
                 0.75 *
                 q_c[((z * nys[clevel] + c_y) * nxs[clevel] + c_x) * 6 + n];
 
-            q_f[(((2*z+2) * nys[clevel+1] + 2*y) * nxs[clevel+1] + 2*x)*6+n] =
+            if (2*z+2 <  nzs[clevel+1] && 2*x < nxs[clevel+1] &&
+                2*y < nys[clevel+1])
+                q_f[(((2*z+2)*nys[clevel+1] + 2*y)*nxs[clevel+1] + 2*x)*6+n] =
                 interp_q_cp - 0.25 * (Sxp + Syp);
 
-            q_f[(((2*z+2) * nys[clevel+1] + 2*y)* nxs[clevel+1] + 2*x+1)*6+n] =
+            if (2*z+2 <  nzs[clevel+1] && 2*x+1 < nxs[clevel+1] &&
+                2*y < nys[clevel+1])
+                q_f[(((2*z+2)*nys[clevel+1]+ 2*y)*nxs[clevel+1] + 2*x+1)*6+n] =
                 interp_q_cp + 0.25 * (Sxp - Syp);
 
-            q_f[(((2*z+2) * nys[clevel+1] + 2*y+1)* nxs[clevel+1] + 2*x)*6+n] =
+            if (2*z+2 <  nzs[clevel+1] && 2*x < nxs[clevel+1] &&
+                2*y+1 < nys[clevel+1])
+                q_f[(((2*z+2)*nys[clevel+1]+2*y+1)* nxs[clevel+1] + 2*x)*6+n] =
                 interp_q_cp + 0.25 * (-Sxp + Syp);
 
-            q_f[(((2*z+2) * nys[clevel+1] + 2*y+1)*nxs[clevel+1]+ 2*x+1)*6+n] =
+            if (2*z+2 <  nzs[clevel+1] && 2*x+1 < nxs[clevel+1] &&
+                2*y+1 < nys[clevel+1])
+                q_f[(((2*z+2)*nys[clevel+1]+2*y+1)*nxs[clevel+1]+ 2*x+1)*6+n] =
                 interp_q_cp + 0.25 * (Sxp + Syp);
 
-            q_f[(((2*z+1)*nys[clevel+1] + 2*y) * nxs[clevel+1] + 2*x) *6 + n] =
+            if (2*z+1 <  nzs[clevel+1] && 2*x < nxs[clevel+1] &&
+                2*y < nys[clevel+1])
+                q_f[(((2*z+1)*nys[clevel+1]+2*y)*nxs[clevel+1] + 2*x) *6 + n] =
                 interp_q_cm - 0.25 * (Sxm + Sym);
 
-            q_f[(((2*z+1)*nys[clevel+1] + 2*y)* nxs[clevel+1] + 2*x+1)*6 + n] =
+            if (2*z+1 <  nzs[clevel+1] && 2*x+1 < nxs[clevel+1] &&
+                2*y < nys[clevel+1])
+                q_f[(((2*z+1)*nys[clevel+1]+2*y)*nxs[clevel+1]+ 2*x+1)*6 + n] =
                 interp_q_cm + 0.25 * (Sxm - Sym);
 
-            q_f[(((2*z+1)*nys[clevel+1] + 2*y+1)*nxs[clevel+1] + 2*x)*6 + n] =
+            if (2*z+1 <  nzs[clevel+1] && 2*x < nxs[clevel+1] &&
+                2*y+1 < nys[clevel+1])
+                q_f[(((2*z+1)*nys[clevel+1]+2*y+1)*nxs[clevel+1]+ 2*x)*6 + n] =
                 interp_q_cm + 0.25 * (-Sxm + Sym);
 
-            q_f[(((2*z+1)*nys[clevel+1] + 2*y+1)*nxs[clevel+1] + 2*x+1)*6+n] =
+            if (2*z+1 <  nzs[clevel+1] && 2*x+1 < nxs[clevel+1] &&
+                2*y+1 < nys[clevel+1])
+                q_f[(((2*z+1)*nys[clevel+1]+2*y+1)*nxs[clevel+1]+ 2*x+1)*6+n] =
                 interp_q_cm + 0.25 * (Sxm + Sym);
         }
 
@@ -1024,7 +1090,7 @@ __global__ void prolong_reconstruct_comp(float * q_f, float * q_c,
 void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
-                  int * matching_indices_d, int ng, int rank, int clevel) {
+                  int * matching_indices_d, int ng, int rank, int clevel, bool boundaries) {
     /**
     Prolong coarse grid data to fine grid
 
@@ -1061,7 +1127,7 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_comp<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel, boundaries);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1074,7 +1140,7 @@ void prolong_comp_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
 __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
                     int * nxs, int * nys, int * nzs, int ng,
                     int * matching_indices_d,
-                    int kx_offset, int ky_offset, int clevel) {
+                    int kx_offset, int ky_offset, int clevel, bool boundaries) {
     /**
     Reconstruct multilayer swe fine grid variables from single layer swe variables on coarse grid
 
@@ -1100,11 +1166,23 @@ __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x > 0) && (x < ng)) ||
-        ((x > int(round(nxs[clevel+1]*0.5)-ng)) && (x < int(round(nxs[clevel+1]*0.5)+1)))) &&
-        (((y > 0) && (y < ng)) ||
-        (y > int(round(nys[clevel+1]*0.5)-ng)) && (y < int(round(nys[clevel+1]*0.5)+1))) &&
-        (z == 0)) {
+    bool prolong;
+
+    if (boundaries) {
+        prolong = ((x < ng) ||
+            ((x > int(round(nxs[clevel+1]*0.5)) - ng) &&
+            (x < int(round(nxs[clevel+1]*0.5)))) ||
+            (y < ng) ||
+            ((y > int(round(nys[clevel+1]*0.5)) - ng) &&
+            (y < int(round(nys[clevel+1]*0.5))))) &&
+            (z == 0);
+    } else {
+        prolong = (x >=0) && (x < int(round(nxs[clevel+1]*0.5)+1)) &&
+            (y >= 0) && (y < int(round(nys[clevel+1]*0.5)+1)) &&
+            (z == 0);
+    }
+
+    if (prolong) {
         // corresponding x and y on the coarse grid
         int c_x = x + matching_indices_d[clevel*4];
         int c_y = y + matching_indices_d[clevel*4+2];
@@ -1149,17 +1227,21 @@ __global__ void prolong_reconstruct_swe_from_swe(float * qf, float * qc,
             float interp_q_comp =
                 qc[(c_y * nxs[clevel] + c_x) * 4 + n];
 
-            qf[(2*y * nxs[clevel+1] + 2*x) * 4 + n] =
-                interp_q_comp - 0.25 * (Sx + Sy);
+            if (2*x < nxs[clevel+1] && 2*y < nys[clevel+1])
+                qf[(2*y * nxs[clevel+1] + 2*x) * 4 + n] =
+                    interp_q_comp - 0.25 * (Sx + Sy);
 
-            qf[(2*y * nxs[clevel+1] + 2*x+1) * 4 + n] =
-                interp_q_comp + 0.25 * (Sx - Sy);
+            if (2*x+1 < nxs[clevel+1] && 2*y < nys[clevel+1])
+                qf[(2*y * nxs[clevel+1] + 2*x+1) * 4 + n] =
+                    interp_q_comp + 0.25 * (Sx - Sy);
 
-            qf[((2*y+1) * nxs[clevel+1] + 2*x) * 4 + n] =
-                interp_q_comp + 0.25 * (-Sx + Sy);
+            if (2*x < nxs[clevel+1] && 2*y+1 < nys[clevel+1])
+                qf[((2*y+1) * nxs[clevel+1] + 2*x) * 4 + n] =
+                    interp_q_comp + 0.25 * (-Sx + Sy);
 
-            qf[((2*y+1) * nxs[clevel+1] + 2*x+1) * 4 + n] =
-                interp_q_comp + 0.25 * (Sx + Sy);
+            if (2*x+1 < nxs[clevel+1] && 2*y+1 < nys[clevel+1])
+                qf[((2*y+1) * nxs[clevel+1] + 2*x+1) * 4 + n] =
+                    interp_q_comp + 0.25 * (Sx + Sy);
         }
     }
 }
@@ -1168,7 +1250,7 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                   int * cumulative_kernels, float * q_cd, float * q_fd,
                   int * nxs, int * nys, int * nzs,
                   int * matching_indices_d, int ng, int rank,
-                  int clevel) {
+                  int clevel, bool boundaries) {
     /**
     Prolong coarse grid single layer swe data to fine multilayer swe grid.
 
@@ -1203,7 +1285,7 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           prolong_reconstruct_swe_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel);
+           prolong_reconstruct_swe_from_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, q_cd, nxs, nys, nzs, ng, matching_indices_d, kx_offset, ky_offset, clevel, boundaries);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1246,10 +1328,8 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
     int z = threadIdx.z;
 
     // note we're not going to restrict the top layer
-    if ((((x > 1) && (x < ng+1)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng+1)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if (((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1)) &&
+        ((y > 1) && (y < int(round(nys[clevel+1]*0.5))-1)) &&
         (z > 1) && (z < nzs[clevel]-2)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1463,10 +1543,8 @@ __global__ void restrict_interpolate_comp(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x > 1) && (x < ng+1)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng+1)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if (((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1)) &&
+        ((y > 1) && (y < int(round(nys[clevel+1]*0.5))-1)) &&
         (z > 0) && (z < nzs[clevel]-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
@@ -1581,10 +1659,8 @@ __global__ void restrict_interpolate_swe_to_swe(float * qf, float * qc,
     int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
     int z = threadIdx.z;
 
-    if ((((x > 1) && (x < ng+1)) ||
-        ((x > int(round(nxs[clevel+1]*0.5))-ng-1) && (x < int(round(nxs[clevel+1]*0.5))-1))) &&
-        (((y > 1) && (y < ng+1)) ||
-        ((y > int(round(nys[clevel+1]*0.5))-ng-1) && (y < int(round(nys[clevel+1]*0.5))-1))) &&
+    if (((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1)) &&
+        ((y > 1) && (y < int(round(nys[clevel+1]*0.5))-1)) &&
         (z==0)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((y + matching_indices[clevel*4+2]) * nxs[clevel] +

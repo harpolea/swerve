@@ -1,6 +1,6 @@
-nx      50
-ny      50
-nt      150
+nx      150
+ny      150
+nt      20
 ng      2
 r       2
 nlevels 2
