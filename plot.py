@@ -166,9 +166,9 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
 
-    swe = True
-    if len(table[:,0,0,0,0] == 4):
+    if len(table[0,0,0,0,:]) == 4:
         # swe
+        swe = True
         D = table[:,:,:,:,0]
         Sx = table[:,:,:,:,1]
         Sy = table[:,:,:,:,2]
@@ -226,7 +226,10 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     X, Y = np.meshgrid(x,y)
 
     fig = plt.figure(figsize=(12,10), facecolor='w', dpi=100)
-    ax = fig.gca(projection='3d')
+    if swe:
+        ax = fig.gca(projection='3d')
+    else:
+        ax = fig.gca()
 
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
@@ -247,9 +250,10 @@ def mesh_plot(input_filename=None, filename=None, start=0):
             #face_colours = DX[i,l,:,:].T
             #if abs(np.amax(face_colours)) > 0.:
                 #face_colours /= abs(np.amax(face_colours))
-
-            ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
-            #plt.plot(Y[:,0], plot_var[i,l,:,15])# facecolors=cm.viridis_r(face_colours))
+            if swe:
+                ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
+            else:
+                plt.plot(Y[:,0], plot_var[i,l,:,15])# facecolors=cm.viridis_r(face_colours))
         plt.savefig(outname)
 
     # close hdf5 file

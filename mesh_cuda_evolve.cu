@@ -1331,30 +1331,32 @@ void cuda_run(float * beta, float * gamma_up,
         }
     }
     // NOTE: Initial conditions for multiscale test
-    /*for (int z = 0; z < nzs[c_in]; z++) {
-        for (int y = 0; y < nys[c_in]; y++) {
-            for (int x = 0; x < nxs[c_in]; x++) {
-                float max_v = 0.3;
-                float r = sqrt((x - 0.5*nxs[c_in])*(x - 0.5*nxs[c_in]) +
-                               (y - 0.5*nys[c_in])*(y - 0.5*nys[c_in]));
-                float v = 0.0;
-                if (r < 0.05 * nxs[c_in]) {
-                    v = 20.0 * max_v * r / nxs[c_in];
-                } else if (r < 0.1 * nxs[c_in]) {
-                    v = 2.0 * 20.0 * max_v * 0.05 - 20.0 * max_v * r / nxs[c_in];
-                }
-                float D = Us_h[c_in][((z*nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in]];
+    if (models[nlevels-1] == 'C') { // there's at least one compressible level
+        for (int z = 0; z < nzs[c_in]; z++) {
+            for (int y = 0; y < nys[c_in]; y++) {
+                for (int x = 0; x < nxs[c_in]; x++) {
+                    float max_v = 0.3;
+                    float r = sqrt((x - 0.5*nxs[c_in])*(x - 0.5*nxs[c_in]) +
+                                   (y - 0.5*nys[c_in])*(y - 0.5*nys[c_in]));
+                    float v = 0.0;
+                    if (r < 0.05 * nxs[c_in]) {
+                        v = 20.0 * max_v * r / nxs[c_in];
+                    } else if (r < 0.1 * nxs[c_in]) {
+                        v = 2.0 * 20.0 * max_v * 0.05 - 20.0 * max_v * r / nxs[c_in];
+                    }
+                    float D = Us_h[c_in][((z*nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in]];
 
-                if (r > 0.0) {
-                    // Sx
-                    Us_h[c_in][((z * nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in] + 1]
-                        = - D * v * (y - 0.5*nys[c_in]) / r;
-                    Us_h[c_in][((z * nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in] + 2]
-                        = D * v * (x - 0.5*nxs[c_in]) / r;
+                    if (r > 0.0) {
+                        // Sx
+                        Us_h[c_in][((z * nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in] + 1]
+                            = - D * v * (y - 0.5*nys[c_in]) / r;
+                        Us_h[c_in][((z * nys[c_in] + y) * nxs[c_in] + x) * vec_dims[c_in] + 2]
+                            = D * v * (x - 0.5*nxs[c_in]) / r;
+                    }
                 }
             }
         }
-    }*/
+    }
 
     hid_t outFile, dset, mem_space, file_space;
 
