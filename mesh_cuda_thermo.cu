@@ -952,7 +952,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
-                                      int coarse_level) {
+                                      int coarse_level,
+                                      float * rhos) {
     /**
     Calculates the SWE state vector from the compressible variables.
 
@@ -1004,6 +1005,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         // find primitive variables
         cons_to_prim_comp_d(q_con, q_prim, gamma);
 
+        rhos[offset] = q_prim[0];
         u = q_prim[1];
         v = q_prim[2];
         w = q_prim[3];
@@ -1032,21 +1034,22 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         (y < nys[coarse_level+1]) &&
         (z < nzs[coarse_level+1])) {
 
-        float * A, * phis, *rhos;
+        float * A, * phis, * rho_column;//, *rhos;
         A = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         phis = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
-        rhos = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
+        rho_column = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         for (int i = 0; i < nzs[coarse_level+1]; i++) {
             phis[i] = q_swe[((i * nys[coarse_level+1] + y) *
                             nxs[coarse_level+1] + x)*4];
-            if (sizeof(rho) > nzs[coarse_level+1]) {
+            rho_column[i] = rhos[(i * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x];
+            //if (sizeof(rho) > nzs[coarse_level+1]) {
                 // rho varies with position
-                rhos[i] = rho[(i * nys[coarse_level+1] + y) *
-                              nxs[coarse_level+1] + x];
-            } else {
+                //rhos[i] = rho[(i * nys[coarse_level+1] + y) *
+                //              nxs[coarse_level+1] + x];
+            //} else {
                 // HACK: rho is only nlayers long - need to find a way to define on fine grid too
-                rhos[i] = rho[0];
-            }
+                //rhos[i] = rho[0];
+            //}
         }
 
         int c_x = round(x*0.5) + matching_indices[coarse_level*4];
@@ -1076,7 +1079,8 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         }
         // TODO; this will not work as this function uses fact p = 0 on
         // surface layer, which is not true for compressible code
-        calc_As(rhos, phis, A, nzs[coarse_level+1], gamma, phi_surface, rho[0]);
+        //calc_As(rhos, phis, A, nzs[coarse_level+1], gamma, phi_surface, rho[0]);
+        calc_As(rho_column, phis, A, nzs[coarse_level+1], gamma, phi_surface, rho[0]);
 
         // NOTE: hack to get this to not nan
         if (nan_check(A[z]) || A[z] < 0.0) A[z] = 1.0;
@@ -1085,7 +1089,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
 
         free(phis);
         free(A);
-        free(rhos);
+        free(rho_column);
 
         //printf("W: %f, ph: %f, tau: %f, eps: %f, A[z]: %f, p: %f, rho: %f\n", W, ph, q_con[4], q_prim[4], A[z], p, q_prim[0]);
     }

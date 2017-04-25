@@ -52,8 +52,10 @@ int main(int argc, char *argv[]) {
 
     Sea sea(input_filename);
 
-    // locate index of first multilayer SWE level - should be 0 or 1
-    int m_in = (sea.models[0] == 'S') ? 1 : 0;
+    // locate index of first multilayer SWE level
+    int m_in = 0;
+    while (sea.models[m_in] != 'M') m_in += 1;
+    //int m_in = (sea.models[0] == 'S') ? 1 : 0;
 
     float * D0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
     float * Sx0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
@@ -83,7 +85,7 @@ int main(int argc, char *argv[]) {
             D0[y * sea.nxs[m_in] + x] = -0.5 *
                 log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
                 //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1 + 0.1 * sin(2.0 * sea.xs[x] * M_PI / (sea.xs[sea.nxs[m_in]-1-sea.ng] - sea.xs[sea.ng]));
+            D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1; //+ 0.00001 * sin(2.0 * sea.xs[x] * M_PI / (sea.xs[sea.nxs[m_in]-1-sea.ng] - sea.xs[sea.ng]));
             D0[(2*sea.nys[m_in] + y) * sea.nxs[m_in] + x] = -0.5 *
                 log(1.0 - 2.0 / sea.zmin);
 

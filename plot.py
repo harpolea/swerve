@@ -6,6 +6,7 @@ from numpy.linalg import inv
 from mpl_toolkits.mplot3d import Axes3D
 import tables as tb
 import subprocess
+from scipy.optimize import brentq
 
 def quick_plot(input_filename=None, filename=None, start=0):
 
@@ -129,18 +130,12 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     for line in inputs:
         name, *dat = line.split()
 
-        #if name == 'nx':
-        #    nx = int(dat[0])
-        #elif name == 'ny':
-        #    ny = int(dat[0])
-        #elif name == 'nt':
-        #    nt = int(dat[0])
-        if name == 'models':
-            models = dat
-        elif name == 'r':
+        if name == 'r':
             r = int(dat[0])
         elif name == 'df':
             df = float(dat[0])
+        elif name == 'gamma':
+            gamma = float(dat[0])
         elif name == 'xmin':
             xmin = float(dat[0])
         elif name == 'xmax':
@@ -170,24 +165,57 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     # read data
     f = tb.open_file(data_filename, 'r')
     table = f.root.SwerveOutput
-    D_2d = table[:,:,:,:,0]
-    Sx = table[:,:,:,:,1]
-    Sy = table[:,:,:,:,2]
-    DX = table[:,:,:,:,3]
 
+    swe = True
+    if len(table[:,0,0,0,0] == 4):
+        # swe
+        D = table[:,:,:,:,0]
+        Sx = table[:,:,:,:,1]
+        Sy = table[:,:,:,:,2]
+        DX = table[:,:,:,:,3]
+    else:
+        swe = False
+        D = table[:,:,:,:,0]
+        Sx = table[:,:,:,:,1]
+        Sy = table[:,:,:,:,2]
+        Sz = table[:,:,:,:,3]
+        tau = table[:,:,:,:,4]
+        DX = table[:,:,:,:,5]
     # HACK
-    nx = len(D_2d[0,0,:,0])
-    ny = len(D_2d[0,0,0,:])
-    nt = len(D_2d[:,0,0,0])
+    nx = len(D[0,0,0,:])
+    ny = len(D[0,0,:,0])
+    nz = len(D[0,:,0,0])
+    nt = len(D[:,0,0,0])
 
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
     dt = 0.1 * min(dx, dy)
     input_file.close()
 
-    v = np.sqrt(Sx**2 + Sy**2)
+    """S = np.sqrt(Sx**2 + Sy**2 + Sz**2)
 
-    heights = Sy#find_height(D_2d, Sx, Sy, gamma_up)
+    def f_of_p(p, tau, D, S):
+        sq = np.sqrt((tau + p + D) * (tau + p + D) - S**2)
+        return (gamma - 1.0) * sq / (tau + p + D) * (sq - p * (tau + p + D) / sq - D) - p
+
+    ps = np.zeros_like(D[:,:,:,:])
+    for t in range(nt):
+        print(t)
+        for z in range(nz):
+            for y in range(ny):
+                for x in range(nx):
+                    #print(tau[t,z,y,x], D[t,z,y,x], S[t,z,y,x])
+                    ps[t,z,y,x] = brentq(f_of_p, 0, tau[t,z,y,x] + D[t,z,y,x] + 1., args=(tau[t,z,y,x], D[t,z,y,x], S[t,z,y,x]))"""
+
+    if swe:
+        plot_var = find_height(D, Sx, Sy, gamma_up)
+        if nz > 1:
+            plot_range = range(1,2)
+        else:
+            plot_range = range(1)
+    else:
+        plot_var = D
+        plot_range = range(2,3)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
@@ -205,7 +233,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
 
-    for i in range(start, len(D_2d[:,0,0,0])-1):
+    for i in range(start, len(D[:,0,0,0])-1):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
 
@@ -214,12 +242,14 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         #ax.set_xlim(0,10)
         #ax.set_ylim(0,10)
         #ax.set_zlim(2.2,2.35)
-        for l in range(2,3):
-            face_colours = DX[i,l,:,:].T
-            if abs(np.amax(face_colours)) > 0.:
-                face_colours /= abs(np.amax(face_colours))
+        for l in plot_range:
+            #print(plot_var[i,l,:,15])
+            #face_colours = DX[i,l,:,:].T
+            #if abs(np.amax(face_colours)) > 0.:
+                #face_colours /= abs(np.amax(face_colours))
 
-            ax.plot_surface(X[:,:],Y[:,:],heights[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#, facecolors=cm.viridis_r(face_colours))
+            ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
+            #plt.plot(Y[:,0], plot_var[i,l,:,15])# facecolors=cm.viridis_r(face_colours))
         plt.savefig(outname)
 
     # close hdf5 file

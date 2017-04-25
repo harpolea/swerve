@@ -28,8 +28,8 @@ Sea::Sea(int _nx, int _ny,
         float _zmin, float _zmax, float * _rho,
         float _Q, float _gamma, float _E_He, float _Cv,
         float _alpha, float * _beta, float * _gamma_down,
-        bool _periodic, bool _burning, int _dprint)
-        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint)
+        bool _periodic, bool _burning, int _dprint, int _print_level)
+        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint), print_level(_print_level)
 {
     /**
     Implement Sea class
@@ -55,14 +55,13 @@ Sea::Sea(int _nx, int _ny,
     dx = xs[1] - xs[0];
     dy = ys[1] - ys[0];
     // NOTE: need to define this in such a way that it is calculated using layer separation on first compressible grid
-    for (int i = 0; i < nlevels; i++) {
-        // first compressible layer
-        if (models[i] == 'C') {
-            dz = (zmax - zmin) / (nzs[i] - 1.0);
-            dz *= pow(r, i);
-            break;
-        }
-    }
+
+    int c_in = nlevels-1;
+    while(models[c_in] == 'C') c_in -= 1;
+
+    dz = (zmax - zmin) / (nzs[c_in] - 1.0);
+    dz *= pow(r, c_in);
+
     float cfl = 0.5; // cfl number?
     dt = cfl * min(dx, min(dy, dz));
 
@@ -230,7 +229,8 @@ Sea::Sea(char * filename)
         } else if (variableName == "zmax") {
             inputFile >> zmax;
         } else if (variableName == "rho") {
-            int m_in = (models[0] == 'S') ? 1 : 0;
+            int m_in = 0;
+            while (models[m_in] != 'M') m_in += 1;
             rho = new float[nzs[m_in]];
             for (int i = 0; i < nzs[m_in]; i++) {
                 inputFile >> rho[i];
@@ -277,6 +277,9 @@ Sea::Sea(char * filename)
             inputFile >> f;
             strncpy(outfile, f.c_str(), sizeof(outfile));
             outfile[sizeof(outfile) - 1] = 0;
+        } else if (variableName == "print_level") {
+            inputFile >> value;
+            print_level = int(value);
         }
     }
 
@@ -305,7 +308,7 @@ Sea::Sea(char * filename)
             exit(EXIT_FAILURE);
         }
     }
-    if (models[0] == 'S') {
+    /*if (models[0] == 'S') {
         if (models[1] != 'M') {
             printf("Single layer SWE level must be followed by multilayer SWE level.");
             exit(EXIT_FAILURE);
@@ -316,11 +319,14 @@ Sea::Sea(char * filename)
                 exit(EXIT_FAILURE);
             }
         }
-    }
-    int m_in = (models[0] == 'M') ? 0 : 1;
+    }*/
+    // locate index of first multilayer SWE level
+    int m_in = 0;
+    while (models[m_in] != 'M') m_in += 1;
+
     for (int i = m_in+1; i < nlevels; i++) {
-        if (models[i] != 'C' && models[i] != 'L') {
-            printf("Multilayer SWE level can only be followed by compressible or Low Mach levels.\n");
+        if (models[i] != 'M' && models[i] != 'C' && models[i] != 'L') {
+            printf("Multilayer SWE level can only be followed by multilayer, compressible or Low Mach levels.\n");
             printf("Models: %c, %c\n", models[m_in], models[m_in+1]);
             exit(EXIT_FAILURE);
         }
@@ -408,6 +414,11 @@ Sea::Sea(char * filename)
         exit(EXIT_FAILURE);
     }
 
+    if (print_level < 0 || print_level > nlevels-1) {
+        printf("Invalid print_level: %d\n", print_level);
+        exit(EXIT_FAILURE);
+    }
+
     inputFile.close();
 
     nxs[0] = nx;
@@ -417,9 +428,6 @@ Sea::Sea(char * filename)
         nxs[i] = int(r * df * nxs[i-1]);
         nys[i] = int(r * df * nys[i-1]);
     }
-
-    // index of first multilayer SWE level
-    //int m_in = (models[0] == 'S') ? 1 : 0;
 
     xs = new float[nxs[m_in]];
     for (int i = 0; i < nxs[m_in]; i++) {
@@ -435,14 +443,11 @@ Sea::Sea(char * filename)
     dy = (ymax - ymin) / (nys[0]-2*ng);
 
     // need to define this in such a way that it is calculated using layer separation on first compressible grid
-    for (int i = 0; i < nlevels; i++) {
-        // first compressible layer
-        if (models[i] == 'C') {
-            dz = (zmax - zmin) / (nzs[i] - 1.0);
-            dz *= pow(r, i);
-            break;
-        }
-    }
+    int c_in = nlevels-1;
+    while(models[c_in] == 'C') c_in -= 1;
+
+    dz = (zmax - zmin) / (nzs[c_in] - 1.0);
+    dz *= pow(r, c_in);
 
     float cfl = 0.5; // cfl number?
     dt = cfl * min(dx, min(dy, dz));
@@ -486,7 +491,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint), print_level(seaToCopy.print_level)
 {
     /**
     copy constructor
@@ -550,19 +555,19 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     */
     // find coarsest multilayer SWE grid
     // TODO: make sure ensure this exists when initialise object
-    int grid_index = (models[0] == 'S') ? 1 : 0;
+    int m_in = 0;
+    while (models[m_in] != 'M') m_in += 1;
 
-    for (int i = 0; i < nxs[grid_index]*nys[grid_index]*nzs[grid_index]; i++) {
+    for (int i = 0; i < nxs[m_in]*nys[m_in]*nzs[m_in]; i++) {
         // it's on a SWE grid so know vec_dim = 4
-        Us[grid_index][i*4] = D0[i];
-        Us[grid_index][i*4+1] = Sx0[i];
-        Us[grid_index][i*4+2] = Sy0[i];
-        Us[grid_index][i*4+3] =
-            0.9 * float(i) / (nxs[grid_index]*nys[grid_index]*nzs[grid_index]);
+        Us[m_in][i*4] = D0[i];
+        Us[m_in][i*4+1] = Sx0[i];
+        Us[m_in][i*4+2] = Sy0[i];
+        Us[m_in][i*4+3] =
+            0.9 * float(i) / (nxs[m_in]*nys[m_in]*nzs[m_in]);
     }
 
-    bcs(Us[grid_index], nxs[grid_index], nys[grid_index], nzs[grid_index],
-        vec_dims[grid_index]);
+    bcs(Us[m_in], nxs[m_in], nys[m_in], nzs[m_in], vec_dims[m_in]);
 
     cout << "Set initial data.\n";
 }
@@ -585,7 +590,8 @@ void Sea::print_inputs() {
     cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ',' << beta[2] << ")\n";
     cout << "gamma_down \t\t((" << gamma_down[0] << ',' << gamma_down[1] << ',' << gamma_down[2] << "),(" << gamma_down[3] << ',' << gamma_down[4] << ',' << gamma_down[5] << "),(" << gamma_down[6] << ',' << gamma_down[7] << ',' << gamma_down[8] << "))\n";
     cout << "burning \t\t" << burning << '\n';
-    cout << "outfile \t\t" << outfile << "\n\n";
+    cout << "outfile \t\t" << outfile << "\n";
+    cout << "print level \t\t" << print_level << "\n\n";
 }
 
 void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
@@ -650,7 +656,8 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
     /**
     run code
     */
-    int m_in = (models[0] == 'S') ? 1 : 0;
+    int m_in = 0;
+    while (models[m_in] != 'M') m_in += 1;
     // hack for now
     float * Qs = new float[nzs[m_in]];
     for (int i = 0; i < nzs[m_in]; i++) {
@@ -661,7 +668,8 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
              nxs, nys, nzs, nlevels, models, vec_dims,
              ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
              periodic, dprint,
-             outfile, comm, *status, rank, size, matching_indices, r);
+             outfile, comm, *status, rank, size, matching_indices, r,
+             print_level);
 
     delete[] Qs;
 }

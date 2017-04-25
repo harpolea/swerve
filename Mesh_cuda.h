@@ -20,7 +20,7 @@ public:
             float zmin, float zmax, float  * _rho,
             float  _Q, float _gamma, float _E_He, float _Cv,
             float _alpha, float * _beta, float * _gamma_down,
-            bool _periodic, bool _burning, int _dprint);
+            bool _periodic, bool _burning, int _dprint, int _print_level);
 
     /** Constructor for Sea class using inputs from file.
 
@@ -120,6 +120,7 @@ private:
     bool burning; /**< Do we include burning? (True)*/
 
     int dprint; /**< number of timesteps between printouts */
+    int print_level; /**< number of the level to be output to file */
 
     char outfile[200]; /**< Name of (hdf5) file to print output data to */
 };

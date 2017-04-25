@@ -607,6 +607,55 @@ void prolong_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 int coarse_level);
 
 /**
+Reconstruct multilayer swe fine grid variables from multilayer swe variables on coarse grid
+
+\param q_f
+  fine grid state vector
+\param q_c
+  coarse grid swe state vector
+\param nxs, nys, nzs
+  grid dimensions
+\param ng
+  number of ghost cells
+\param matching_indices_d
+  position of fine grid wrt coarse grid
+\param kx_offset, ky_offset
+  kernel offsets in the x and y directions
+\param clevel
+index of coarser level
+*/
+__global__ void prolong_reconstruct_multiswe_from_multiswe(float * qf, float * qc,
+                  int * nxs, int * nys, int * nzs, int ng,
+                  int * matching_indices_d,
+                  int kx_offset, int ky_offset, int clevel);
+
+/**
+Prolong coarse grid multilayer swe data to fine multilayer swe grid.
+
+\param kernels, threads, blocks
+    number of kernels, threads and blocks for each process/kernel
+\param cumulative_kernels
+    cumulative number of kernels in mpi processes of r < rank
+\param q_cd, q_fd
+    coarse and fine grids of state vectors
+\param nxs, nys, nzs
+    dimensions of grids
+\param matching_indices_d
+    position of fine grid wrt coarse grid
+\param ng
+    number of ghost cells
+\param rank
+    rank of MPI process
+\param coarse_level
+  index of coarser level
+*/
+void prolong_multiswe_to_multiswe(dim3 * kernels, dim3 * threads, dim3 * blocks,
+                int * cumulative_kernels, float * q_cd, float * q_fd,
+                int * nxs, int * nys, int * nzs,
+                int * matching_indices_d, int ng, int rank,
+                int coarse_level);
+
+/**
 Calculates the SWE state vector from the compressible variables.
 
 \param q
@@ -632,7 +681,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
-                                      int coarse_level);
+                                      int coarse_level, float * rhos);
 
 /**
 Interpolate SWE variables on fine grid to get them on coarse grid.
@@ -792,6 +841,57 @@ void restrict_swe_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                  int * matching_indices,
                  int ng, int rank,
                  int coarse_level);
+
+/**
+Interpolate multilayer SWE variables on fine grid to get them on multilayer SWE coarse grid.
+
+\param qf
+ variables on fine grid
+\param qc
+ coarse grid state vector
+\param nxs, nys, nzs
+ grid dimensions
+\param ng
+ number of ghost cells
+\param matching_indices
+ position of fine grid wrt coarse grid
+\param kx_offset, ky_offset
+ kernel offsets in the x and y directions
+\param clevel
+index of coarser level
+*/
+__global__ void restrict_interpolate_multiswe_to_multiswe(float * qf, float * qc,
+                                  int * nxs, int * nys, int * nzs, int ng,
+                                  int * matching_indices,
+                                  int kx_offset, int ky_offset,
+                                  int clevel);
+
+/**
+Restrict fine multilayer swe grid data to coarse multilayer swe grid.
+
+\param kernels, threads, blocks
+ number of kernels, threads and blocks for each process/kernel
+\param cumulative_kernels
+ cumulative number of kernels in mpi processes of r < rank
+\param q_cd, q_fd
+ coarse and fine grids of state vectors
+\param nxs, nys, nzs
+ dimensions of grids
+\param matching_indices
+ position of fine grid wrt coarse grid
+\param ng
+ number of ghost cells
+\param rank
+ rank of MPI process
+\param coarse_level
+ index of coarser level
+*/
+void restrict_multiswe_to_multiswe(dim3 * kernels, dim3 * threads, dim3 * blocks,
+              int * cumulative_kernels, float * q_cd, float * q_fd,
+              int * nxs, int * nys, int * nzs,
+              int * matching_indices,
+              int ng, int rank,
+              int coarse_level);
 
 /**
 First part of evolution through one timestep using finite volume methods.
@@ -1152,6 +1252,8 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    position of fine grid wrt coarse grid
 \param r
     ratio of grid resolutions
+\param print_level
+    number of the level to be output to file
 */
 void cuda_run(float * beta, float * gamma_up,
          float ** Us_h, float * rho, float * Q,
@@ -1162,7 +1264,7 @@ void cuda_run(float * beta, float * gamma_up,
          float dx, float dy, float dz, float dt, bool burning,
          bool periodic, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices, int r);
+         int * matching_indices, int r, int print_level);
 
 __global__ void test_find_height(bool * passed);
 __global__ void test_find_pot(bool * passed);

@@ -1,11 +1,11 @@
 nx      150
 ny      150
-nt      20
+nt      10
 ng      2
 r       2
-nlevels 2
-models  M C
-nzs     3 5
+nlevels 4
+models  S M M C
+nzs     1 3 3 5
 df      0.3
 xmin    0.0
 xmax    10.0
@@ -25,3 +25,4 @@ periodic t
 burning f
 dprint  1
 outfile ../../Documents/Work/swerve/multiscale_test.h5
+print_level 3
