@@ -208,7 +208,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
                     ps[t,z,y,x] = brentq(f_of_p, 0, tau[t,z,y,x] + D[t,z,y,x] + 1., args=(tau[t,z,y,x], D[t,z,y,x], S[t,z,y,x]))"""
 
     if swe:
-        plot_var = find_height(D, Sx, Sy, gamma_up)
+        plot_var = find_height(D, Sx, Sy, gamma_up)#np.sqrt(Sx**2 + Sy**2)#
         if nz > 1:
             plot_range = range(1,2)
         else:
@@ -245,15 +245,19 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         #ax.set_xlim(0,10)
         #ax.set_ylim(0,10)
         #ax.set_zlim(2.2,2.35)
+
         for l in plot_range:
             #print(plot_var[i,l,:,15])
-            #face_colours = DX[i,l,:,:].T
-            #if abs(np.amax(face_colours)) > 0.:
-                #face_colours /= abs(np.amax(face_colours))
+            face_colours = DX[i,l,:,:].T
+            if abs(np.amax(face_colours)) > 0.:
+                face_colours /= abs(np.amax(face_colours))
+            face_colours = (face_colours - np.amin(face_colours)) / (np.amax(face_colours) - np.amin(face_colours))
             if swe:
-                ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1, cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
+                ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1,
+                cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True,
+                facecolors=cm.viridis_r(face_colours))
             else:
-                plt.plot(Y[:,0], plot_var[i,l,:,15])# facecolors=cm.viridis_r(face_colours))
+                plt.plot(Y[:,0], plot_var[i,l,:,15])#
         plt.savefig(outname)
 
     # close hdf5 file

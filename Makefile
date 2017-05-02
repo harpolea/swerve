@@ -261,7 +261,7 @@ run: build
 	$(EXEC) ./gr_cuda
 
 clean:
-	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_cuda_kernel.cu mesh_link.o
+	rm -f gr_cuda gr_cuda.o gr_cuda_kernel.o testing/flat.o testing/flat SeaCuda.o link.o mesh mesh_cuda.o mesh_cuda_kernel.o mesh_cuda_kernel.cu mesh_link.o run_mesh_cuda.o
 clean_test: clean
 	rm -f testing/flat testing/unit_tests testing/*.o
 
@@ -293,10 +293,13 @@ clobber: clean
 clobber: clean_test
 
 mesh_cuda.o: mesh_cuda.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $< -Xcompiler -fPIC
 
 run_mesh_cuda.o: run_mesh_cuda.cpp
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $< -Xcompiler -fPIC
+
+output.o: output.cpp
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $< -Xcompiler -fPIC
 
 mesh_cuda_kernel.cu: mesh_cuda_grid.cu mesh_cuda_thermo.cu mesh_cuda_evolve.cu mesh_cuda_test.cu
 	cat mesh_cuda_grid.cu > mesh_cuda_kernel.cu
@@ -304,11 +307,11 @@ mesh_cuda_kernel.cu: mesh_cuda_grid.cu mesh_cuda_thermo.cu mesh_cuda_evolve.cu m
 	cat mesh_cuda_evolve.cu >> mesh_cuda_kernel.cu
 	cat mesh_cuda_test.cu >> mesh_cuda_kernel.cu
 
-mesh_cuda_kernel.o: mesh_cuda_kernel.cu
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -g -o $@ -c $<
+mesh_cuda_kernel.o: mesh_cuda_kernel.cu output.o
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -g -o $@ -c $< -Xcompiler -fPIC
 
 mesh_link.o: mesh_cuda_kernel.o
-	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -g -o $@ -dlink $<
+	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS)  -I$(CUDA_PATH)/include -I$(MPI_PATH)/include -lmpi -g -o $@ -dlink $< -Xcompiler -fPIC
 
 mesh: mesh_cuda.o run_mesh_cuda.o mesh_cuda_kernel.o mesh_link.o
-	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -g -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS)
+	$(EXEC) $(HOST_COMPILER) $(INCLUDES) -I$(CUDA_PATH)/include -g -o $@ $+ $(LIBRARIES) -L$(CUDA_PATH)/lib64 -lcudart $(ALL_LDFLAGS) -fPIC

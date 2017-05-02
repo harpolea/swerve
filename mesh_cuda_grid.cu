@@ -12,6 +12,7 @@ TODO: need to interpolate rho onto fine grid at start (probably in mesh construc
 #include <helper_functions.h>
 #include "Mesh_cuda.h"
 #include "mesh_cuda_kernel.h"
+#include "output.h"
 
 using namespace std;
 
