@@ -949,7 +949,7 @@ void cuda_run(float * beta, float * gamma_up,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
-         bool periodic, int dprint, char * filename,
+         bool periodic, int dprint, char * filename, char * param_filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices, int r, int print_level) {
     /**
@@ -1367,10 +1367,12 @@ void cuda_run(float * beta, float * gamma_up,
     hid_t file_space[num_plevels];
     int print_levels[num_plevels] = {print_level};
 
-    if (rank == 0) initialise_hdf5_file(filename, nt, dprint,
-        nzs, nys, nxs, vec_dims, num_plevels,
-        print_levels, Us_h,
-        &outFile, dset, mem_space, file_space);
+    if (rank == 0) {
+        initialise_hdf5_file(filename, nt, dprint,
+            nzs, nys, nxs, vec_dims, num_plevels,
+            print_levels, Us_h, &outFile, dset, mem_space, file_space,
+            param_filename);
+    }
 
     err = cudaGetLastError();
     if (err != cudaSuccess){

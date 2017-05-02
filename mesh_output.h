@@ -8,7 +8,8 @@
 void initialise_hdf5_file(char * filename, int nt, int dprint,
     int * nzs, int * nys, int * nxs, int * vec_dims, int nlevels,
     int * print_levels, float ** Us_h,
-    hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space);
+    hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space,
+    char * param_filename);
 
 void close_hdf5_file(int nlevels, hid_t * mem_space, hid_t outFile);
 
@@ -22,7 +23,8 @@ void print_timestep(int rank, int n_processes, int print_level,
 void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevels,
          int * vec_dims, int ng, int nt, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int t, dim3 * kernels, dim3 * threads, dim3 * blocks);
+         int t, dim3 * kernels, dim3 * threads, dim3 * blocks,
+         char * param_filename);
 
 void mpi_error(int mpi_err);
 

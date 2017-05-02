@@ -486,6 +486,9 @@ Sea::Sea(char * filename)
             matching_indices[i*4+1] - matching_indices[i*4] << ',' << nxs[i+1] << '\n';
 
     }
+    
+    strncpy(paramfile, filename, sizeof(paramfile));
+
     cout << "Made a Sea.\n";
 }
 
@@ -668,7 +671,7 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
              nxs, nys, nzs, nlevels, models, vec_dims,
              ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
              periodic, dprint,
-             outfile, comm, *status, rank, size, matching_indices, r,
+             outfile, paramfile, comm, *status, rank, size, matching_indices, r,
              print_level);
 
     delete[] Qs;

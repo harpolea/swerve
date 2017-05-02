@@ -25,7 +25,8 @@ using namespace std;
 void initialise_hdf5_file(char * filename, int nt, int dprint,
     int * nzs, int * nys, int * nxs, int * vec_dims, int nlevels,
     int * print_levels, float ** Us_h,
-    hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space) {
+    hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space,
+    char * param_filename) {
     /*
     Intialise the HDF5 file.
     */
@@ -76,6 +77,38 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         // close file dataspace
         H5Sclose(file_space[i]);
     }
+
+    // output parameter file as a long string
+    ifstream inputFile(param_filename);
+    string contents((istreambuf_iterator<char>(inputFile)), istreambuf_iterator<char>());
+    // create dataspace
+    int ndims = 1;
+    hsize_t dims[] = {1};
+    hid_t param_file_space = H5Screate_simple(ndims, dims, NULL);
+
+    // create dataset
+    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
+    hid_t param_dset = H5Dcreate(*outFile,
+                      "Input_parameters", H5T_NATIVE_FLOAT,
+                      param_file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
+
+    H5Pclose(plist);
+
+    // make a memory dataspace
+    hid_t param_mem_space = H5Screate_simple(ndims, dims, NULL);
+
+    // select a hyperslab
+    param_file_space = H5Dget_space(param_dset);
+    hsize_t start[] = {0};
+    hsize_t hcount[] = {1};
+    H5Sselect_hyperslab(param_file_space, H5S_SELECT_SET, start, NULL,
+                        hcount, NULL);
+    // write to dataset
+    H5Dwrite(param_dset, H5T_NATIVE_FLOAT, param_mem_space, param_file_space,
+             H5P_DEFAULT, contents.c_str());
+    // close file dataspace
+    H5Sclose(param_file_space);
+    H5Sclose(param_mem_space);
 }
 
 void close_hdf5_file(int nlevels, hid_t * mem_space, hid_t outFile) {
@@ -178,49 +211,14 @@ void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevel
         print_levels[i] = i;
     }
 
-    initialise_hdf5_file((char*)checkpoint_filename.c_str(), nt, dprint, nzs, nys, nxs, vec_dims, nlevels, print_levels, Us_h, &outFile, dset, mem_space, file_space);
+    initialise_hdf5_file((char*)checkpoint_filename.c_str(), nt, dprint, nzs, nys, nxs, vec_dims, nlevels, print_levels, Us_h, &outFile, dset, mem_space, file_space, param_filename);
 
     for (int i = 0; i < nlevels; i++) {
 
-        print_timestep(rank, n_processes, i,
-                            nxs, nys, nzs, vec_dims, ng,
-                            t, comm, status,
-                            kernels, threads, blocks,
-                            Us_h,
-                            dset[i], mem_space[i], file_space[i], dprint);
+        print_timestep(rank, n_processes, i, nxs, nys, nzs, vec_dims, ng,
+                       t, comm, status, kernels, threads, blocks, Us_h,
+                       dset[i], mem_space[i], file_space[i], dprint);
     }
-
-    // output parameter file as a long string
-    ifstream inputFile(param_filename);
-    string contents((istreambuf_iterator<char>(inputFile)), istreambuf_iterator<char>());
-    // create dataspace
-    int ndims = 1;
-    hsize_t dims[] = {1};
-    hid_t param_file_space = H5Screate_simple(ndims, dims, NULL);
-
-    // create dataset
-    hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-    hid_t param_dset = H5Dcreate(outFile,
-                      "Input_parameters", H5T_NATIVE_FLOAT,
-                      param_file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
-
-    H5Pclose(plist);
-
-    // make a memory dataspace
-    hid_t param_mem_space = H5Screate_simple(ndims, dims, NULL);
-
-    // select a hyperslab
-    param_file_space = H5Dget_space(param_dset);
-    hsize_t start[] = {0};
-    hsize_t hcount[] = {1};
-    H5Sselect_hyperslab(param_file_space, H5S_SELECT_SET, start, NULL,
-                        hcount, NULL);
-    // write to dataset
-    H5Dwrite(param_dset, H5T_NATIVE_FLOAT, param_mem_space, param_file_space,
-             H5P_DEFAULT, contents.c_str());
-    // close file dataspace
-    H5Sclose(param_file_space);
-    H5Sclose(param_mem_space);
 
     close_hdf5_file(nlevels, mem_space, outFile);
 }

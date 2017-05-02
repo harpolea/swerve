@@ -123,6 +123,7 @@ private:
     int print_level; /**< number of the level to be output to file */
 
     char outfile[200]; /**< Name of (hdf5) file to print output data to */
+    char paramfile[200]; /**< Name of parameter file */
 };
 
 #endif

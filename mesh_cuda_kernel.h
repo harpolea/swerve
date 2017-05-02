@@ -1242,6 +1242,8 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    number of timesteps between each printout
 \param filename
    name of file to which output is printed
+\param filename
+  name of parameter file
 \param comm
    MPI communicator
 \param status
@@ -1262,7 +1264,7 @@ void cuda_run(float * beta, float * gamma_up,
          int nt, float alpha, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
-         bool periodic, int dprint, char * filename,
+         bool periodic, int dprint, char * filename, char * param_filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int * matching_indices, int r, int print_level);
 
