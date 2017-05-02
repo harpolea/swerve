@@ -1,5 +1,5 @@
-#ifndef OUTPUT_H
-#define OUTPUT_H
+#ifndef MESH_OUTPUT_H
+#define MESH_OUTPUT_H
 
 #include "mpi.h"
 #include "cuda_runtime.h"
@@ -19,10 +19,12 @@ void print_timestep(int rank, int n_processes, int print_level,
                     float ** Us_h,
                     hid_t dset, hid_t mem_space, hid_t file_space, int dprint);
 
-void checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevels,
+void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevels,
          int * vec_dims, int ng, int nt, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int t, dim3 * kernels, dim3 * threads, dim3 * blocks);
+
+void mpi_error(int mpi_err);
 
 
 #endif

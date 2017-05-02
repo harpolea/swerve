@@ -1359,48 +1359,18 @@ void cuda_run(float * beta, float * gamma_up,
         }
     }
 
-    hid_t outFile, dset, mem_space, file_space;
+    hid_t outFile;
+    // HACK: whilst there is only one print level
+    const int num_plevels = 1;
+    hid_t dset[num_plevels];
+    hid_t mem_space[num_plevels];
+    hid_t file_space[num_plevels];
+    int print_levels[num_plevels] = {print_level};
 
-    if (rank == 0) {
-        // create file
-        outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
-                            H5P_DEFAULT);
-
-        // create dataspace
-        int ndims = 5;
-        hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nzs[print_level]),
-                          (nys[print_level]), hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
-        file_space = H5Screate_simple(ndims, dims, NULL);
-
-        hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
-        H5Pset_layout(plist, H5D_CHUNKED);
-        hsize_t chunk_dims[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                                hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
-        H5Pset_chunk(plist, ndims, chunk_dims);
-
-        // create dataset
-        dset = H5Dcreate(outFile, "SwerveOutput", H5T_NATIVE_FLOAT,
-                         file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
-
-        H5Pclose(plist);
-
-        // make a memory dataspace
-        mem_space = H5Screate_simple(ndims, chunk_dims, NULL);
-
-        // select a hyperslab
-        file_space = H5Dget_space(dset);
-        hsize_t start[] = {0, 0, 0, 0, 0};
-        hsize_t hcount[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                            hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
-        H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start, NULL,
-                            hcount, NULL);
-        // write to dataset
-        printf("Printing t = %i\n", 0);
-        H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                 H5P_DEFAULT, Us_h[print_level]);
-        // close file dataspace
-        H5Sclose(file_space);
-    }
+    if (rank == 0) initialise_hdf5_file(filename, nt, dprint,
+        nzs, nys, nxs, vec_dims, num_plevels,
+        print_levels, Us_h,
+        &outFile, dset, mem_space, file_space);
 
     err = cudaGetLastError();
     if (err != cudaSuccess){
@@ -1415,9 +1385,6 @@ void cuda_run(float * beta, float * gamma_up,
     for (int t = 0; t < nt; t++) {
 
         cout << "Evolving t = " << t << '\n';
-
-        int ky_offset =
-            (kernels[0].y * blocks[0].y * threads[0].y - 2*ng) * rank;
 
         // first prolong data down from coarse grids to fine grids
         /*for (int i = 0; i < (nlevels-1); i++) {
@@ -1850,68 +1817,18 @@ void cuda_run(float * beta, float * gamma_up,
 
         }
 
-        int mpi_err;
-
         if ((t+1) % dprint == 0) {
-            if (rank == 0) {
-                printf("Printing t = %i\n", t+1);
-
-                if (n_processes > 1) { // only do MPI stuff if needed
-                    float * buf =
-                        new float[nxs[print_level]*nys[print_level]*nzs[print_level]*vec_dims[print_level]];
-                    int tag = 0;
-                    for (int source = 1; source < n_processes; source++) {
-                        mpi_err = MPI_Recv(buf,
-                            nxs[print_level]*nys[print_level]*nzs[print_level]*vec_dims[print_level], MPI_FLOAT,
-                            source, tag, comm, &status);
-
-                        check_mpi_error(mpi_err);
-
-                        // copy data back to grid
-                        ky_offset = (kernels[0].y * blocks[0].y *
-                                     threads[0].y - 2*ng) * rank;
-                        // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
-                        for (int z = 0; z < nzs[print_level]; z++) {
-                            for (int y = ky_offset; y < nys[print_level]; y++) {
-                                for (int x = 0; x < nxs[print_level]; x++) {
-                                    for (int i = 0; i < vec_dims[print_level]; i++) {
-                                        Us_h[print_level][((z*nys[print_level]+y)*nxs[print_level]+x)*vec_dims[print_level]+i] =
-                                            buf[((z*nys[print_level]+y)*nxs[print_level]+x)*vec_dims[print_level]+i];
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    delete[] buf;
-                }
-
-                // receive data from other processes and copy to grid
-
-                // select a hyperslab
-                file_space = H5Dget_space(dset);
-                hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-                hsize_t hcount[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                                    hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
-                H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start,
-                                    NULL, hcount, NULL);
-                // write to dataset
-                H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                         H5P_DEFAULT, Us_h[print_level]);
-                // close file dataspae
-                H5Sclose(file_space);
-            } else { // send data to rank 0
-                int tag = 0;
-                mpi_err = MPI_Ssend(Us_h[print_level],
-                                    nys[print_level]*nxs[print_level]*nzs[print_level]*vec_dims[print_level],
-                                    MPI_FLOAT, 0, tag, comm);
-                check_mpi_error(mpi_err);
+            for (int i = 0; i < num_plevels; i++) {
+                print_timestep(rank, n_processes, print_levels[i],
+                               nxs, nys, nzs, vec_dims, ng, t, comm, status,
+                               kernels, threads, blocks, Us_h,
+                               dset[i], mem_space[i], file_space[i], dprint);
             }
         }
     }
 
     if (rank == 0) {
-        H5Sclose(mem_space);
-        H5Fclose(outFile);
+        close_hdf5_file(num_plevels, mem_space, outFile);
     }
 
     // delete some stuff

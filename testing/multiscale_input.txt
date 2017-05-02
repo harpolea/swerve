@@ -25,4 +25,4 @@ periodic t
 burning f
 dprint  1
 outfile ../../Documents/Work/swerve/multiscale_test.h5
-print_level 0
+print_level 1
