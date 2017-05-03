@@ -7,6 +7,7 @@ from mpl_toolkits.mplot3d import Axes3D
 import tables as tb
 import subprocess
 from scipy.optimize import brentq
+import sys
 
 def quick_plot(input_filename=None, filename=None, start=0):
 
@@ -46,7 +47,6 @@ def quick_plot(input_filename=None, filename=None, start=0):
         elif name == 'dprint':
             dprint = int(dat[0])
 
-
     dx = (xmax - xmin) / (nx-2)
     dy = (ymax - ymin) / (ny-2)
     dt = 0.1 * min(dx, dy)
@@ -60,7 +60,6 @@ def quick_plot(input_filename=None, filename=None, start=0):
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
     #print(D_2d[:,:,2:-2,2:-2])
-
 
     x = np.linspace(0, xmax, num=nx-4, endpoint=False)
     y = np.linspace(0, ymax, num=ny-4, endpoint=False)
@@ -159,11 +158,6 @@ def mesh_plot(input_filename=None, filename=None, start=0):
         elif name == 'print_levels':
             print_levels = np.array([int(i) for i in dat])
 
-    #if (models[0] == 'S'):
-        # coarsest layer is single layer SWE - adjust nx, ny to get multilayer dimensions
-    #    nx *= r * df
-    #    ny *= r * df
-
     # read data
     f = tb.open_file(data_filename, 'r')
     dataset = "/level_" + str(print_levels[0])
@@ -240,8 +234,6 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     location = '/'.join(filename.split('/')[:-1])
     name = filename.split('/')[-1]
 
-    #print('shapes: X {}, Y {}, D2d {}'.format(np.shape(X), np.shape(Y), np.shape(D_2d[0,2:-2,2:-2].T)))
-
     for i in range(start, len(D[:,0,0,0])-1):
         #if i % 10 == 0:
         print('Printing {}'.format(i))
@@ -269,7 +261,12 @@ def mesh_plot(input_filename=None, filename=None, start=0):
     # close hdf5 file
     f.close()
 
-
 if __name__ == '__main__':
-    mesh_plot(input_filename="testing/multiscale_input.txt", filename="../../Documents/Work/swerve/multiscale_test")
-    #mesh_plot(filename="../../Documents/Work/swerve/mesh_test")
+    if len(sys.argv) > 1:
+        input_filename = sys.argv[1]
+        filename = sys.argv[2]
+    else:
+        input_filename="testing/multiscale_input.txt"
+        filename="../../Documents/Work/swerve/multiscale_test"
+
+    mesh_plot(input_filename=input_filename, filename=filename)

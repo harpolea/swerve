@@ -41,5 +41,7 @@ The input file is a text file which provides swerve with the system parameters. 
     :``burning``: Do we include burning reactions (``t``) or not (``f``)
     :``dprint``:  Number of timesteps between outputting data to file
     :``outfile``: Path to output file (must be HDF5)
+    :``n_print_levels``: Number of levels to be printed to file
+    :``print_levels``: List of indices of levels to be printed to file
 
 The specific form of the initial data is described in the ``main`` function of the file ``run_mesh_cuda.cpp``. The initial state vector must be provided for all points in the coarsest multilayer shallow water grid.

@@ -708,7 +708,8 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size,
              nxs, nys, nzs, nlevels, models, vec_dims,
              ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
              periodic, dprint,
-             outfile, paramfile, comm, *status, rank, size, matching_indices, r,
+             outfile, paramfile, comm, *status, rank, size,
+             matching_indices, r,
              n_print_levels, print_levels, tstart);
 
     delete[] Qs;

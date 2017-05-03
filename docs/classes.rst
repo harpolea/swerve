@@ -16,3 +16,8 @@ run_mesh_cuda.cpp
 =================
 
 .. doxygenfile:: run_mesh_cuda.cpp
+
+mesh_output.h
+=================
+
+.. doxygenfile:: mesh_output.h
