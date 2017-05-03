@@ -1,8 +1,11 @@
 #ifndef MESH_CUDA_H
 #define MESH_CUDA_H
 
+#include <sstream>
 #include "cuda_runtime.h"
 #include "mpi.h"
+
+using namespace std;
 
 /** A class that manages the simulation.
 
@@ -28,6 +31,9 @@ public:
 
     \param filename name of input file
     */
+
+    Sea(stringstream &inputFile, char * filename);
+
     Sea(char * filename);
 
     Sea(const Sea &); /**<Copy constructor */
@@ -69,8 +75,9 @@ public:
     \param status MPI status flag
     \param rank MPI process rank number
     \param size Total number of MPI processes
+    \param tstart Start time
     */
-    void run(MPI_Comm comm, MPI_Status * status, int rank, int size);
+    void run(MPI_Comm comm, MPI_Status * status, int rank, int size, int tstart);
 
     ~Sea(); /**<Deconstructor. Clean up member arrays. */
 
@@ -94,6 +101,8 @@ public:
     float ** Us; /**< Array of pointers to grids.*/
 
 private:
+
+    void init_sea(stringstream &inputFile, char * filename);
 
     int nt; /**< Total number of timesteps to run simulation for */
     int r; /**< refinement ratio */
@@ -120,7 +129,8 @@ private:
     bool burning; /**< Do we include burning? (True)*/
 
     int dprint; /**< number of timesteps between printouts */
-    int print_level; /**< number of the level to be output to file */
+    int n_print_levels; /**< number of the level to be output to file */
+    int * print_levels; /**< number of the level to be output to file */
 
     char outfile[200]; /**< Name of (hdf5) file to print output data to */
     char paramfile[200]; /**< Name of parameter file */

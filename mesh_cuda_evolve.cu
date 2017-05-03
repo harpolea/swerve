@@ -951,7 +951,8 @@ void cuda_run(float * beta, float * gamma_up,
          float dx, float dy, float dz, float dt, bool burning,
          bool periodic, int dprint, char * filename, char * param_filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices, int r, int print_level) {
+         int * matching_indices, int r, int n_print_levels,
+         int * print_levels, int tstart) {
     /**
     Evolve system through nt timesteps, saving data to filename every dprint timesteps.
 
@@ -1206,153 +1207,155 @@ void cuda_run(float * beta, float * gamma_up,
 
     // if first layer is single layer SWE, need to restrict multilayer SWE
     // data (where initial data has been defined) to this
-    for (int i = m_in; i > 0; i--) {
-        // TODO: check if need to do BCS stuff here
-        //cudaMemcpy(U_d, Us_h[i-1],
-        //    nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-        //    cudaMemcpyHostToDevice);
-        cudaMemcpy(Up_d, Us_h[i],
-            nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-            cudaMemcpyHostToDevice);
-        restrict_swe_to_swe(kernels, threads, blocks,
-                  cumulative_kernels,
-                  U_d, Up_d, nxs_d, nys_d, nzs_d,
-                  matching_indices_d,
-                  ng, rank, i-1);
-        cudaMemcpy(Us_h[i-1], U_d,
-              nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
-              cudaMemcpyDeviceToHost);
-
-        // enforce boundaries
-        for (int x = 0; x < matching_indices[(i-1)*4]+ng; x++) {
-            for (int y = 0; y < nys[i-1]; y++) {
-                for (int n = 0; n < 4; n++) {
-                    Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][(y * nxs[i-1] + matching_indices[(i-1)*4]+ng) * 4 + n];
-                }
-            }
-        }
-        for (int x = matching_indices[(i-1)*4+1]; x < nxs[i-1]; x++) {
-            for (int y = 0; y < nys[i-1]; y++) {
-                for (int n = 0; n < 4; n++) {
-                    Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][(y * nxs[i-1] + matching_indices[(i-1)*4+1]-ng) * 4 + n];
-                }
-            }
-        }
-        for (int x = 0; x < nxs[i-1]; x++) {
-            for (int y = 0; y < matching_indices[(i-1)*4+2]+ng; y++) {
-                for (int n = 0; n < 4; n++) {
-                    Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][((matching_indices[(i-1)*4+2]+ng) * nxs[i-1] + x) * 4 + n];
-                }
-            }
-        }
-        for (int x = 0; x < nxs[i-1]; x++) {
-            for (int y = matching_indices[(i-1)*4+3]; y < nys[i-1]; y++) {
-                for (int n = 0; n < 4; n++) {
-                    Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][((matching_indices[(i-1)*4+3]-ng) * nxs[i-1] + x) * 4 + n];
-                }
-            }
-        }
-    }
-
-    // prolong data from coarsest swe grid to finer grids
-    for (int i = m_in; i < (nlevels-1); i++) {
-        cudaMemcpy(U_d, Us_h[i],
+    if (tstart == 0) {
+        for (int i = m_in; i > 0; i--) {
+            // TODO: check if need to do BCS stuff here
+            //cudaMemcpy(U_d, Us_h[i-1],
+            //    nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+            //    cudaMemcpyHostToDevice);
+            cudaMemcpy(Up_d, Us_h[i],
                 nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
                 cudaMemcpyHostToDevice);
-        cudaMemcpy(Up_d, Us_h[i+1],
-                nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                cudaMemcpyHostToDevice);
+            restrict_swe_to_swe(kernels, threads, blocks,
+                      cumulative_kernels,
+                      U_d, Up_d, nxs_d, nys_d, nzs_d,
+                      matching_indices_d,
+                      ng, rank, i-1);
+            cudaMemcpy(Us_h[i-1], U_d,
+                  nxs[i-1]*nys[i-1]*nzs[i-1]*vec_dims[i-1]*sizeof(float),
+                  cudaMemcpyDeviceToHost);
 
-        // select prolongation algorithm
-        if (models[i] == 'M' && models[i+1] == 'C') {
-            // multilayer SWE to compressible
-            for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
-                pphi[j] = Us_h[i][j*4];
-            }
-            cudaMemcpy(old_phi_d, pphi,
-                    nxs[i]*nys[i]*nzs[i]*sizeof(float),
-                    cudaMemcpyHostToDevice);
-            prolong_swe_to_comp(kernels, threads, blocks,
-                         cumulative_kernels,
-                         U_d, Up_d, nxs_d, nys_d, nzs_d,
-                         dz/pow(r, i), dt/pow(r, i), zmin,
-                         rho_d, gamma, matching_indices_d, ng, rank,
-                         q_comp_d, old_phi_d, i, false);
-        } else if (models[i] == 'M' && models[i+1] == 'M') {
-            // multilayer SWE to multilayer SWE
-            prolong_multiswe_to_multiswe(kernels, threads, blocks,
-                         cumulative_kernels,
-                         U_d, Up_d, nxs_d, nys_d, nzs_d,
-                         matching_indices_d, ng, rank, i, false);
-        } else if (models[i] == 'C' && models[i+1] == 'C') {
-            // compressible to compressible
-            prolong_comp_to_comp(kernels, threads, blocks,
-                         cumulative_kernels,
-                         U_d, Up_d, nxs_d, nys_d, nzs_d,
-                         matching_indices_d, ng, rank, i, false);
-        } else if (models[i] == 'S' && (models[i+1] == 'S' || models[i+1] == 'M')) {
-            // single layer SWE to multilayer SWE
-            prolong_swe_to_swe(kernels, threads, blocks,
-                         cumulative_kernels,
-                         U_d, Up_d, nxs_d, nys_d, nzs_d,
-                         matching_indices_d, ng, rank, i, false);
-        }
-
-        err = cudaGetLastError();
-        if (err != cudaSuccess){
-            cout << "After prolonging\n";
-            printf("Error: %s\n", cudaGetErrorString(err));
-        }
-
-        cudaMemcpy(Us_h[i+1], Up_d,
-                nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                cudaMemcpyDeviceToHost);
-
-        err = cudaGetLastError();
-        if (err != cudaSuccess){
-            cout << "After copying\n";
-            printf("Error: %s\n", cudaGetErrorString(err));
-        }
-
-        bool do_z = true;
-        if (models[i+1] == 'M' || models[i+1] == 'S') {
-            do_z = false;
-        }
-
-        // enforce boundaries
-        if (n_processes == 1) {
-            bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                    ng, vec_dims[i+1], false, do_z);
-        } else {
-            int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
-            bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                    vec_dims[i+1], ng, comm, status, rank,
-                    n_processes, y_size, do_z, false);
-        }
-    }
-    // NOTE: Initial conditions for multiscale test
-    if (models[nlevels-1] == 'C') { // there's at least one compressible level
-        for (int z = 0; z < nzs[nlevels-1]; z++) {
-            for (int y = 0; y < nys[nlevels-1]; y++) {
-                for (int x = 0; x < nxs[nlevels-1]; x++) {
-                    float max_v = 0.3;
-                    float r = sqrt(
-                        (x - 0.5*nxs[nlevels-1])*(x - 0.5*nxs[nlevels-1]) +
-                        (y - 0.5*nys[nlevels-1])*(y - 0.5*nys[nlevels-1]));
-                    float v = 0.0;
-                    if (r < 0.05 * nxs[nlevels-1]) {
-                        v = 20.0 * max_v * r / nxs[nlevels-1];
-                    } else if (r < 0.1 * nxs[nlevels-1]) {
-                        v = 2.0 * 20.0 * max_v * 0.05 - 20.0 * max_v * r / nxs[nlevels-1];
+            // enforce boundaries
+            for (int x = 0; x < matching_indices[(i-1)*4]+ng; x++) {
+                for (int y = 0; y < nys[i-1]; y++) {
+                    for (int n = 0; n < 4; n++) {
+                        Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][(y * nxs[i-1] + matching_indices[(i-1)*4]+ng) * 4 + n];
                     }
-                    float D = Us_h[nlevels-1][((z*nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1]];
+                }
+            }
+            for (int x = matching_indices[(i-1)*4+1]; x < nxs[i-1]; x++) {
+                for (int y = 0; y < nys[i-1]; y++) {
+                    for (int n = 0; n < 4; n++) {
+                        Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][(y * nxs[i-1] + matching_indices[(i-1)*4+1]-ng) * 4 + n];
+                    }
+                }
+            }
+            for (int x = 0; x < nxs[i-1]; x++) {
+                for (int y = 0; y < matching_indices[(i-1)*4+2]+ng; y++) {
+                    for (int n = 0; n < 4; n++) {
+                        Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][((matching_indices[(i-1)*4+2]+ng) * nxs[i-1] + x) * 4 + n];
+                    }
+                }
+            }
+            for (int x = 0; x < nxs[i-1]; x++) {
+                for (int y = matching_indices[(i-1)*4+3]; y < nys[i-1]; y++) {
+                    for (int n = 0; n < 4; n++) {
+                        Us_h[i-1][(y * nxs[i-1] + x) * 4 + n] = Us_h[i-1][((matching_indices[(i-1)*4+3]-ng) * nxs[i-1] + x) * 4 + n];
+                    }
+                }
+            }
+        }
 
-                    if (r > 0.0) {
-                        // Sx
-                        Us_h[nlevels-1][((z * nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1] + 1]
-                            = - D * v * (y - 0.5*nys[nlevels-1]) / r;
-                        Us_h[nlevels-1][((z * nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1] + 2]
-                            = D * v * (x - 0.5*nxs[nlevels-1]) / r;
+        // prolong data from coarsest swe grid to finer grids
+        for (int i = m_in; i < (nlevels-1); i++) {
+            cudaMemcpy(U_d, Us_h[i],
+                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+            cudaMemcpy(Up_d, Us_h[i+1],
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyHostToDevice);
+
+            // select prolongation algorithm
+            if (models[i] == 'M' && models[i+1] == 'C') {
+                // multilayer SWE to compressible
+                for (int j = 0; j < nxs[i]*nys[i]*nzs[i]; j++) {
+                    pphi[j] = Us_h[i][j*4];
+                }
+                cudaMemcpy(old_phi_d, pphi,
+                        nxs[i]*nys[i]*nzs[i]*sizeof(float),
+                        cudaMemcpyHostToDevice);
+                prolong_swe_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             dz/pow(r, i), dt/pow(r, i), zmin,
+                             rho_d, gamma, matching_indices_d, ng, rank,
+                             q_comp_d, old_phi_d, i, false);
+            } else if (models[i] == 'M' && models[i+1] == 'M') {
+                // multilayer SWE to multilayer SWE
+                prolong_multiswe_to_multiswe(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             matching_indices_d, ng, rank, i, false);
+            } else if (models[i] == 'C' && models[i+1] == 'C') {
+                // compressible to compressible
+                prolong_comp_to_comp(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             matching_indices_d, ng, rank, i, false);
+            } else if (models[i] == 'S' && (models[i+1] == 'S' || models[i+1] == 'M')) {
+                // single layer SWE to multilayer SWE
+                prolong_swe_to_swe(kernels, threads, blocks,
+                             cumulative_kernels,
+                             U_d, Up_d, nxs_d, nys_d, nzs_d,
+                             matching_indices_d, ng, rank, i, false);
+            }
+
+            err = cudaGetLastError();
+            if (err != cudaSuccess){
+                cout << "After prolonging\n";
+                printf("Error: %s\n", cudaGetErrorString(err));
+            }
+
+            cudaMemcpy(Us_h[i+1], Up_d,
+                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
+                    cudaMemcpyDeviceToHost);
+
+            err = cudaGetLastError();
+            if (err != cudaSuccess){
+                cout << "After copying\n";
+                printf("Error: %s\n", cudaGetErrorString(err));
+            }
+
+            bool do_z = true;
+            if (models[i+1] == 'M' || models[i+1] == 'S') {
+                do_z = false;
+            }
+
+            // enforce boundaries
+            if (n_processes == 1) {
+                bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                        ng, vec_dims[i+1], false, do_z);
+            } else {
+                int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
+                bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
+                        vec_dims[i+1], ng, comm, status, rank,
+                        n_processes, y_size, do_z, false);
+            }
+        }
+        // NOTE: Initial conditions for multiscale test
+        if (models[nlevels-1] == 'C') { // there's at least one compressible level
+            for (int z = 0; z < nzs[nlevels-1]; z++) {
+                for (int y = 0; y < nys[nlevels-1]; y++) {
+                    for (int x = 0; x < nxs[nlevels-1]; x++) {
+                        float max_v = 0.3;
+                        float r = sqrt(
+                            (x - 0.5*nxs[nlevels-1])*(x - 0.5*nxs[nlevels-1]) +
+                            (y - 0.5*nys[nlevels-1])*(y - 0.5*nys[nlevels-1]));
+                        float v = 0.0;
+                        if (r < 0.05 * nxs[nlevels-1]) {
+                            v = 20.0 * max_v * r / nxs[nlevels-1];
+                        } else if (r < 0.1 * nxs[nlevels-1]) {
+                            v = 2.0 * 20.0 * max_v * 0.05 - 20.0 * max_v * r / nxs[nlevels-1];
+                        }
+                        float D = Us_h[nlevels-1][((z*nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1]];
+
+                        if (r > 0.0) {
+                            // Sx
+                            Us_h[nlevels-1][((z * nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1] + 1]
+                                = - D * v * (y - 0.5*nys[nlevels-1]) / r;
+                            Us_h[nlevels-1][((z * nys[nlevels-1] + y) * nxs[nlevels-1] + x) * vec_dims[nlevels-1] + 2]
+                                = D * v * (x - 0.5*nxs[nlevels-1]) / r;
+                        }
                     }
                 }
             }
@@ -1360,16 +1363,13 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     hid_t outFile;
-    // HACK: whilst there is only one print level
-    const int num_plevels = 1;
-    hid_t dset[num_plevels];
-    hid_t mem_space[num_plevels];
-    hid_t file_space[num_plevels];
-    int print_levels[num_plevels] = {print_level};
+    hid_t * dset = new hid_t[n_print_levels];
+    hid_t * mem_space = new hid_t[n_print_levels];
+    hid_t * file_space = new hid_t[n_print_levels];
 
     if (rank == 0) {
         initialise_hdf5_file(filename, nt, dprint,
-            nzs, nys, nxs, vec_dims, num_plevels,
+            nzs, nys, nxs, vec_dims, n_print_levels,
             print_levels, Us_h, &outFile, dset, mem_space, file_space,
             param_filename);
     }
@@ -1384,7 +1384,7 @@ void cuda_run(float * beta, float * gamma_up,
     cudaMalloc((void**)&rhos_d, largest_comp_grid*sizeof(float));
 
     // main loop
-    for (int t = 0; t < nt; t++) {
+    for (int t = tstart; t < nt; t++) {
 
         cout << "Evolving t = " << t << '\n';
 
@@ -1820,7 +1820,7 @@ void cuda_run(float * beta, float * gamma_up,
         }
 
         if ((t+1) % dprint == 0) {
-            for (int i = 0; i < num_plevels; i++) {
+            for (int i = 0; i < n_print_levels; i++) {
                 print_timestep(rank, n_processes, print_levels[i],
                                nxs, nys, nzs, vec_dims, ng, t, comm, status,
                                kernels, threads, blocks, Us_h,
@@ -1830,7 +1830,7 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     if (rank == 0) {
-        close_hdf5_file(num_plevels, mem_space, outFile);
+        close_hdf5_file(n_print_levels, mem_space, outFile);
     }
 
     // delete some stuff
@@ -1877,4 +1877,8 @@ void cuda_run(float * beta, float * gamma_up,
     delete[] U_h;
     delete[] Up_h;
     delete[] F_h;
+
+    delete[] dset;
+    delete[] mem_space;
+    delete[] file_space;
 }

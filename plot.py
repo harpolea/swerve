@@ -156,8 +156,8 @@ def mesh_plot(input_filename=None, filename=None, start=0):
                 gamma_up = inv(gamma_up)
         elif name == 'dprint':
             dprint = int(dat[0])
-        elif name == 'print_level':
-            print_level = int(dat[0])
+        elif name == 'print_levels':
+            print_levels = np.array([int(i) for i in dat])
 
     #if (models[0] == 'S'):
         # coarsest layer is single layer SWE - adjust nx, ny to get multilayer dimensions
@@ -166,7 +166,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     # read data
     f = tb.open_file(data_filename, 'r')
-    dataset = "/level_" + str(print_level)
+    dataset = "/level_" + str(print_levels[0])
     table = f.get_node(dataset)
 
     #if print_level == 1:

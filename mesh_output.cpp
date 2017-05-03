@@ -28,7 +28,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
     hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space,
     char * param_filename) {
     /*
-    Intialise the HDF5 file.
+    Initialise the HDF5 file. Uses walkthrough from https://stackoverflow.com/questions/15379399/writing-appending-arrays-of-float-to-the-only-dataset-in-hdf5-file-in-c/15396949#15396949?newreg=b254d01af38948159bd529d8d4f5f5b9
     */
 
     *outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
@@ -39,13 +39,16 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         // create dataspace
         int ndims = 5;
         hsize_t dims[] = {hsize_t((nt+1)/dprint+1), hsize_t(nzs[print_level]),
-                          hsize_t(nys[print_level]), hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
+                          hsize_t(nys[print_level]), hsize_t(nxs[print_level]),
+                          hsize_t(vec_dims[print_level])};
         file_space[i] = H5Screate_simple(ndims, dims, NULL);
 
         hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
         H5Pset_layout(plist, H5D_CHUNKED);
-        hsize_t chunk_dims[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                                hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
+        hsize_t chunk_dims[] = {1, hsize_t(nzs[print_level]),
+                                hsize_t(nys[print_level]),
+                                hsize_t(nxs[print_level]),
+                                hsize_t(vec_dims[print_level])};
         H5Pset_chunk(plist, ndims, chunk_dims);
 
         stringstream ss;
@@ -66,8 +69,10 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         // select a hyperslab
         file_space[i] = H5Dget_space(*dset);
         hsize_t start[] = {0, 0, 0, 0, 0};
-        hsize_t hcount[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                            hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
+        hsize_t hcount[] = {1, hsize_t(nzs[print_level]),
+                            hsize_t(nys[print_level]),
+                            hsize_t(nxs[print_level]),
+                            hsize_t(vec_dims[print_level])};
         H5Sselect_hyperslab(file_space[i], H5S_SELECT_SET, start, NULL,
                             hcount, NULL);
         // write to dataset
@@ -80,7 +85,8 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
 
     // output parameter file as a long string
     ifstream inputFile(param_filename);
-    string contents((istreambuf_iterator<char>(inputFile)), istreambuf_iterator<char>());
+    string contents((istreambuf_iterator<char>(inputFile)),
+                    istreambuf_iterator<char>());
     // create dataspace
     int ndims = 1;
     hsize_t dims[] = {1};
@@ -89,7 +95,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
     // create dataset
     hid_t plist = H5Pcreate(H5P_DATASET_CREATE);
     hid_t param_dset = H5Dcreate(*outFile,
-                      "Input_parameters", H5T_NATIVE_FLOAT,
+                      "Input_parameters", H5T_NATIVE_CHAR,
                       param_file_space, H5P_DEFAULT, plist, H5P_DEFAULT);
 
     H5Pclose(plist);
@@ -135,11 +141,13 @@ void print_timestep(int rank, int n_processes, int print_level,
 
         if (n_processes > 1) { // only do MPI stuff if needed
             float * buf =
-                new float[nxs[print_level]*nys[print_level]*nzs[print_level]*vec_dims[print_level]];
+                new float[nxs[print_level]*nys[print_level]*
+                    nzs[print_level]*vec_dims[print_level]];
             int tag = 0;
             for (int source = 1; source < n_processes; source++) {
                 int mpi_err = MPI_Recv(buf,
-                    nxs[print_level]*nys[print_level]*nzs[print_level]*vec_dims[print_level], MPI_FLOAT,
+                    nxs[print_level]*nys[print_level]*
+                    nzs[print_level]*vec_dims[print_level], MPI_FLOAT,
                     source, tag, comm, &status);
 
                 mpi_error(mpi_err);
@@ -147,7 +155,8 @@ void print_timestep(int rank, int n_processes, int print_level,
                 // copy data back to grid
                 int ky_offset = (kernels[0].y * blocks[0].y *
                              threads[0].y - 2*ng) * rank;
-                // cheating slightly and using the fact that are moving from bottom to top to make calculations a bit easier.
+                // cheating slightly and using the fact that are moving from
+                // bottom to top to make calculations a bit easier.
                 for (int z = 0; z < nzs[print_level]; z++) {
                     for (int y = ky_offset; y < nys[print_level]; y++) {
                         for (int x = 0; x < nxs[print_level]; x++) {
@@ -167,8 +176,10 @@ void print_timestep(int rank, int n_processes, int print_level,
         // select a hyperslab
         file_space = H5Dget_space(dset);
         hsize_t start[] = {hsize_t((t+1)/dprint), 0, 0, 0, 0};
-        hsize_t hcount[] = {1, hsize_t(nzs[print_level]), hsize_t(nys[print_level]),
-                            hsize_t(nxs[print_level]), hsize_t(vec_dims[print_level])};
+        hsize_t hcount[] = {1, hsize_t(nzs[print_level]),
+                            hsize_t(nys[print_level]),
+                            hsize_t(nxs[print_level]),
+                            hsize_t(vec_dims[print_level])};
         H5Sselect_hyperslab(file_space, H5S_SELECT_SET, start,
                             NULL, hcount, NULL);
         // write to dataset
@@ -179,13 +190,15 @@ void print_timestep(int rank, int n_processes, int print_level,
     } else { // send data to rank 0
         int tag = 0;
         int mpi_err = MPI_Ssend(Us_h[print_level],
-                            nys[print_level]*nxs[print_level]*nzs[print_level]*vec_dims[print_level],
+                            nys[print_level]*nxs[print_level]*
+                            nzs[print_level]*vec_dims[print_level],
                             MPI_FLOAT, 0, tag, comm);
         mpi_error(mpi_err);
     }
 }
 
-void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevels,
+void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs,
+         int nlevels,
          int * vec_dims, int ng, int nt, int dprint, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int t, dim3 * kernels, dim3 * threads, dim3 * blocks,
@@ -211,7 +224,10 @@ void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevel
         print_levels[i] = i;
     }
 
-    initialise_hdf5_file((char*)checkpoint_filename.c_str(), nt, dprint, nzs, nys, nxs, vec_dims, nlevels, print_levels, Us_h, &outFile, dset, mem_space, file_space, param_filename);
+    initialise_hdf5_file((char*)checkpoint_filename.c_str(), nt, dprint,
+                         nzs, nys, nxs, vec_dims, nlevels, print_levels,
+                         Us_h, &outFile, dset, mem_space, file_space,
+                         param_filename);
 
     for (int i = 0; i < nlevels; i++) {
 
@@ -223,13 +239,56 @@ void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs, int nlevel
     close_hdf5_file(nlevels, mem_space, outFile);
 }
 
-void read_checkpoint(char * filename) {
+void start_from_checkpoint(char * filename, MPI_Comm comm, MPI_Status status,
+        int rank, int n_processes, int tstart) {
+    /**
+    Reads checkpoint file and restarts simulation.
+    */
 
+    hid_t file_id, param_dataset;
+
+    // open file
+    file_id = H5Fopen(filename, H5F_ACC_RDONLY, H5P_DEFAULT);
+
+    // open param datset
+    param_dataset = H5Dopen2(file_id, "/Input_parameters", H5P_DEFAULT);
+
+    char param_buf[2000];
+
+    H5Dread(param_dataset, H5T_NATIVE_CHAR, H5S_ALL, H5S_ALL,
+             H5P_DEFAULT, param_buf);
+
+    // close datset
+    H5Dclose(param_dataset);
+
+    // process char array into something intelligible.
+    stringstream ss;
+    ss << param_buf;
+
+    Sea sea(ss, filename);
+
+    // read data from file
+    hid_t dset;
+
+    for (int i = 0; i < sea.nlevels; i++) {
+        stringstream ss;
+        ss << i;
+        string dataset_name("/level_" + ss.str());
+        // open  datset
+        dset = H5Dopen2(file_id, dataset_name.c_str(), H5P_DEFAULT);
+
+        H5Dread(dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT,
+                    sea.Us[i]);
+        H5Dclose(dset);
+    }
+
+    sea.run(comm, &status, rank, n_processes, tstart);
 }
 
 void mpi_error(int mpi_err) {
     /**
-    Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
+    Checks to see if the integer returned by an mpi function, mpi_err, is an
+    MPI error. If so, it prints out some useful stuff to screen.
     */
 
     int errclass, resultlen;

@@ -1254,8 +1254,12 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    position of fine grid wrt coarse grid
 \param r
     ratio of grid resolutions
-\param print_level
-    number of the level to be output to file
+\param n_print_levels
+    number of levels to be output to file
+\param print_levels
+    numbers of the levels to be output to file
+\param tstart
+    start timestep
 */
 void cuda_run(float * beta, float * gamma_up,
          float ** Us_h, float * rho, float * Q,
@@ -1266,7 +1270,7 @@ void cuda_run(float * beta, float * gamma_up,
          float dx, float dy, float dz, float dt, bool burning,
          bool periodic, int dprint, char * filename, char * param_filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices, int r, int print_level);
+         int * matching_indices, int r, int n_print_levels, int * print_levels, int tstart);
 
 __global__ void test_find_height(bool * passed);
 __global__ void test_find_pot(bool * passed);

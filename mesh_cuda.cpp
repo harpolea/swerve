@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string.h>
 #include <fstream>
+#include <sstream>
 #include <algorithm>
 #include "mpi.h"
 #include "cuda_runtime.h"
@@ -28,8 +29,8 @@ Sea::Sea(int _nx, int _ny,
         float _zmin, float _zmax, float * _rho,
         float _Q, float _gamma, float _E_He, float _Cv,
         float _alpha, float * _beta, float * _gamma_down,
-        bool _periodic, bool _burning, int _dprint, int _print_level)
-        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint), print_level(_print_level)
+        bool _periodic, bool _burning, int _dprint, int _n_print_levels)
+        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint), n_print_levels(_n_print_levels)
 {
     /**
     Implement Sea class
@@ -160,7 +161,24 @@ void Sea::invert_mat(float * M, int m, int n) {
     delete[] B;
 }
 
-Sea::Sea(char * filename)
+Sea::Sea(char * filename) {
+    // open file
+    ifstream inputFile(filename);
+    stringstream ss;
+    if (inputFile) {
+        ss << inputFile.rdbuf();
+        inputFile.close();
+    }
+
+    init_sea(ss, filename);
+
+}
+
+Sea::Sea(stringstream &inputFile, char * filename) {
+    init_sea(inputFile, filename);
+}
+
+void Sea::init_sea(stringstream &inputFile, char * filename)
 {
     /**
     Constructor for Sea class using inputs from file.
@@ -168,7 +186,7 @@ Sea::Sea(char * filename)
     */
 
     // open file
-    ifstream inputFile(filename);
+    //ifstream inputFile(filename);
 
     string variableName;
     float value;
@@ -277,9 +295,15 @@ Sea::Sea(char * filename)
             inputFile >> f;
             strncpy(outfile, f.c_str(), sizeof(outfile));
             outfile[sizeof(outfile) - 1] = 0;
-        } else if (variableName == "print_level") {
+        } else if (variableName == "n_print_levels") {
             inputFile >> value;
-            print_level = int(value);
+            n_print_levels = int(value);
+            print_levels = new int[n_print_levels];
+        } else if (variableName == "print_levels") {
+            for (int i = 0; i < n_print_levels; i++) {
+                inputFile >> value;
+                print_levels[i] = int(value);
+            }
         }
     }
 
@@ -414,12 +438,19 @@ Sea::Sea(char * filename)
         exit(EXIT_FAILURE);
     }
 
-    if (print_level < 0 || print_level > nlevels-1) {
-        printf("Invalid print_level: %d\n", print_level);
+    if (n_print_levels < 0 || n_print_levels > nlevels) {
+        printf("Invalid n_print_levels: %d\n", n_print_levels);
         exit(EXIT_FAILURE);
     }
 
-    inputFile.close();
+    for (int i = 0; i < n_print_levels; i++) {
+        if (print_levels[i] < 0 || print_levels[i] > nlevels-1) {
+            printf("Invalid print_level[%d]: %d\n", i, print_levels[i]);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    //inputFile.close();
 
     nxs[0] = nx;
     nys[0] = ny;
@@ -486,7 +517,7 @@ Sea::Sea(char * filename)
             matching_indices[i*4+1] - matching_indices[i*4] << ',' << nxs[i+1] << '\n';
 
     }
-    
+
     strncpy(paramfile, filename, sizeof(paramfile));
 
     cout << "Made a Sea.\n";
@@ -494,7 +525,7 @@ Sea::Sea(char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint), print_level(seaToCopy.print_level)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint), n_print_levels(seaToCopy.n_print_levels)
 {
     /**
     copy constructor
@@ -546,6 +577,7 @@ Sea::~Sea() {
     delete[] nzs;
     delete[] vec_dims;
     delete[] matching_indices;
+    delete[] print_levels;
 
     for (int i = 0; i < nlevels; i++) {
         delete[] Us[i];
@@ -594,7 +626,11 @@ void Sea::print_inputs() {
     cout << "gamma_down \t\t((" << gamma_down[0] << ',' << gamma_down[1] << ',' << gamma_down[2] << "),(" << gamma_down[3] << ',' << gamma_down[4] << ',' << gamma_down[5] << "),(" << gamma_down[6] << ',' << gamma_down[7] << ',' << gamma_down[8] << "))\n";
     cout << "burning \t\t" << burning << '\n';
     cout << "outfile \t\t" << outfile << "\n";
-    cout << "print level \t\t" << print_level << "\n\n";
+    cout << "print levels \t\t";
+    for (int i = 0; i < n_print_levels; i++) {
+        cout << print_levels[i] << ' ';
+    }
+    cout << "\n\n";
 }
 
 void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
@@ -655,7 +691,8 @@ void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
     }
 }
 
-void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
+void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size,
+              int tstart) {
     /**
     run code
     */
@@ -672,7 +709,7 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size) {
              ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
              periodic, dprint,
              outfile, paramfile, comm, *status, rank, size, matching_indices, r,
-             print_level);
+             n_print_levels, print_levels, tstart);
 
     delete[] Qs;
 }

@@ -17,6 +17,7 @@ Run with `mpirun -np N ./mesh [input file]` where N is the number of processors 
 #include "mpi.h"
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
+#include "mesh_output.h"
 
 using namespace std;
 
@@ -50,64 +51,77 @@ int main(int argc, char *argv[]) {
         strcpy(input_filename, argv[1]);
     }
 
-    Sea sea(input_filename);
+    if (string(input_filename).find("checkpoint") != string::npos) {
+        // input file is a checkpoint file
+        size_t t1 = string(input_filename).find("_");
+        size_t t2 = string(input_filename).find("_", t1+1);
+        stringstream ss;
+        for (int i = t1+1; i < t2; i++) ss << input_filename[i];
+        int tstart;
+        ss >> tstart;
+        start_from_checkpoint(input_filename, comm, status,
+                rank, size, tstart);
+    } else {
+        // input file is a parameter file
+        Sea sea(input_filename);
 
-    // locate index of first multilayer SWE level
-    int m_in = 0;
-    while (sea.models[m_in] != 'M') m_in += 1;
-    //int m_in = (sea.models[0] == 'S') ? 1 : 0;
+        // locate index of first multilayer SWE level
+        int m_in = 0;
+        while (sea.models[m_in] != 'M') m_in += 1;
+        //int m_in = (sea.models[0] == 'S') ? 1 : 0;
 
-    float * D0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
-    float * Sx0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
-    float * Sy0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
+        float * D0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
+        float * Sx0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
+        float * Sy0 = new float[sea.nxs[m_in]*sea.nys[m_in]*sea.nzs[m_in]];
 
-    // set initial data
-    /*for (int y = 0; y < sea.nys[m_in]; y++) {
-        for (int x = 0; x < sea.nxs[m_in]; x++) {
-            D0[y * sea.nxs[m_in] + x] = -0.5 *
-                log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
-                //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1 - 0.1 *
-                exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(2*sea.nys[m_in] + y) * sea.nxs[m_in] + x] = -0.5 *
-                log(1.0 - 2.0 / sea.zmin);
+        // set initial data
+        /*for (int y = 0; y < sea.nys[m_in]; y++) {
+            for (int x = 0; x < sea.nxs[m_in]; x++) {
+                D0[y * sea.nxs[m_in] + x] = -0.5 *
+                    log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
+                    //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+                D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1 - 0.1 *
+                    exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+                D0[(2*sea.nys[m_in] + y) * sea.nxs[m_in] + x] = -0.5 *
+                    log(1.0 - 2.0 / sea.zmin);
 
-            for (int z = 0; z < sea.nzs[m_in]; z++) {
-                Sx0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
-                Sy0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
+                for (int z = 0; z < sea.nzs[m_in]; z++) {
+                    Sx0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
+                    Sy0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
+                }
+            }
+        }*/
+
+        // set multiscale test initial data
+        for (int y = 0; y < sea.nys[m_in]; y++) {
+            for (int x = 0; x < sea.nxs[m_in]; x++) {
+                D0[y * sea.nxs[m_in] + x] = -0.5 *
+                    log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
+                    //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
+                D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1 + 0.001 * sin(2.0 * sea.xs[x] * M_PI / (sea.xs[sea.nxs[m_in]-1-sea.ng] - sea.xs[sea.ng]));
+                D0[(2*sea.nys[m_in] + y) * sea.nxs[m_in] + x] = -0.5 *
+                    log(1.0 - 2.0 / sea.zmin);
+
+                for (int z = 0; z < sea.nzs[m_in]; z++) {
+                    Sx0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
+                    Sy0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
+                }
             }
         }
-    }*/
 
-    // set multiscale test initial data
-    for (int y = 0; y < sea.nys[m_in]; y++) {
-        for (int x = 0; x < sea.nxs[m_in]; x++) {
-            D0[y * sea.nxs[m_in] + x] = -0.5 *
-                log(1.0 - 2.0 / (sea.zmax+2*sea.dz));// - 0.1 *
-                //exp(-(pow(sea.xs[x]-5.0, 2)+pow(sea.ys[y]-5.0, 2)) * 2.0);
-            D0[(sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 1.1 + 0.001 * sin(2.0 * sea.xs[x] * M_PI / (sea.xs[sea.nxs[m_in]-1-sea.ng] - sea.xs[sea.ng]));
-            D0[(2*sea.nys[m_in] + y) * sea.nxs[m_in] + x] = -0.5 *
-                log(1.0 - 2.0 / sea.zmin);
+        sea.initial_data(D0, Sx0, Sy0);
 
-            for (int z = 0; z < sea.nzs[m_in]; z++) {
-                Sx0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
-                Sy0[(z * sea.nys[m_in] + y) * sea.nxs[m_in] + x] = 0.0;
-            }
+        if (rank == 0) {
+            sea.print_inputs();
         }
+
+        // clean up arrays
+        delete[] D0;
+        delete[] Sx0;
+        delete[] Sy0;
+
+        sea.run(comm, &status, rank, size, 0);
     }
-
-    sea.initial_data(D0, Sx0, Sy0);
-
-    if (rank == 0) {
-        sea.print_inputs();
-    }
-
-    // clean up arrays
-    delete[] D0;
-    delete[] Sx0;
-    delete[] Sy0;
-
-    sea.run(comm, &status, rank, size);
 
     MPI_Finalize();
 }
