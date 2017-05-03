@@ -170,8 +170,10 @@ Sea::Sea(char * filename) {
         inputFile.close();
     }
 
-    init_sea(ss, filename);
+    size_t t = string(filename).find("_", 10+1);
+    char * param_filename = filename + t;
 
+    init_sea(ss, param_filename);
 }
 
 Sea::Sea(stringstream &inputFile, char * filename) {
@@ -584,7 +586,7 @@ Sea::~Sea() {
     }
 }
 
-void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
+void Sea::initial_swe_data(float * D0, float * Sx0, float * Sy0) {
     /**
     Initialise D, Sx, Sy and Q on coarsest multilayer SWE grid.
     */
@@ -603,6 +605,31 @@ void Sea::initial_data(float * D0, float * Sx0, float * Sy0) {
     }
 
     bcs(Us[m_in], nxs[m_in], nys[m_in], nzs[m_in], vec_dims[m_in]);
+
+    cout << "Set initial data.\n";
+}
+
+void Sea::initial_compressible_data(float * D0, float * Sx0, float * Sy0, float * Sz0, float * tau0) {
+    /**
+    Initialise D, Sx, Sy, Sz and tau on coarsest compressible grid.
+    */
+    // find coarsest multilayer SWE grid
+    // TODO: make sure ensure this exists when initialise object
+    int c_in = 0;
+    while (models[c_in] != 'C') c_in += 1;
+
+    for (int i = 0; i < nxs[c_in]*nys[c_in]*nzs[c_in]; i++) {
+        // it's on a compressible grid so know vec_dim = 6
+        Us[c_in][i*6] = D0[i];
+        Us[c_in][i*6+1] = Sx0[i];
+        Us[c_in][i*6+2] = Sy0[i];
+        Us[c_in][i*6+3] = Sz0[i];
+        Us[c_in][i*6+4] = tau0[i];
+        Us[c_in][i*6+5] =
+            0.9 * float(i) / (nxs[c_in]*nys[c_in]*nzs[c_in]);
+    }
+
+    bcs(Us[c_in], nxs[c_in], nys[c_in], nzs[c_in], vec_dims[c_in]);
 
     cout << "Set initial data.\n";
 }

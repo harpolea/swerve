@@ -1,0 +1,29 @@
+nx      50
+ny      50
+nt      1
+ng      2
+r       2
+nlevels 2
+models  M C
+nzs     3 6
+df      0.4
+xmin    0.0
+xmax    10.0
+ymin    0.0
+ymax    10.0
+zmin    2.1
+zmax    2.6
+rho     0.5 0.5 0.5
+Q       0.0
+E_He    10.0e3
+Cv      1.0
+gamma   1.6666666667
+alpha   0.9
+beta    0.0 0.0 0.0
+gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
+periodic t
+burning f
+dprint  1
+outfile ../../Documents/Work/swerve/acoustic_wave.h5
+n_print_levels 2
+print_levels 0 1

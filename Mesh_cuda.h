@@ -38,13 +38,24 @@ public:
 
     Sea(const Sea &); /**<Copy constructor */
 
-    /** Initialise D, Sx, Sy and Q.
+    /** Initialise D, Sx, Sy.
 
     \param D0 conserved density
     \param Sx0 conserved x-velocity
     \param Sy0 conserved y-velocity
     */
-    void initial_data(float * D0, float * Sx0, float * Sy0);
+    void initial_swe_data(float * D0, float * Sx0, float * Sy0);
+
+    /** Initialise D, Sx, Sy, Sz, tau.
+
+    \param D0 conserved density
+    \param Sx0 conserved x-velocity
+    \param Sy0 conserved y-velocity
+    \param Sz0 conserved z-velocity
+    \param tau conserved energy
+    */
+    void initial_compressible_data(float * D0, float * Sx0, float * Sy0,
+                                   float * Sz0, float * tau0);
 
     /**
     Enforce boundary conditions on grid of quantities with dimension vec_dim.
@@ -91,7 +102,7 @@ public:
     int nlevels; /**< Number of levels of mesh refinement*/
     char * models; /**< Array describing the physical model to use on each level. S = single layer SWE, M = multilayer SWE, C = compressible, L = Low Mach*/
     int * vec_dims; /**< Dimensions of state vectors on each grid*/
-
+    float gamma; /**< Adiabatic index */
 
     float dz; /**< Gridpoint separation in the z-direction of fine (compressible grid)*/
     float zmin; /**< Height of sea floor */
@@ -116,7 +127,6 @@ private:
 
     float *rho; /**< Vector of density in each of the shallow water layers  */
     float Q; /**< Mass transfer rate */
-    float gamma; /**< Adiabatic index */
     float E_He; /**< Energy release per unit mass of helium burning*/
     float Cv; /**< Specific heat at constant volume*/
 
