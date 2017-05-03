@@ -110,7 +110,7 @@ def find_height(D, Sx, Sy, gamma_up, M=1.0):
     return 2. * M / (1. - np.exp(-2 * D / W))
 
 
-def mesh_plot(input_filename=None, filename=None, start=0):
+def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
 
     # the other version was really slow - this does it by hand, making a load of png files then using ffmpeg to stitch them together. It finishes by deleting all the pngs.
 
@@ -160,7 +160,7 @@ def mesh_plot(input_filename=None, filename=None, start=0):
 
     # read data
     f = tb.open_file(data_filename, 'r')
-    dataset = "/level_" + str(print_levels[0])
+    dataset = "/level_" + str(print_levels[print_level])
     table = f.get_node(dataset)
 
     #if print_level == 1:
@@ -265,8 +265,11 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         input_filename = sys.argv[1]
         filename = sys.argv[2]
+        print_level = int(sys.argv[3])
     else:
-        input_filename="testing/multiscale_input.txt"
-        filename="../../Documents/Work/swerve/multiscale_test"
+        input_filename = "testing/multiscale_input.txt"
+        filename = "../../Documents/Work/swerve/multiscale_test"
+        print_level = 1
 
-    mesh_plot(input_filename=input_filename, filename=filename)
+    mesh_plot(input_filename=input_filename, filename=filename,
+              print_level=print_level)

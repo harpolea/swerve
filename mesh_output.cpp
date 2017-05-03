@@ -67,7 +67,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         mem_space[i] = H5Screate_simple(ndims, chunk_dims, NULL);
 
         // select a hyperslab
-        file_space[i] = H5Dget_space(*dset);
+        file_space[i] = H5Dget_space(dset[i]);
         hsize_t start[] = {0, 0, 0, 0, 0};
         hsize_t hcount[] = {1, hsize_t(nzs[print_level]),
                             hsize_t(nys[print_level]),
