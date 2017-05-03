@@ -455,8 +455,6 @@ __global__ void evolve_fv_heating(float * Up, float * U_half,
 
         X_dot = calc_Q_swe(rho[z], p, gamma, Y, Cv) / E_He;
 
-        //printf("p: %f, A: %f, X_dot : %f\n", p, A[z], X_dot);
-
         free(phis);
         free(A);
         free(q_swe);
@@ -1024,26 +1022,20 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     // if rank > number of GPUs, exit now
-    if (rank >= count) {
-        return;
-    }
+    if (rank >= count) return;
 
     // redefine - we only want to run on as many cores as we have GPUs
-    if (n_processes > count) {
-        n_processes = count;
-    }
+    if (n_processes > count) n_processes = count;
 
     if (rank == 0) {
         printf("Running on %i processor(s)\n", n_processes);
     }
 
     int maxThreads = 256;
-    int maxBlocks = 160; //64;
+    int maxBlocks = 160;
 
     dim3 *kernels = new dim3[n_processes];
     int *cumulative_kernels = new int[n_processes];
-
-    //getNumKernels(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, n_processes, &maxBlocks, &maxThreads, kernels, cumulative_kernels);
 
     getNumKernels(array_max(nxs, nlevels), array_max(nys, nlevels),
                   array_max(nzs, nlevels), ng, n_processes,
@@ -1053,8 +1045,6 @@ void cuda_run(float * beta, float * gamma_up,
 
     dim3 *blocks = new dim3[total_kernels];
     dim3 *threads = new dim3[total_kernels];
-
-    //getNumBlocksAndThreads(max(nx, nxf), max(ny, nyf), max(nlayers, nz), ng, maxBlocks, maxThreads, n_processes, kernels, blocks, threads);
 
     getNumBlocksAndThreads(array_max(nxs, nlevels), array_max(nys, nlevels),
                            array_max(nzs, nlevels), ng, maxBlocks, maxThreads,
@@ -1076,7 +1066,6 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     // gpu variables
-    //float * beta_d, * gamma_up_d, * rho_d, * Q_d;
     float * rho_d, * Q_d;
 
     // set device
@@ -1089,16 +1078,12 @@ void cuda_run(float * beta, float * gamma_up,
     int c_in = nlevels-1;
     while(models[c_in] == 'C') c_in -= 1;
     // allocate memory on device
-    //cudaMalloc((void**)&beta_d, 3*sizeof(float));
-    //cudaMalloc((void**)&gamma_up_d, 9*sizeof(float));
     cudaMalloc((void**)&rho_d, nzs[m_in]*sizeof(float));
     cudaMalloc((void**)&Q_d, nzs[m_in]*sizeof(float));
 
     // copy stuff to GPU
     cudaMemcpyToSymbol(beta_d, beta, 3*sizeof(float));
     cudaMemcpyToSymbol(gamma_up_d, gamma_up, 9*sizeof(float));
-    //cudaMemcpy(beta_d, beta, 3*sizeof(float), cudaMemcpyHostToDevice);
-    //cudaMemcpy(gamma_up_d, gamma_up, 9*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(rho_d, rho, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(Q_d, Q, nzs[m_in]*sizeof(float), cudaMemcpyHostToDevice);
 
@@ -1385,112 +1370,7 @@ void cuda_run(float * beta, float * gamma_up,
 
     // main loop
     for (int t = tstart; t < nt; t++) {
-
         cout << "Evolving t = " << t << '\n';
-
-        // first prolong data down from coarse grids to fine grids
-        /*for (int i = 0; i < (nlevels-1); i++) {
-            cudaMemcpy(U_d, Us_h[i],
-                    nxs[i]*nys[i]*nzs[i]*vec_dims[i]*sizeof(float),
-                    cudaMemcpyHostToDevice);
-            cudaMemcpy(Up_d, Us_h[i+1],
-                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                    cudaMemcpyHostToDevice);
-
-            // prolong to fine grid
-            bool boundaries = (t == 0) ? false : true;
-            // select prolongation algorithm
-            if (models[i] == 'M' && models[i+1] == 'C') {
-                // multilayer SWE to compressible
-                prolong_swe_to_comp(kernels, threads, blocks,
-                             cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             dz/pow(r, i), dt/pow(r, i), zmin,
-                             rho_d, gamma, matching_indices_d, ng, rank,
-                             q_comp_d, old_phi_d, i, boundaries);
-            } else if (models[i] == 'C' && models[i+1] == 'C') {
-                // compressible to compressible
-                prolong_comp_to_comp(kernels, threads, blocks,
-                             cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             matching_indices_d, ng, rank, i, boundaries);
-            } else if (models[i] == 'S' && models[i+1] == 'M') {
-                // single layer SWE to multilayer SWE
-                prolong_swe_to_swe(kernels, threads, blocks,
-                             cumulative_kernels,
-                             U_d, Up_d, nxs_d, nys_d, nzs_d,
-                             matching_indices_d, ng, rank, i, boundaries);
-            }
-
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "After prolonging\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            cudaMemcpy(Us_h[i+1], Up_d,
-                    nxs[i+1]*nys[i+1]*nzs[i+1]*vec_dims[i+1]*sizeof(float),
-                    cudaMemcpyDeviceToHost);
-
-            err = cudaGetLastError();
-            if (err != cudaSuccess){
-                cout << "After copying\n";
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
-
-            bool do_z = true;
-            if (models[i+1] == 'M' || models[i+1] == 'S') {
-                do_z = false;
-            }
-
-            if (t==0) {
-                // enforce boundaries
-                if (n_processes == 1) {
-                    bcs_fv(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                            ng, vec_dims[i+1], (i+1==0) ? periodic : false, do_z);
-                } else {
-                    int y_size = kernels[0].y*blocks[0].y*threads[0].y - 2*ng;
-                    bcs_mpi(Us_h[i+1], nxs[i+1], nys[i+1], nzs[i+1],
-                            vec_dims[i+1], ng, comm, status, rank,
-                            n_processes, y_size, do_z, (i+1==0) ? periodic : false);
-                }
-            } else {
-                // going to try and smooth boundaries
-                float av;
-                for (int z = 0; z < nzs[i+1]; z++) {
-                    for (int y = 0; y < nys[i+1]; y++) {
-                        for (int n = 0; n < vec_dims[i+1]; n++) {
-                            av = 0.5 * (Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + ng-1) * vec_dims[i+1] + n] +
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + ng) * vec_dims[i+1] + n]);
-
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + ng-1) * vec_dims[i+1] + n] = av;
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + ng) * vec_dims[i+1] + n] = av;
-
-                            av = 0.5 * (Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + nxs[i+1] - ng-1) * vec_dims[i+1] + n] +
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + nxs[i+1] - ng) * vec_dims[i+1] + n]);
-
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + nxs[i+1] - ng-1) * vec_dims[i+1] + n] = av;
-                            Us_h[i+1][((z * nys[i+1] + y) * nxs[i+1] + nxs[i+1] - ng) * vec_dims[i+1] + n] = av;
-                        }
-                    }
-                    for (int x = 0; x < nxs[i+1]; x++) {
-                        for (int n = 0; n < vec_dims[i+1]; n++) {
-                            av = 0.5 * (Us_h[i+1][((z * nys[i+1] + ng-1) * nxs[i+1] + x) * vec_dims[i+1] + n] +
-                            Us_h[i+1][((z * nys[i+1] + ng) * nxs[i+1] + x) * vec_dims[i+1] + n]);
-
-                            Us_h[i+1][((z * nys[i+1] + ng-1) * nxs[i+1] + x) * vec_dims[i+1] + n] = av;
-                            Us_h[i+1][((z * nys[i+1] + ng) * nxs[i+1] + x) * vec_dims[i+1] + n] = av;
-
-                            av = 0.5 * (Us_h[i+1][((z * nys[i+1] + nys[i+1]-ng-1) * nxs[i+1] + x) * vec_dims[i+1] + n] +
-                            Us_h[i+1][((z * nys[i+1] + nys[i+1]-ng) * nxs[i+1] + x) * vec_dims[i+1] + n]);
-
-                            Us_h[i+1][((z * nys[i+1] + nys[i+1]-ng-1) * nxs[i+1] + x) * vec_dims[i+1] + n] = av;
-                            Us_h[i+1][((z * nys[i+1] + nys[i+1]-ng) * nxs[i+1] + x) * vec_dims[i+1] + n] = av;
-                        }
-                    }
-                }
-            }
-        }*/
 
         // Do evolutions on grids
         for (int i = (nlevels-1); i >= 0; i--) {
@@ -1689,7 +1569,6 @@ void cuda_run(float * beta, float * gamma_up,
         }
 
         for (int i = (nlevels-1); i > 0; i--) {
-            //bool do_z = (models[i-1] == 'M' || models[i-1] == 'S') ? false : true;
             // restrict to coarse grid
             // copy to device
             cudaMemcpy(Up_d, Us_h[i-1],
@@ -1743,18 +1622,6 @@ void cuda_run(float * beta, float * gamma_up,
                 cout << "After copying\n";
                 printf("Error: %s\n", cudaGetErrorString(err));
             }
-
-            /*// enforce boundaries
-            if (n_processes == 1) {
-                bcs_fv(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1], ng,
-                    vec_dims[i-1], (i-1==0) ? periodic : false, do_z);
-            } else {
-                int y_size = kernels[0].y * blocks[0].y *
-                             threads[0].y - 2*ng;
-                bcs_mpi(Us_h[i-1], nxs[i-1], nys[i-1], nzs[i-1],
-                    vec_dims[i-1], ng, comm, status, rank,
-                    n_processes, y_size, do_z, (i-1==0) ? periodic : false);
-            }*/
         }
 
         // prolong data down from coarse grids to fine grids
@@ -1834,8 +1701,6 @@ void cuda_run(float * beta, float * gamma_up,
     }
 
     // delete some stuff
-    //cudaFree(beta_d);
-    //cudaFree(gamma_up_d);
     cudaFree(rho_d);
     cudaFree(Q_d);
     cudaFree(old_phi_d);

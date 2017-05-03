@@ -1242,7 +1242,7 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    number of timesteps between each printout
 \param filename
    name of file to which output is printed
-\param filename
+\param param_filename
   name of parameter file
 \param comm
    MPI communicator

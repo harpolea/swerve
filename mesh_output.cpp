@@ -23,8 +23,8 @@
 using namespace std;
 
 void initialise_hdf5_file(char * filename, int nt, int dprint,
-    int * nzs, int * nys, int * nxs, int * vec_dims, int nlevels,
-    int * print_levels, float ** Us_h,
+    int * nzs, int * nys, int * nxs, int * vec_dims, int n_print_levels,
+    int * print_levels, float ** Us,
     hid_t * outFile, hid_t * dset, hid_t * mem_space, hid_t * file_space,
     char * param_filename) {
     /*
@@ -33,7 +33,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
 
     *outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
                             H5P_DEFAULT);
-    for (int i = 0; i < nlevels; i++) {
+    for (int i = 0; i < n_print_levels; i++) {
         int print_level = print_levels[i];
 
         // create dataspace
@@ -78,7 +78,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         // write to dataset
         printf("Printing t = %i\n", 0);
         H5Dwrite(dset[i], H5T_NATIVE_FLOAT, mem_space[i], file_space[i],
-                 H5P_DEFAULT, Us_h[print_level]);
+                 H5P_DEFAULT, Us[print_level]);
         // close file dataspace
         H5Sclose(file_space[i]);
     }
@@ -131,7 +131,7 @@ void print_timestep(int rank, int n_processes, int print_level,
                     int * nxs, int * nys, int * nzs, int * vec_dims, int ng,
                     int t, MPI_Comm comm, MPI_Status status,
                     dim3 * kernels, dim3 * threads, dim3 * blocks,
-                    float ** Us_h,
+                    float ** Us,
                     hid_t dset, hid_t mem_space, hid_t file_space, int dprint) {
     /*
     Print timestep.
@@ -161,7 +161,7 @@ void print_timestep(int rank, int n_processes, int print_level,
                     for (int y = ky_offset; y < nys[print_level]; y++) {
                         for (int x = 0; x < nxs[print_level]; x++) {
                             for (int i = 0; i < vec_dims[print_level]; i++) {
-                                Us_h[print_level][((z*nys[print_level]+y)*nxs[print_level]+x)*vec_dims[print_level]+i] =
+                                Us[print_level][((z*nys[print_level]+y)*nxs[print_level]+x)*vec_dims[print_level]+i] =
                                     buf[((z*nys[print_level]+y)*nxs[print_level]+x)*vec_dims[print_level]+i];
                             }
                         }
@@ -184,12 +184,12 @@ void print_timestep(int rank, int n_processes, int print_level,
                             NULL, hcount, NULL);
         // write to dataset
         H5Dwrite(dset, H5T_NATIVE_FLOAT, mem_space, file_space,
-                 H5P_DEFAULT, Us_h[print_level]);
+                 H5P_DEFAULT, Us[print_level]);
         // close file dataspae
         H5Sclose(file_space);
     } else { // send data to rank 0
         int tag = 0;
-        int mpi_err = MPI_Ssend(Us_h[print_level],
+        int mpi_err = MPI_Ssend(Us[print_level],
                             nys[print_level]*nxs[print_level]*
                             nzs[print_level]*vec_dims[print_level],
                             MPI_FLOAT, 0, tag, comm);
@@ -197,9 +197,8 @@ void print_timestep(int rank, int n_processes, int print_level,
     }
 }
 
-void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs,
-         int nlevels,
-         int * vec_dims, int ng, int nt, int dprint, char * filename,
+void print_checkpoint(float ** Us, int * nxs, int * nys, int * nzs,
+         int * vec_dims, int ng, int nlevels, char * filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
          int t, dim3 * kernels, dim3 * threads, dim3 * blocks,
          char * param_filename) {
@@ -224,23 +223,23 @@ void print_checkpoint(float ** Us_h, int * nxs, int * nys, int * nzs,
         print_levels[i] = i;
     }
 
-    initialise_hdf5_file((char*)checkpoint_filename.c_str(), nt, dprint,
+    initialise_hdf5_file((char*)checkpoint_filename.c_str(), 1, 1,
                          nzs, nys, nxs, vec_dims, nlevels, print_levels,
-                         Us_h, &outFile, dset, mem_space, file_space,
+                         Us, &outFile, dset, mem_space, file_space,
                          param_filename);
 
     for (int i = 0; i < nlevels; i++) {
 
         print_timestep(rank, n_processes, i, nxs, nys, nzs, vec_dims, ng,
-                       t, comm, status, kernels, threads, blocks, Us_h,
-                       dset[i], mem_space[i], file_space[i], dprint);
+                       t, comm, status, kernels, threads, blocks, Us,
+                       dset[i], mem_space[i], file_space[i], 1);
     }
 
     close_hdf5_file(nlevels, mem_space, outFile);
 }
 
 void start_from_checkpoint(char * filename, MPI_Comm comm, MPI_Status status,
-        int rank, int n_processes, int tstart) {
+        int rank, int n_processes) {
     /**
     Reads checkpoint file and restarts simulation.
     */
@@ -253,8 +252,8 @@ void start_from_checkpoint(char * filename, MPI_Comm comm, MPI_Status status,
     // open param datset
     param_dataset = H5Dopen2(file_id, "/Input_parameters", H5P_DEFAULT);
 
+    // read parameter file into a buffer char array
     char param_buf[2000];
-
     H5Dread(param_dataset, H5T_NATIVE_CHAR, H5S_ALL, H5S_ALL,
              H5P_DEFAULT, param_buf);
 
@@ -262,10 +261,11 @@ void start_from_checkpoint(char * filename, MPI_Comm comm, MPI_Status status,
     H5Dclose(param_dataset);
 
     // process char array into something intelligible.
-    stringstream ss;
-    ss << param_buf;
+    stringstream s;
+    s << param_buf;
 
-    Sea sea(ss, filename);
+    // initialise Sea object
+    Sea sea(s, filename);
 
     // read data from file
     hid_t dset;
@@ -278,10 +278,25 @@ void start_from_checkpoint(char * filename, MPI_Comm comm, MPI_Status status,
         dset = H5Dopen2(file_id, dataset_name.c_str(), H5P_DEFAULT);
 
         H5Dread(dset, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT,
-                    sea.Us[i]);
+                sea.Us[i]);
         H5Dclose(dset);
     }
 
+    if (rank == 0) {
+        sea.print_inputs();
+    }
+
+    // Find timestep
+    size_t t1 = string(filename).find("_");
+    size_t t2 = string(filename).find("_", t1+1);
+    stringstream ss;
+    for (int i = t1+1; i < t2; i++) ss << filename[i];
+    int tstart;
+    ss >> tstart;
+
+    cout << "Starting simulation from t = " << tstart << '\n';
+
+    // run simulation
     sea.run(comm, &status, rank, n_processes, tstart);
 }
 

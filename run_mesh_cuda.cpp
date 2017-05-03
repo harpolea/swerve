@@ -52,15 +52,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (string(input_filename).find("checkpoint") != string::npos) {
-        // input file is a checkpoint file
-        size_t t1 = string(input_filename).find("_");
-        size_t t2 = string(input_filename).find("_", t1+1);
-        stringstream ss;
-        for (int i = t1+1; i < t2; i++) ss << input_filename[i];
-        int tstart;
-        ss >> tstart;
         start_from_checkpoint(input_filename, comm, status,
-                rank, size, tstart);
+                rank, size);
     } else {
         // input file is a parameter file
         Sea sea(input_filename);
