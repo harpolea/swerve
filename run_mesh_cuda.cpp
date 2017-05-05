@@ -83,8 +83,13 @@ void multiscale_test(Sea *sea) {
     while (sea -> models[m_in] != 'M') m_in += 1;
 
     // locate index of first compressible level
-    int c_in = m_in;
-    while (sea -> models[c_in] != 'C') c_in += 1;
+    //int c_in = m_in;
+    //while (sea -> models[c_in] != 'C') c_in += 1;
+
+    int c_in = sea -> nlevels;
+    if (sea -> models[sea -> nlevels-1] == 'C') {
+        while(sea -> models[c_in-1] == 'C') c_in -= 1;
+    }
 
     float * D0 = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
     float * Sx0 = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
@@ -169,9 +174,15 @@ void acoustic_wave(Sea *sea) {
     */
     // TODO: need to fix main cuda_run script so that it restricts/prolongs out from coarsest compressible grid rather than from coarsest multilayer grid for this example.
 
+    // locate index of first multilayer SWE level
+    int m_in = 0;
+    while (sea -> models[m_in] != 'M') m_in += 1;
+
     // locate index of first compressible level
-    int c_in = 0;
-    while (sea -> models[c_in] != 'C') c_in += 1;
+    int c_in = sea -> nlevels;
+    if (sea -> models[sea -> nlevels-1] == 'C') {
+        while(sea -> models[c_in-1] == 'C') c_in -= 1;
+    }
 
     float * D0 = new float[sea->nxs[c_in]*sea->nys[c_in]*sea->nzs[c_in]];
     float * Sx0 = new float[sea->nxs[c_in]*sea->nys[c_in]*sea->nzs[c_in]];
@@ -179,10 +190,10 @@ void acoustic_wave(Sea *sea) {
     float * Sz0 = new float[sea->nxs[c_in]*sea->nys[c_in]*sea->nzs[c_in]];
     float * tau0 = new float[sea->nxs[c_in]*sea->nys[c_in]*sea->nzs[c_in]];
 
-    float L = 2.0;
+    float L = sea->nxs[c_in] * 0.3;
     float rho_ref = 0.5;
     float alpha = 0.05;
-    float K = 100;
+    float K = 1;
     float s = sqrt(sea->gamma - 1.0);
 
     float rhoh_temp = rho_ref + sea->gamma * K*pow(rho_ref,sea->gamma) / (sea->gamma - 1.0);
@@ -190,10 +201,12 @@ void acoustic_wave(Sea *sea) {
     float J = -log((s + cs_temp) / (s - cs_temp)) / s;
 
     // set acoustic wave test initial data
-    for (int y = 0; y < sea->nys[c_in]; y++) {
-        for (int x = 0; x < sea->nxs[c_in]; x++) {
-            for (int z = 0; z < sea->nzs[c_in]; z++) {
-                float f = abs(sea->xs[x]) < L ? pow((sea->xs[x] / L)*(sea->xs[x] / L) - 1.0, 4) : 0.0;
+    for (int z = 0; z < sea->nzs[c_in]; z++) {
+        for (int y = 0; y < sea->nys[c_in]; y++) {
+            for (int x = 0; x < sea->nxs[c_in]; x++) {
+                float r = sqrt((x-0.5*sea->nxs[c_in])*(x-0.5*sea->nxs[c_in]) +
+                    (y-0.5*sea->nys[c_in])*(y-0.5*sea->nys[c_in]));
+                float f = abs(r) < L ? pow(r*r / (L*L) - 1.0, 4) : 0.0;
 
                 float rho = rho_ref * (1.0 + alpha * f);
                 float p = K * pow(rho, sea->gamma);
@@ -207,14 +220,24 @@ void acoustic_wave(Sea *sea) {
 
                 D0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] = rho * W;
 
-                Sx0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] =
-                    rhoh * u * W;
+                if (r < 1.0) {
+                    Sx0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] = 0.0;
+                    Sy0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] = 0.0;
+                } else {
+                    Sx0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] =
+                        rhoh * u * W * (x-0.5 * sea->nxs[c_in]) / r;
 
-                Sy0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] = 0.0;
+                    Sy0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] =
+                        rhoh * u * W * (y-0.5 * sea->nys[c_in]) / r;
+                }
+
+
                 Sz0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] = 0.0;
 
                 tau0[(z * sea->nys[c_in] + y) * sea->nxs[c_in] + x] =
                     rhoh*W*W - p - rho * W;
+
+                //cout << rho * W << ' ' << rhoh * u * W << ' ' << rhoh*W*W - p - rho * W << '\n';
             }
         }
     }
@@ -227,4 +250,31 @@ void acoustic_wave(Sea *sea) {
     delete[] Sy0;
     delete[] Sz0;
     delete[] tau0;
+
+    float * D0s = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
+    float * Sx0s = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
+    float * Sy0s = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
+
+    // set multiscale test initial data
+    for (int y = 0; y < sea->nys[m_in]; y++) {
+        for (int x = 0; x < sea->nxs[m_in]; x++) {
+            D0s[y * sea->nxs[m_in] + x] = -0.5 *
+                log(1.0 - 2.0 / (sea->zmax+2*sea->dz));
+            D0s[(sea->nys[m_in] + y) * sea->nxs[m_in] + x] = 1.1;
+            D0s[(2*sea->nys[m_in] + y) * sea->nxs[m_in] + x] = -0.5 *
+                log(1.0 - 2.0 / sea->zmin);
+
+            for (int z = 0; z < sea->nzs[m_in]; z++) {
+                Sx0s[(z * sea->nys[m_in] + y) * sea->nxs[m_in] + x] = 0.0;
+                Sy0s[(z * sea->nys[m_in] + y) * sea->nxs[m_in] + x] = 0.0;
+            }
+        }
+    }
+
+    sea->initial_swe_data(D0s, Sx0s, Sy0s);
+
+    // clean up arrays
+    delete[] D0s;
+    delete[] Sx0s;
+    delete[] Sy0s;
 }

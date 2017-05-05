@@ -1453,7 +1453,7 @@ void prolong_multiswe_to_multiswe(dim3 * kernels, dim3 * threads, dim3 * blocks,
 }
 
 
-__global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
+__global__ void restrict_interpolate_swe(float * qf_prim, float * q_c,
                                      int * nxs, int * nys, int * nzs, int ng,
                                      float dz, float zmin,
                                      int * matching_indices,
@@ -1488,7 +1488,7 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
     // note we're not going to restrict the top layer
     if (((x > 1) && (x < int(round(nxs[clevel+1]*0.5))-1)) &&
         ((y > 1) && (y < int(round(nys[clevel+1]*0.5))-1)) &&
-        (z > 1) && (z < nzs[clevel]-2)) {
+        (z > 0) && (z < nzs[clevel]-1)) {
         // first find position of layers relative to fine grid
         int coarse_index = ((z * nys[clevel] +
             y + matching_indices[clevel*4+2]) *
@@ -1533,16 +1533,23 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
         float Ww[8];
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
-                for (int k = 0; k < 4; k++) {
-                    q_c_new[k] =
-                        qf_sw[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+k];
-                }
-                Ww[j*2+i] = W_swe(q_c_new);
-                for (int k = 0; k < 4; k++) {
-                    q_c_new[k] =
-                        qf_sw[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+k];
-                }
-                Ww[(2+j)*2+i] = W_swe(q_c_new);
+                float u, v, w;
+                u=qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
+                v=qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
+                w=qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+3];
+                Ww[j*2+i] = 1.0 / sqrt(1.0 -
+                        u*u*gamma_up_d[0] - 2.0 * u*v * gamma_up_d[1] -
+                        2.0 * u*w * gamma_up_d[2] - v*v*gamma_up_d[4] -
+                        2.0 * v*w*gamma_up_d[5] - w*w*gamma_up_d[8]);
+
+                u=qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
+                v=qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
+                w=qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+3];
+                Ww[(2+j)*2+i] = 1.0 / sqrt(1.0 -
+                        u*u*gamma_up_d[0] - 2.0 * u*v * gamma_up_d[1] -
+                        2.0 * u*w * gamma_up_d[2] - v*v*gamma_up_d[4] -
+                        2.0 * v*w*gamma_up_d[5] - w*w*gamma_up_d[8]);
+
             }
         }
 
@@ -1557,21 +1564,20 @@ __global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
         for (int j = 0; j < 2; j++) {
             for (int i = 0; i < 2; i++) {
                 u[j*2+i] =
-                    qf_sw[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+1] /
-                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
+                qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
+
                 v[j*2+i] =
-                    qf_sw[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+2] /
-                                   (Phi * Ww[j*2+i] * Ww[j*2+i]);
-                WX[j*2+i] =
-                    qf_sw[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+3] / Phi;
+                qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
+
+                WX[j*2+i] = Ww[j*2+i] *
+                qf_prim[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+5];
+
                 u[(2+j)*2+i] =
-                    qf_sw[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+1] /
-                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
+                qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
                 v[(2+j)*2+i] =
-                    qf_sw[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+2] /
-                                   (Phi * Ww[(2+j)*2+i] * Ww[(2+j)*2+i]);
-                WX[(2+j)*2+i] =
-                    qf_sw[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*4+3] / Phi;
+                qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
+                WX[(2+j)*2+i] = Ww[(2+j)*2+i] *
+                qf_prim[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+5];
             }
         }
 
@@ -1608,7 +1614,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                     float dz, float zmin, int * matching_indices,
                     float * rho, float gamma,
                     int ng, int rank, float * qf_swe,
-                    int clevel, float * rhos) {
+                    int clevel) {
     /**
     Restrict fine compressible grid data to coarse swe grid
 
@@ -1647,7 +1653,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-            swe_from_compressible<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, qf_swe, nxs, nys, nzs, rho, gamma, kx_offset, ky_offset, q_cd, matching_indices, clevel, rhos);
+            calc_comp_prim<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd, nxs, nys, nzs, gamma, kx_offset, ky_offset, clevel);
 
             kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1661,7 +1667,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
     for (int j = 0; j < kernels[rank].y; j++) {
        kx_offset = 0;
        for (int i = 0; i < kernels[rank].x; i++) {
-           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(qf_swe, q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices, kx_offset, ky_offset, clevel);
+           restrict_interpolate_swe<<<blocks[k_offset + j * kernels[rank].x + i], threads[k_offset + j * kernels[rank].x + i]>>>(q_fd ,q_cd, nxs, nys, nzs, ng, dz, zmin, matching_indices, kx_offset, ky_offset, clevel);
 
            kx_offset += blocks[k_offset + j * kernels[rank].x + i].x *
                 threads[k_offset + j * kernels[rank].x + i].x - 2*ng;
@@ -1980,5 +1986,15 @@ void restrict_multiswe_to_multiswe(dim3 * kernels, dim3 * threads, dim3 * blocks
        }
        ky_offset += blocks[k_offset + j * kernels[rank].x].y *
             threads[k_offset + j * kernels[rank].x].y - 2*ng;
+    }
+}
+
+void interpolate_rhos(float * rho_column, float * rho_grid, float zmin, float zmax, float dz, float * phs, int nx, int ny, int nz) {
+    /*
+    When implemented, this will calculate rho on the compressible grid given
+    the rhos on each of the SW layers and the heights of the layers (via phi).
+    */
+    for (int i = 0; i < nx * ny * nz; i++) {
+        rho_grid[i] = rho_column[0];
     }
 }

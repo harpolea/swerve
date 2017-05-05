@@ -208,13 +208,13 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
                     ps[t,z,y,x] = brentq(f_of_p, 0, tau[t,z,y,x] + D[t,z,y,x] + 1., args=(tau[t,z,y,x], D[t,z,y,x], S[t,z,y,x]))"""
 
     if swe:
-        plot_var = find_height(D, Sx, Sy, gamma_up)#np.sqrt(Sx**2 + Sy**2)#
+        plot_var = D#find_height(D, Sx, Sy, gamma_up)#np.sqrt(Sx**2 + Sy**2)#
         if nz > 1:
             plot_range = range(1,2)
         else:
             plot_range = range(1)
     else:
-        plot_var = D
+        plot_var = tau
         plot_range = range(2,3)
     #D_2d[D_2d > 1.e3] = 0.
         #D_2d = D_2d[::dprint,:,:,:]
@@ -224,6 +224,8 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
     y = np.linspace(0, ymax, num=ny, endpoint=False)
 
     X, Y = np.meshgrid(x,y)
+
+    swe = True
 
     fig = plt.figure(figsize=(12,10), facecolor='w', dpi=100)
     if swe:
@@ -236,13 +238,13 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
 
     for i in range(start, len(D[:,0,0,0])-1):
         #if i % 10 == 0:
-        print('Printing {}'.format(i))
+        print('Plotting {}'.format(i))
 
         outname = location + '/plotting/' + name + '_' + format(i, '05') + '.png'
         ax.clear()
         #ax.set_xlim(0,10)
         #ax.set_ylim(0,10)
-        #ax.set_zlim(2.2,2.35)
+        #ax.set_zlim(2.22,2.24)
 
         for l in plot_range:
             #print(plot_var[i,l,:,15])
@@ -251,11 +253,12 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
                 face_colours /= abs(np.amax(face_colours))
             face_colours = (face_colours - np.amin(face_colours)) / (np.amax(face_colours) - np.amin(face_colours))
             if swe:
-                ax.plot_surface(X[:,:],Y[:,:],plot_var[i,l,:,:].T, rstride=1,
+                ax.plot_surface(X[8:-8,8:-8],Y[8:-8,8:-8],plot_var[i,l,8:-8,8:-8].T, rstride=1,
                 cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True,
                 facecolors=cm.viridis_r(face_colours))
             else:
-                plt.plot(Y[:,0], plot_var[i,l,:,15])#
+                plt.plot(Y[:,0], plot_var[i,l,75,:])#
+                #ax.set_ylim(0.499995, 0.500005)
         plt.savefig(outname)
 
     # close hdf5 file

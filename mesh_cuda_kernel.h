@@ -675,14 +675,17 @@ Calculates the SWE state vector from the compressible variables.
 \param coarse_level
     index of coarser grid
 */
-__global__ void swe_from_compressible(float * q, float * q_swe,
+__global__ void calc_comp_prim(float * q, int * nxs, int * nys, int * nzs,
+                               float gamma, int kx_offset, int ky_offset,
+                               int coarse_level);
+
+__global__ void swe_from_compressible(float * q_prim, float * q_swe,
                                       int * nxs, int * nys, int * nzs,
                                       float * rho, float gamma,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
-                                      int coarse_level, float * rhos);
-
+                                      int coarse_level, float zmin, float dz);
 /**
 Interpolate SWE variables on fine grid to get them on coarse grid.
 
@@ -701,7 +704,7 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
 \param coarse_level
     index of coarser level
 */
-__global__ void restrict_interpolate_swe(float * qf_sw, float * q_c,
+__global__ void restrict_interpolate_swe(float * qf_prim, float * q_c,
                                    int * nxs, int * nys, int * nzs, int ng,
                                    float dz, float zmin,
                                    int * matching_indices,
@@ -892,6 +895,9 @@ void restrict_multiswe_to_multiswe(dim3 * kernels, dim3 * threads, dim3 * blocks
               int * matching_indices,
               int ng, int rank,
               int coarse_level);
+
+void interpolate_rhos(float * rho_column, float * rho_grid,
+    float zmin, float zmax, float dz, float * phs, int nx, int ny, int nz);
 
 /**
 First part of evolution through one timestep using finite volume methods.

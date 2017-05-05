@@ -1,6 +1,6 @@
-nx      50
-ny      50
-nt      1
+nx      80
+ny      80
+nt      50
 ng      2
 r       2
 nlevels 2
@@ -21,7 +21,7 @@ gamma   1.6666666667
 alpha   0.9
 beta    0.0 0.0 0.0
 gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
-periodic t
+periodic f
 burning f
 dprint  1
 outfile ../../Documents/Work/swerve/acoustic_wave.h5

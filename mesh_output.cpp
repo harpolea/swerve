@@ -30,6 +30,7 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
     /*
     Initialise the HDF5 file. Uses walkthrough from https://stackoverflow.com/questions/15379399/writing-appending-arrays-of-float-to-the-only-dataset-in-hdf5-file-in-c/15396949#15396949?newreg=b254d01af38948159bd529d8d4f5f5b9
     */
+    printf("Printing t = %i\n", 0);
 
     *outFile = H5Fcreate(filename, H5F_ACC_TRUNC, H5P_DEFAULT,
                             H5P_DEFAULT);
@@ -76,7 +77,6 @@ void initialise_hdf5_file(char * filename, int nt, int dprint,
         H5Sselect_hyperslab(file_space[i], H5S_SELECT_SET, start, NULL,
                             hcount, NULL);
         // write to dataset
-        printf("Printing t = %i\n", 0);
         H5Dwrite(dset[i], H5T_NATIVE_FLOAT, mem_space[i], file_space[i],
                  H5P_DEFAULT, Us[print_level]);
         // close file dataspace
@@ -137,7 +137,7 @@ void print_timestep(int rank, int n_processes, int print_level,
     Print timestep.
     */
     if (rank == 0) {
-        printf("Printing t = %i\n", t+1);
+        printf("Printing t = %i ,level = %i\n", t+1, print_level);
 
         if (n_processes > 1) { // only do MPI stuff if needed
             float * buf =

@@ -209,6 +209,7 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
         } else if (variableName == "nlevels") {
             inputFile >> value;
             nlevels = int(value);
+            cout << "nlevels = " << nlevels << '\n';
             models = new char[nlevels];
             nxs = new int[nlevels];
             nys = new int[nlevels];
@@ -476,8 +477,10 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
     dy = (ymax - ymin) / (nys[0]-2*ng);
 
     // need to define this in such a way that it is calculated using layer separation on first compressible grid
-    int c_in = nlevels-1;
-    while(models[c_in] == 'C') c_in -= 1;
+    int c_in = nlevels;
+    if (models[nlevels-1] == 'C') {
+        while(models[c_in-1] == 'C') c_in -= 1;
+    }
 
     dz = (zmax - zmin) / (nzs[c_in] - 1.0);
     dz *= pow(r, c_in);
@@ -665,7 +668,7 @@ void Sea::bcs(float * grid, int n_x, int n_y, int n_z, int vec_dim) {
     Enforce boundary conditions on grid of quantities with dimension vec_dim.
     */
 
-    if (periodic) {
+    if (false) {
         for (int z = 0; z < n_z; z++) {
             for (int y = 0; y < n_y; y++){
                 for (int g = 0; g < ng; g++) {

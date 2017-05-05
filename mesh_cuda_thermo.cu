@@ -483,7 +483,7 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
                         int nlayers, float gamma, float surface_phi, float surface_rho) {
     /**
     Calculates the As used to calculate the pressure given Phi, given
-    the pressure at the sea floor
+    the surface pressure = 0
 
     Parameters
     ----------
@@ -942,18 +942,12 @@ __device__ float slope_limit(float layer_frac, float left, float middle, float r
     if (abs(S_downwind) > 1.0e-10)
         r = S_upwind / S_downwind;
 
-
     return S * phi(r);
 }
 
-__global__ void swe_from_compressible(float * q, float * q_swe,
-                                      int * nxs, int * nys, int * nzs,
-                                      float * rho, float gamma,
-                                      int kx_offset, int ky_offset,
-                                      float * qc,
-                                      int * matching_indices,
-                                      int coarse_level,
-                                      float * rhos) {
+__global__ void calc_comp_prim(float * q, int * nxs, int * nys, int * nzs,
+                               float gamma, int kx_offset, int ky_offset,
+                               int coarse_level) {
     /**
     Calculates the SWE state vector from the compressible variables.
 
@@ -981,15 +975,6 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
     int z = threadIdx.z;
     int offset = (z * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x;
 
-    /*if (x == 0 && y == 0 && z == 0) {
-        for (int j = 0; j < 40; j++) {
-            for (int i = 0; i < 40; i++) {
-                printf("%d, ", q[(j*nxf+i)*6]);
-            }
-        }
-        printf("\n\n");
-    }*/
-    float W, u, v, w, p, X;
     float * q_prim, * q_con;
     q_con = (float *)malloc(6 * sizeof(float));
     q_prim = (float *)malloc(6 * sizeof(float));
@@ -1005,53 +990,58 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         // find primitive variables
         cons_to_prim_comp_d(q_con, q_prim, gamma);
 
-        rhos[offset] = q_prim[0];
-        u = q_prim[1];
-        v = q_prim[2];
-        w = q_prim[3];
-        X = q_prim[5];
+        for (int i = 0; i < 6; i++) {
+            q[offset*6 + i] = q_prim[i];
+        }
+    }
+
+    free(q_con);
+    free(q_prim);
+}
+__global__ void swe_from_compressible(float * q_prim, float * q_swe,
+                                      int * nxs, int * nys, int * nzs,
+                                      float * rhos, float gamma,
+                                      int kx_offset, int ky_offset,
+                                      float * qc,
+                                      int * matching_indices,
+                                      int coarse_level, float zmin, float dz) {
+
+    int x = kx_offset + blockIdx.x * blockDim.x + threadIdx.x;
+    int y = ky_offset + blockIdx.y * blockDim.y + threadIdx.y;
+    int z = threadIdx.z;
+    int offset = (z * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x;
+
+    float rho, u, v, w, eps, X, W, ph;
+
+    if ((x < nxs[coarse_level+1]) &&
+        (y < nys[coarse_level+1]) &&
+        (z < nzs[coarse_level+1])) {
+
+        rho = q_prim[offset*6];
+        u = q_prim[offset*6+1];
+        v = q_prim[offset*6+2];
+        w = q_prim[offset*6+3];
+        eps = q_prim[offset*6+4];
+        X = q_prim[offset*6+5];
 
         W = 1.0 / sqrt(1.0 -
                 u*u*gamma_up_d[0] - 2.0 * u*v * gamma_up_d[1] -
                 2.0 * u*w * gamma_up_d[2] - v*v*gamma_up_d[4] -
                 2.0 * v*w*gamma_up_d[5] - w*w*gamma_up_d[8]);
 
-        //rho = q_prim[0];
-
-        // calculate SWE conserved variables on fine grid.
-        p = p_from_rho_eps(q_prim[0], q_prim[4], gamma);
-
-        // save to q_swe
-        q_swe[offset*4] = p;
-
-        //printf("x: (%d, %d, %d), U: (%f, %f, %f), v: (%f,%f,%f), W: %f, p: %f\n", x, y, z, q_con[1],  q[offset*6+2],  q[offset*6+3], u, v, w, W, p);
-    }
-
-    __syncthreads();
-    float ph;
-
-    if ((x < nxs[coarse_level+1]) &&
-        (y < nys[coarse_level+1]) &&
-        (z < nzs[coarse_level+1])) {
-
-        float * A, * phis, * rho_column;//, *rhos;
+        float * A, * phis, * rho_column;
         A = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         phis = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
         rho_column = (float *)malloc(nzs[coarse_level+1] * sizeof(float));
+
         for (int i = 0; i < nzs[coarse_level+1]; i++) {
-            phis[i] = q_swe[((i * nys[coarse_level+1] + y) *
-                            nxs[coarse_level+1] + x)*4];
-            rho_column[i] = rhos[(i * nys[coarse_level+1] + y) * nxs[coarse_level+1] + x];
-            //if (sizeof(rho) > nzs[coarse_level+1]) {
-                // rho varies with position
-                //rhos[i] = rho[(i * nys[coarse_level+1] + y) *
-                //              nxs[coarse_level+1] + x];
-            //} else {
-                // HACK: rho is only nlayers long - need to find a way to define on fine grid too
-                //rhos[i] = rho[0];
-            //}
+            phis[i] = find_pot(zmin + (nzs[coarse_level+1]-i-1)*dz);
+            rho_column[i] = q_prim[((i * nys[coarse_level+1] + y) *
+                                   nxs[coarse_level+1] + x)*6];
         }
 
+        // do some interpolation of surface SW layer to find surface phi at
+        // same (x,y) as current compressible gridpoint
         int c_x = round(x*0.5) + matching_indices[coarse_level*4];
         int c_y = round(y*0.5) + matching_indices[coarse_level*4+2];
         float interp_q_comp = qc[(c_y * nxs[coarse_level] + c_x) * 4];
@@ -1077,15 +1067,16 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
         } else {
             phi_surface -= 0.25 * Sy;
         }
-        // TODO; this will not work as this function uses fact p = 0 on
-        // surface layer, which is not true for compressible code
-        //calc_As(rhos, phis, A, nzs[coarse_level+1], gamma, phi_surface, rho[0]);
-        calc_As(rho_column, phis, A, nzs[coarse_level+1], gamma, phi_surface, rho[0]);
+
+        calc_As(rho_column, phis, A, nzs[coarse_level+1], gamma, phi_surface, rhos[0]);
 
         // NOTE: hack to get this to not nan
         if (nan_check(A[z]) || A[z] < 0.0) A[z] = 1.0;
 
-        ph = phi_from_p(p, q_prim[0], gamma, A[z]);
+        // calculate SWE conserved variables on fine grid.
+        float p = p_from_rho_eps(rho, eps, gamma);
+
+        ph = phi_from_p(p, rho, gamma, A[z]);
 
         free(phis);
         free(A);
@@ -1105,11 +1096,7 @@ __global__ void swe_from_compressible(float * q, float * q_swe,
 
         //printf("(x,y,z): %d, %d, %d Phi, Sx, Sy: %f, %f, %f\n", x,y,z,q_swe[offset*4], q_swe[offset*4+1], q_swe[offset*4+2]);
     }
-
-    free(q_con);
-    free(q_prim);
 }
-
 // device-side function pointers to __device__ functions
 __device__ flux_func_ptr d_compressible_fluxes = compressible_fluxes;
 __device__ flux_func_ptr d_shallow_water_fluxes = shallow_water_fluxes;
