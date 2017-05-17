@@ -208,17 +208,18 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
                     ps[t,z,y,x] = brentq(f_of_p, 0, tau[t,z,y,x] + D[t,z,y,x] + 1., args=(tau[t,z,y,x], D[t,z,y,x], S[t,z,y,x]))"""
 
     if swe:
-        plot_var = D#find_height(D, Sx, Sy, gamma_up)#np.sqrt(Sx**2 + Sy**2)#
+        plot_var = find_height(D, Sx, Sy, gamma_up)#np.sqrt(Sx**2 + Sy**2)#
         if nz > 1:
             plot_range = range(1,2)
         else:
             plot_range = range(1)
     else:
-        plot_var = tau
+        plot_var = Sz#np.sqrt(Sx**2+Sy**2)#tau
         plot_range = range(2,3)
-    #D_2d[D_2d > 1.e3] = 0.
+    #plot_var[np.abs(plot_var) > 1.e3] = 0.
+    #plot_var[np.isnan(plot_var)] = 0.0
         #D_2d = D_2d[::dprint,:,:,:]
-    #print(D_2d[:,:,2:-2,2:-2])
+    np.set_printoptions(threshold=np.nan)
 
     x = np.linspace(0, xmax, num=nx, endpoint=False)
     y = np.linspace(0, ymax, num=ny, endpoint=False)
@@ -246,16 +247,19 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
         #ax.set_ylim(0,10)
         #ax.set_zlim(2.22,2.24)
 
+        #print(plot_var[i,1,:,:])
+
         for l in plot_range:
             #print(plot_var[i,l,:,15])
             face_colours = DX[i,l,:,:].T
+            face_colours[np.isnan(face_colours)] = 0.
             if abs(np.amax(face_colours)) > 0.:
                 face_colours /= abs(np.amax(face_colours))
             face_colours = (face_colours - np.amin(face_colours)) / (np.amax(face_colours) - np.amin(face_colours))
             if swe:
                 ax.plot_surface(X[8:-8,8:-8],Y[8:-8,8:-8],plot_var[i,l,8:-8,8:-8].T, rstride=1,
-                cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True,
-                facecolors=cm.viridis_r(face_colours))
+                cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
+                #facecolors=cm.viridis_r(face_colours))
             else:
                 plt.plot(Y[:,0], plot_var[i,l,75,:])#
                 #ax.set_ylim(0.499995, 0.500005)

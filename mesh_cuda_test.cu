@@ -7,12 +7,13 @@ __global__ void test_find_height(bool * passed) {
 
     float ph[] = {1.0e-3, 1.0, 1.0e3};
     float h[] = {1001.000333, 2.313035285, 2.0};
+    float R = 100;
 
     const float tol = 1.0e-5;
 
     for (int i = 0; i < 4; i++) {
-        if ((abs((h[i] - find_height(ph[i])) / h[i]) > tol) && (abs(h[i] - find_height(ph[i])) > 0.01*tol)) {
-            printf("%f, %f\n", h[i], find_height(ph[i]));
+        if ((abs((h[i] - find_height(ph[i], R)) / h[i]) > tol) && (abs(h[i] - find_height(ph[i], R)) > 0.01*tol)) {
+            printf("%f, %f\n", h[i], find_height(ph[i], R));
             *passed = false;
         }
     }
@@ -23,12 +24,13 @@ __global__ void test_find_pot(bool * passed) {
 
     float r[] = {2.001, 25.0, 1.0e3};
     float ph[] = {3.800701167, 0.04169080447, 1.001001335e-3};
+    float R = 100;
 
     const float tol = 1.0e-5;
 
     for (int i = 0; i < 4; i++) {
-        if ((abs((ph[i] - find_pot(r[i])) / ph[i]) > tol) && (abs(ph[i] - find_pot(r[i])) > 0.01*tol)) {
-            printf("%f, %f\n", ph[i], find_pot(r[i]));
+        if ((abs((ph[i] - find_pot(r[i], R)) / ph[i]) > tol) && (abs(ph[i] - find_pot(r[i], R)) > 0.01*tol)) {
+            printf("%f, %f\n", ph[i], find_pot(r[i], R));
             *passed = false;
         }
     }
@@ -101,11 +103,12 @@ __global__ void test_hdot(bool * passed) {
     float old_phi[] = {1.e-3, 2.e-3, 2.0e-3, 1.1, 101.0};
     float dt[] = {1.e-3, 1.e-3, 1.0, 1.0e-3, 0.1};
     float hdot[] = {0.0, 999999.66666672146, 999.9996666667214, 72.406166096631111, 0.0};
+    float R = 100;
 
     const float tol = 1.0e-5;
 
     for (int i = 0; i < 6; i++) {
-        float new_hdot = h_dot(phi[i], old_phi[i], dt[i]);
+        float new_hdot = h_dot(phi[i], old_phi[i], dt[i], R);
         if ((abs((hdot[i] - new_hdot) / hdot[i]) > tol) && (abs(hdot[i] - new_hdot) > 0.1*tol)) {
             printf("%f, %f\n", hdot[i], new_hdot);
             *passed = false;
@@ -153,8 +156,8 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
     passed[i] = true;
 
     float gamma = 5.0 / 3.0;
-    //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
-        //0.0,  0.0,  0.0,  0.80999862};
+    float gamma_up_d[9] = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
+        0.0,  0.0,  0.0,  0.80999862};
 
     float * q_new_prim, *q_prim;
     q_new_prim = (float *)malloc(6*sizeof(float));
@@ -173,7 +176,7 @@ __global__ void test_cons_to_prim_comp_d(bool * passed, float * q_prims) {
 
     float q_cons[] = {q_prim[0]*W, q_prim[0]*h*W*W*q_prim[1], q_prim[0]*h*W*W*q_prim[2], q_prim[0]*h*W*W*q_prim[3], q_prim[0]*W*(h*W-1) - p, q_prim[0]*q_prim[5]*W};
 
-    cons_to_prim_comp_d(q_cons, q_new_prim, gamma);
+    cons_to_prim_comp_d(q_cons, q_new_prim, gamma, gamma_up_d);
 
     const float tol = 1.0e-4;
     for (int j = 0; j < 6; j++) {
@@ -192,8 +195,12 @@ __global__ void test_shallow_water_fluxes(bool * passed) {
     float gamma = 5.0 / 3.0;
     //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
         //0.0,  0.0,  0.0,  0.80999862};
-    float alpha = 0.9;
+    float alpha0 = 0.9;
     //beta_d = {0.1, -0.2, 0.0};
+    float zmin = 1.0;
+    float dz = 0.1;
+    int layer = 0;
+    float R = 100;
 
     float qs[] = {0.1,0.0,0.0,0.0,
                   0.1,0.0,0.0,0.0,
@@ -217,7 +224,7 @@ __global__ void test_shallow_water_fluxes(bool * passed) {
         for (int n = 0; n < 4; n++) {
             q[n] = qs[4*i+n];
         }
-        shallow_water_fluxes(q, f, dirs[i], alpha, gamma);
+        shallow_water_fluxes(q, f, dirs[i], alpha0, gamma, zmin, dz, 1, layer, R);
         for (int n = 0; n < 4; n++) {
             if ((abs((fs[4*i+n] - f[n]) / fs[4*i+n]) > tol) && (abs(fs[4*i+n] - f[n]) > 0.1*tol)) {
                 printf("%f, %f\n", fs[4*i+n], f[n]);
@@ -235,8 +242,12 @@ __global__ void test_compressible_fluxes(bool * passed) {
     float gamma = 5.0 / 3.0;
     //gamma_up_d = {0.80999862,  0.0 ,  0.0,  0.0,  0.80999862,
         //0.0,  0.0,  0.0,  0.80999862};
-    float alpha = 0.9;
+    float alpha0 = 0.9;
     //beta_d = {0.1, -0.2, 0.3};
+    float zmin = 1.0;
+    float dz = 0.1;
+    int layer = 0;
+    float R = 100;
 
     float qs[] = {1.,  0.,  0.,  0.,  1., 0.0,
                   1.,  0.,  0.,  0.,  1., 0.0,
@@ -264,7 +275,7 @@ __global__ void test_compressible_fluxes(bool * passed) {
         for (int n = 0; n < 6; n++) {
             q[n] = qs[6*i+n];
         }
-        compressible_fluxes(q, f, dirs[i], alpha, gamma);
+        compressible_fluxes(q, f, dirs[i], alpha0, gamma, zmin, dz, 1, layer, R);
         for (int n = 0; n < 6; n++) {
             if ((abs((fs[6*i+n] - f[n]) / fs[6*i+n]) > tol) && (abs(fs[6*i+n] - f[n]) > 0.1*tol)) {
                 printf("%f, %f\n", fs[6*i+n], f[n]);

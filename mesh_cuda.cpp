@@ -30,7 +30,7 @@ Sea::Sea(int _nx, int _ny,
         float _Q, float _gamma, float _E_He, float _Cv,
         float _alpha, float * _beta, float * _gamma_down,
         bool _periodic, bool _burning, int _dprint, int _n_print_levels)
-        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint), n_print_levels(_n_print_levels)
+        : nx(_nx), ny(_ny), ng(_ng), zmin(_zmin), zmax(_zmax), nt(_nt), r(_r), df(_df), gamma(_gamma), E_He(_E_He), Cv(_Cv), alpha0(_alpha), periodic(_periodic), burning(_burning), dprint(_dprint), n_print_levels(_n_print_levels)
 {
     /**
     Implement Sea class
@@ -265,7 +265,7 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
         } else if (variableName == "Cv") {
             inputFile >> Cv;
         } else if (variableName == "alpha") {
-            inputFile >> alpha;
+            inputFile >> alpha0;
         } else if (variableName == "beta") {
             for (int i = 0; i < 3; i++) {
                 inputFile >> beta[i];
@@ -274,6 +274,8 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
             for (int i = 0; i < 3*3; i++) {
                 inputFile >> gamma_down[i];
             }
+        } else if (variableName == "R") {
+            inputFile >> R;
         } else if (variableName == "periodic") {
             string tf;
             inputFile >> tf;
@@ -420,10 +422,6 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
         printf("Invalid Cv: %f\n", Cv);
         exit(EXIT_FAILURE);
     }
-    if (alpha <  0.0 || alpha > 1.0) {
-        printf("Invalid alpha: %f\n", alpha);
-        exit(EXIT_FAILURE);
-    }
     for (int i = 0; i < 3; i++) {
         if (beta[i] < -1.0 || beta[i] > 1.0) {
             printf("Invalid beta[%d]: %f\n", i, beta[i]);
@@ -435,6 +433,10 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
             printf("Invalid gamma_down[%d]: %f\n", i, gamma_down[i]);
             exit(EXIT_FAILURE);
         }
+    }
+    if (R <  0.0) {
+        printf("Invalid R: %f\n", R);
+        exit(EXIT_FAILURE);
     }
     if (dprint < 0 || dprint > 1e9) {
         printf("Invalid dprint: %d\n", dprint);
@@ -454,6 +456,10 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
     }
 
     //inputFile.close();
+
+    float M = 1;
+
+    alpha0 = sqrt(1 - 2 * M / R);
 
     nxs[0] = nx;
     nys[0] = ny;
@@ -500,6 +506,9 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
     }
 
     Us = new float*[nlevels];
+    p_const = new float[nzs[m_in]];
+
+    //cout << "Made p_const: " << p_const[0] << '\n';
 
     for (int i = 0; i < nlevels; i++) {
         Us[i] = new float[nxs[i]*nys[i]*nzs[i]*vec_dims[i]];
@@ -530,7 +539,7 @@ void Sea::init_sea(stringstream &inputFile, char * filename)
 
 // copy constructor
 Sea::Sea(const Sea &seaToCopy)
-    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha(seaToCopy.alpha), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint), n_print_levels(seaToCopy.n_print_levels)
+    : nx(seaToCopy.nx), ny(seaToCopy.ny), ng(seaToCopy.ng), zmin(seaToCopy.zmin), zmax(seaToCopy.zmax), nt(seaToCopy.nt), r(seaToCopy.r), dx(seaToCopy.dx), dy(seaToCopy.dy), dz(seaToCopy.dz), dt(seaToCopy.dt), df(seaToCopy.df), gamma(seaToCopy.gamma), E_He(seaToCopy.E_He), Cv(seaToCopy.Cv), alpha0(seaToCopy.alpha0), R(seaToCopy.R), periodic(seaToCopy.periodic), burning(seaToCopy.burning), dprint(seaToCopy.dprint), n_print_levels(seaToCopy.n_print_levels)
 {
     /**
     copy constructor
@@ -583,6 +592,7 @@ Sea::~Sea() {
     delete[] vec_dims;
     delete[] matching_indices;
     delete[] print_levels;
+    delete[] p_const;
 
     for (int i = 0; i < nlevels; i++) {
         delete[] Us[i];
@@ -651,7 +661,7 @@ void Sea::print_inputs() {
     cout << "Q \t\t\t" << Q << '\n';
     cout << "E_He \t\t\t" << E_He << '\n';
     cout << "Cv \t\t\t" << Cv << '\n';
-    cout << "alpha \t\t\t" << alpha << '\n';
+    cout << "alpha0, R \t\t" << alpha0 << ", " << R << '\n';
     cout << "beta \t\t\t(" << beta[0] << ',' << beta[1] << ',' << beta[2] << ")\n";
     cout << "gamma_down \t\t((" << gamma_down[0] << ',' << gamma_down[1] << ',' << gamma_down[2] << "),(" << gamma_down[3] << ',' << gamma_down[4] << ',' << gamma_down[5] << "),(" << gamma_down[6] << ',' << gamma_down[7] << ',' << gamma_down[8] << "))\n";
     cout << "burning \t\t" << burning << '\n';
@@ -734,13 +744,15 @@ void Sea::run(MPI_Comm comm, MPI_Status * status, int rank, int size,
         Qs[i] = Q;
     }
 
-    cuda_run(beta, gamma_up, Us, rho, Qs,
+    //cout << "p_const: " << p_const[0] << ' ' << p_const[1] << ' '<< p_const[2] << '\n';
+
+    cuda_run(beta, Us, rho, Qs,
              nxs, nys, nzs, nlevels, models, vec_dims,
-             ng, nt, alpha, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
+             ng, nt, alpha0, R, gamma, E_He, Cv, zmin, dx, dy, dz, dt, burning,
              periodic, dprint,
              outfile, paramfile, comm, *status, rank, size,
              matching_indices, r,
-             n_print_levels, print_levels, tstart);
+             n_print_levels, print_levels, tstart, p_const);
 
     delete[] Qs;
 }

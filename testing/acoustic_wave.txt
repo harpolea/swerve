@@ -1,6 +1,6 @@
-nx      80
-ny      80
-nt      50
+nx      40
+ny      40
+nt      1
 ng      2
 r       2
 nlevels 2
@@ -18,9 +18,10 @@ Q       0.0
 E_He    10.0e3
 Cv      1.0
 gamma   1.6666666667
-alpha   0.9
+alpha   0.989949
 beta    0.0 0.0 0.0
-gamma_down   1.23457 0.0 0.0 0.0 1.23457 0.0 0.0 0.0 1.23457
+gamma_down   1.0 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1.020408
+R       100
 periodic f
 burning f
 dprint  1

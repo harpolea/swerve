@@ -103,6 +103,8 @@ public:
     char * models; /**< Array describing the physical model to use on each level. S = single layer SWE, M = multilayer SWE, C = compressible, L = Low Mach*/
     int * vec_dims; /**< Dimensions of state vectors on each grid*/
     float gamma; /**< Adiabatic index */
+    float alpha0; /**< Lapse function */
+    float R; /**< Radius of star */
 
     float dz; /**< Gridpoint separation in the z-direction of fine (compressible grid)*/
     float zmin; /**< Height of sea floor */
@@ -110,6 +112,7 @@ public:
     float * xs; /**< Vector of x-coordinates of coarsest gridpoints */
     float * ys; /**< Vector of y-coordinates of coarsest gridpoints  */
     float ** Us; /**< Array of pointers to grids.*/
+    float * p_const; /**< Array of constant pressures on shallow water grids. */
 
 private:
 
@@ -130,7 +133,6 @@ private:
     float E_He; /**< Energy release per unit mass of helium burning*/
     float Cv; /**< Specific heat at constant volume*/
 
-    float alpha; /**< Lapse function */
     float beta[3]; /**< Shift vector */
     float gamma_down[3*3]; /**< Covariant spatial metric */
     float gamma_up[3*3]; /**< Contravariant spatial metric */

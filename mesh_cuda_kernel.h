@@ -5,16 +5,13 @@
 #include "mpi.h"
 
 typedef void (* flux_func_ptr)(float * q, float * f, int dir,
-                                float alpha, float gamma);
+                          float alpha0, float gamma, float zmin, float dz,
+                          int nz, int layer, float R);
 
 typedef float (* fptr)(float p, float D, float Sx, float Sy, float Sz,
-                       float tau, float gamma);
-
-typedef float (* fptr_h)(float p, float D, float Sx, float Sy, float Sz,
-                      float tau, float gamma, float * gamma_up);
+                       float tau, float gamma, float * gamma_up);
 
 __constant__ float beta_d[3];
-__constant__ float gamma_up_d[9];
 
 unsigned int nextPow2(unsigned int x);
 
@@ -38,31 +35,11 @@ tol.
 \param gamma
     adiabatic index
 */
-__device__ float zbrent(fptr func, const float x1, const float x2,
+__host__ __device__ float zbrent(fptr func, const float x1, const float x2,
              const float tol,
-             float D, float Sx, float Sy, float Sz, float tau, float gamma);
-/**
-Using Brent's method, return the root of a function or functor func known
-to lie between x1 and x2. The root will be regined until its accuracy is
-tol.
+             float D, float Sx, float Sy, float Sz, float tau, float gamma,
+             float * gamma_up);
 
-\param func
- function pointer to shallow water or compressible flux function.
-\param x1, x2
- limits of root
-\param tol
- tolerance to which root shall be calculated to
-\param D, Sx, Sy, Sz, tau
- conserved variables
-\param gamma
- adiabatic index
-\param gamma_up
-    spatial metric
-*/
-__host__ float zbrent(fptr_h func, const float x1, const float x2,
-          const float tol,
-          float D, float Sx, float Sy, float Sz, float tau, float gamma,
-          float * gamma_up);
 /**
 Checks to see if the integer returned by an mpi function, mpi_err, is an MPI error. If so, it prints out some useful stuff to screen.
 */
@@ -148,9 +125,7 @@ Need to do non-blocking send, blocking receive then wait.
 */
 void bcs_mpi(float * grid, int nx, int ny, int nz, int vec_dim, int ng, MPI_Comm comm, MPI_Status status, int rank, int n_processes, int y_size, bool do_z, bool periodic);
 
-__device__ float W_swe(float * q); /**< calculate Lorentz factor for conserved swe state vector */
-
-__host__ float W_swe(float * q, float * gamma_up); /**< calculate Lorentz factor for conserved swe state vector */
+__host__ __device__ float W_swe(float * q, float * gamma_up); /**< calculate Lorentz factor for conserved swe state vector */
 
 /**
 calculate superbee slope limiter Phi(r)
@@ -160,12 +135,12 @@ __host__ __device__ float phi(float r);
 /**
 Finds r given Phi.
 */
-__device__ float find_height(float ph);
+__host__ __device__ float find_height(float ph, float R);
 
 /**
 Finds Phi given r.
 */
-__device__ float find_pot(float r);
+__device__ float find_pot(float r, float R);
 
 /**
 calculate rhoh using p for gamma law equation of state
@@ -206,24 +181,10 @@ primitive variable conversion
 \param gamma
     adiabatic index
 */
-__device__ float f_of_p(float p, float D, float Sx, float Sy,
-                                 float Sz, float tau, float gamma);
+__host__ __device__ float f_of_p(float p, float D, float Sx, float Sy,
+                                 float Sz, float tau, float gamma,
+                                 float * gamma_up);
 
-/**
-Function of p whose root is to be found when doing conserved to
-primitive variable conversion
-
-\param p
- pressure
-\param D, Sx, Sy, Sz, tau
- components of conserved state vector
-\param gamma
- adiabatic index
-\param gamma_up
-    spatial metric
-*/
-__host__ float f_of_p(float p, float D, float Sx, float Sy,
-                              float Sz, float tau, float gamma, float * gamma_up);
 
 /**
 Calculates the time derivative of the height given the shallow water
@@ -239,7 +200,7 @@ way to do this which will more accurately give hdot at current time.
     timestep
 */
 
-__device__ float h_dot(float phi, float old_phi, float dt);
+__device__ float h_dot(float phi, float old_phi, float dt, float R);
 
 /**
 Calculate the heating rate per unit mass from the shallow water variables
@@ -301,6 +262,23 @@ __device__ void calc_As(float * rhos, float * phis, float * A,
                         int nlayers, float gamma,
                         float surface_phi, float surface_rho);
 
+__device__ void find_constant_p_surfaces(float * p_const, float gamma,
+    float * q_comp, float * q_swe, float zmin, float dz,
+    int * nxs, int * nys, int * nzs, int clevel,
+    int kx_offset, int ky_offset, int * matching_indices);
+
+__device__ void enforce_hse_d(float * q_comp, float * q_swe,
+                            int kx_offset, int ky_offset,
+                            int * nxs, int * nys, int * nzs, int ng,
+                            int level, int clevel, float zmin, float dz,
+                            int * matching_indices_d, float gamma,
+                            float R, float alpha0);
+
+void enforce_hse(float * q_comp, float * q_swe,
+                int * nxs, int * nys, int * nzs, int ng,
+                int level, int clevel, float zmin, float dz,
+                int * matching_indices, float gamma);
+
 /**
 Convert compressible conserved variables to primitive variables
 
@@ -312,7 +290,7 @@ Convert compressible conserved variables to primitive variables
     adiabatic index
 */
 __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
-                       float gamma);
+                       float gamma, float * gamma_up);
 
 /**
 Convert compressible conserved variables to primitive variables
@@ -346,7 +324,7 @@ Calculate the flux vector of the shallow water equations
    adiabatic index
 */
 __device__ void shallow_water_fluxes(float * q, float * f, int dir,
-                         float alpha, float gamma);
+                          float alpha0, float gamma, float zmin, float dz, float nz, float layer, float R);
 
 /**
 Calculate the flux vector of the compressible GR hydrodynamics equations
@@ -364,7 +342,7 @@ Calculate the flux vector of the compressible GR hydrodynamics equations
     adiabatic index
 */
 __device__ void compressible_fluxes(float * q, float * f, int dir,
-                      float alpha, float gamma);
+                          float alpha0, float gamma, float zmin, float dz, float nz, float layer, float R);
 
 /**
 Calculate p using SWE conserved variables
@@ -428,7 +406,7 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
                           int * nxs, int * nys, int * nzs,
                           float * rho, float gamma,
                           int kx_offset, int ky_offset, float dt,
-                          float * old_phi, int level);
+                          float * old_phi, int level, float R);
 
 /**
 Calculates slope limited verticle gradient at layer_frac between middle and amiddle.
@@ -463,7 +441,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                   int * nxs, int * nys, int * nzs, int ng,
                   float dz, float zmin,
                   int * matching_indices_d,
-                  int kx_offset, int ky_offset, int coarse_level);
+                  int kx_offset, int ky_offset, int coarse_level, bool boundaries, float R);
 
 /**
 Prolong coarse grid data to fine grid
@@ -505,7 +483,7 @@ void prolong_swe_to_comp(dim3 * kernels, dim3 * threads, dim3 * blocks,
                 float dz, float dt, float zmin,
                 float * rho, float gamma,
                 int * matching_indices_d, int ng, int rank, float * qc_comp,
-                float * old_phi_d, int coarse_level);
+                float * old_phi_d, int coarse_level, float R);
 
 /**
 Reconstruct fine grid variables from compressible variables on coarse grid
@@ -677,7 +655,8 @@ Calculates the SWE state vector from the compressible variables.
 */
 __global__ void calc_comp_prim(float * q, int * nxs, int * nys, int * nzs,
                                float gamma, int kx_offset, int ky_offset,
-                               int coarse_level);
+                               int coarse_level, float zmin, float dz,
+                               float R, float alpha0);
 
 __global__ void swe_from_compressible(float * q_prim, float * q_swe,
                                       int * nxs, int * nys, int * nzs,
@@ -685,18 +664,25 @@ __global__ void swe_from_compressible(float * q_prim, float * q_swe,
                                       int kx_offset, int ky_offset,
                                       float * qc,
                                       int * matching_indices,
-                                      int coarse_level, float zmin, float dz);
+                                      int coarse_level, float zmin, float dz,
+                                      float alpha0, float R);
 /**
 Interpolate SWE variables on fine grid to get them on coarse grid.
 
-\param qf_swe
-  SWE variables on fine grid
-\param q_c
-  coarse grid state vector
+\param p_const
+    pressure on SWE surfaces
+\param
+    adiabatic index
+\param q_comp
+  primitive compressible state vector on grid
+\param q_swe
+  conserved SWE state vector on grid
+\param zmin
+    height of bottom layer
+\param dz
+    compressible grid separation
 \param nxs, nys, nzs
   grid dimensions
-\param ng
-  number of ghost cells
 \param matching_indices
   position of fine grid wrt coarse grid
 \param kx_offset, ky_offset
@@ -704,12 +690,11 @@ Interpolate SWE variables on fine grid to get them on coarse grid.
 \param coarse_level
     index of coarser level
 */
-__global__ void restrict_interpolate_swe(float * qf_prim, float * q_c,
-                                   int * nxs, int * nys, int * nzs, int ng,
-                                   float dz, float zmin,
-                                   int * matching_indices,
-                                   int kx_offset, int ky_offset,
-                                   int coarse_level);
+__global__ void restrict_interpolate_swe(float * p_const, float gamma,
+    float * q_comp, float * q_swe, float zmin, float dz,
+    int * nxs, int * nys, int * nzs, int clevel,
+    int kx_offset, int ky_offset, int * matching_indices,
+    float R, float alpha0);
 
 /**
 Restrict fine grid data to coarse grid
@@ -741,7 +726,7 @@ void restrict_comp_to_swe(dim3 * kernels, dim3 * threads, dim3 * blocks,
                    float dz, float zmin, int * matching_indices,
                    float * rho, float gamma,
                    int ng, int rank, float * qf_swe,
-                   int coarse_level);
+                   int coarse_level, float * p_const, float R, float alpha0);
 
 /**
 Interpolate fine grid compressible variables to get them on coarser compressible grid.
@@ -930,8 +915,8 @@ __global__ void evolve_fv(float * Un_d, flux_func_ptr flux_func,
                     float * qy_plus_half, float * qy_minus_half,
                     float * fx_plus_half, float * fx_minus_half,
                     float * fy_plus_half, float * fy_minus_half,
-                    int nx, int ny, int nz, int vec_dim,
-                    float alpha, float gamma,
+                    int nx, int ny, int nz, int vec_dim, float alpha0,
+                    float gamma, float zmin, float dz, float R,
                     int kx_offset, int ky_offset);
 
 /**
@@ -961,8 +946,8 @@ NOTE: we assume that beta is smooth so can get value at cell boundaries with sim
 __global__ void evolve_z(float * Un_d, flux_func_ptr flux_func,
                      float * qz_plus_half, float * qz_minus_half,
                      float * fz_plus_half, float * fz_minus_half,
-                     int nx, int ny, int nz, int vec_dim,
-                     float alpha, float gamma,
+                     int nx, int ny, int nz, int vec_dim, float alpha0,
+                     float gamma, float zmin, float dz, float R,
                      int kx_offset, int ky_offset);
 
 /**
@@ -995,8 +980,8 @@ __global__ void evolve_fv_fluxes(float * F,
                   float * qy_plus_half, float * qy_minus_half,
                   float * fx_plus_half, float * fx_minus_half,
                   float * fy_plus_half, float * fy_minus_half,
-                  int nx, int ny, int nz, int vec_dim, float alpha,
-                  float dx, float dy, float dt,
+                  int nx, int ny, int nz, int vec_dim, float alpha0,
+                  float dx, float dy, float dz, float dt, float zmin, float R,
                   int kx_offset, int ky_offset);
 
 /**
@@ -1023,8 +1008,8 @@ problem at the cell boundaries in z direction.
 __global__ void evolve_z_fluxes(float * F,
                    float * qz_plus_half, float * qz_minus_half,
                    float * fz_plus_half, float * fz_minus_half,
-                   int nx, int ny, int nz, int vec_dim, float alpha,
-                   float dz, float dt,
+                   int nx, int ny, int nz, int vec_dim, float alpha0,
+                   float dz, float dt, float zmin, float R,
                    int kx_offset, int ky_offset);
 
 /**
@@ -1140,8 +1125,8 @@ void homogeneuous_fv(dim3 * kernels, dim3 * threads, dim3 * blocks,
     float * qz_p_d, float * qz_m_d,
     float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
     float * fz_p_d, float * fz_m_d,
-    int nx, int ny, int nz, int vec_dim, int ng, float alpha, float gamma,
-    float dx, float dy, float dz, float dt, int rank,
+    int nx, int ny, int nz, int vec_dim, int ng, float alpha0, float gamma,
+    float dx, float dy, float dz, float dt, int rank, float zmin, float R,
     flux_func_ptr h_flux_func, bool do_z);
 
 /**
@@ -1197,11 +1182,14 @@ void rk3(dim3 * kernels, dim3 * threads, dim3 * blocks,
        float * qz_p_d, float * qz_m_d,
        float * fx_p_d, float * fx_m_d, float * fy_p_d, float * fy_m_d,
        float * fz_p_d, float * fz_m_d,
-       int nx, int ny, int nz, int vec_dim, int ng, float alpha, float gamma,
+       int level,
+       int *nxs, int *nys, int *nzs, int *vec_dims, int ng, float alpha0,
+       float R, float gamma,
        float dx, float dy, float dz, float dt,
        float * Up_h, float * F_h, float * Un_h,
        MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-       flux_func_ptr h_flux_func, bool do_z, bool periodic);
+       flux_func_ptr flux_func, bool do_z, bool periodic,
+       int m_in, float * U_swe, int * matching_indices, float zmin);
 
 /**
 Evolve system through nt timesteps, saving data to filename every dprint timesteps.
@@ -1228,8 +1216,10 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
    number of ghost cells
 \param nt
    total number of timesteps
-\param alpha
-   lapse function
+\param alpha0
+   lapse function at sea floor
+\param R
+    radius of star
 \param gamma
    adiabatic index
 \param E_He
@@ -1266,17 +1256,19 @@ Evolve system through nt timesteps, saving data to filename every dprint timeste
     numbers of the levels to be output to file
 \param tstart
     start timestep
+\param p_const
+    pressures on multilayer SWE grids
 */
-void cuda_run(float * beta, float * gamma_up,
+void cuda_run(float * beta,
          float ** Us_h, float * rho, float * Q,
          int * nxs, int * nys, int * nzs, int nlevels, char * models,
          int * vec_dims, int ng,
-         int nt, float alpha, float gamma, float E_He, float Cv,
+         int nt, float alpha0, float R, float gamma, float E_He, float Cv,
          float zmin,
          float dx, float dy, float dz, float dt, bool burning,
          bool periodic, int dprint, char * filename, char * param_filename,
          MPI_Comm comm, MPI_Status status, int rank, int n_processes,
-         int * matching_indices, int r, int n_print_levels, int * print_levels, int tstart);
+         int * matching_indices, int r, int n_print_levels, int * print_levels, int tstart, float * p_const);
 
 __global__ void test_find_height(bool * passed);
 __global__ void test_find_pot(bool * passed);
