@@ -1013,6 +1013,13 @@ __global__ void evolve_z_fluxes(float * F,
                    int kx_offset, int ky_offset);
 
 /**
+Calculate gravitational source terms
+**/
+__global__ void grav_sources(float * q, float gamma,
+    int nx, int ny, int nz, int vec_dim, float zmin, float R, float alpha0,
+    float dz, float dt,
+    int kx_offset, int ky_offset);
+/**
 Does the heating part of the evolution.
 
 \param Up

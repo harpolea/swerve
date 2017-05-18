@@ -561,17 +561,17 @@ __device__ void enforce_hse_d(float * q_comp, float * q_swe,
         float zg_a = zmin + dz * (nzs[level] - ng - 1);
         float zg_b = zmin + dz * ng;
         float M = 1;
-        float gamma_za = (1.0 - M * zz_a / (R*R*alpha0)) / alpha0;
-        float gamma_zb = (1.0 - M * zz_b / (R*R*alpha0)) / alpha0;
-        float gamma_zga = (1.0 - M * zg_a / (R*R*alpha0)) / alpha0;
-        float gamma_zgb = (1.0 - M * zg_b / (R*R*alpha0)) / alpha0;
+        float gamma_za = (1.0 - M * zz_a / (R*R*alpha0*alpha0)) / alpha0;
+        float gamma_zb = (1.0 - M * zz_b / (R*R*alpha0*alpha0)) / alpha0;
+        float gamma_zga = (1.0 - M * zg_a / (R*R*alpha0*alpha0)) / alpha0;
+        float gamma_zgb = (1.0 - M * zg_b / (R*R*alpha0*alpha0)) / alpha0;
 
         for (int i = 0; i < rr; i++) {
             for (int j = 0; j < rr; j++) {
                 float z_surface =
                     find_height(q_swe[(c_y * nxs[clevel] + c_x) * 4], R) +
                     ((2*i - rr+1) * Sx + (2*j - rr+1) * Sy) / (2.0*rr);
-                float gamma_surf = (1.0 - M * z_surface / (R*R*alpha0)) / alpha0;
+                float gamma_surf = (1.0 - M * z_surface / (R*R*alpha0*alpha0)) / alpha0;
 
                 for (int n = 0; n < 6; n++) {
                     if (z < ng) {
@@ -652,17 +652,17 @@ void enforce_hse(float * q_comp, float * q_swe,
                 float zg_b = zmin + dz * ng;
 
                 float M = 1;
-                float gamma_za = (1.0 - M * zz_a / (R*R*alpha0)) / alpha0;
-                float gamma_zb = (1.0 - M * zz_b / (R*R*alpha0)) / alpha0;
-                float gamma_zga = (1.0 - M * zg_a / (R*R*alpha0)) / alpha0;
-                float gamma_zgb = (1.0 - M * zg_b / (R*R*alpha0)) / alpha0;
+                float gamma_za = (1.0 - M * zz_a / (R*R*alpha0*alpha0)) / alpha0;
+                float gamma_zb = (1.0 - M * zz_b / (R*R*alpha0*alpha0)) / alpha0;
+                float gamma_zga = (1.0 - M * zg_a / (R*R*alpha0*alpha0)) / alpha0;
+                float gamma_zgb = (1.0 - M * zg_b / (R*R*alpha0*alpha0)) / alpha0;
 
                 for (int i = 0; i < rr; i++) {
                     for (int j = 0; j < rr; j++) {
                         float z_surface =
                             find_height(q_swe[(c_y * nxs[clevel] + c_x) * 4] +
                             ((2*i - rr+1) * Sx + (2*j - rr+1) * Sy) / (2.0*rr), R);
-                        float gamma_surf = (1.0 - M * z_surface / (R*R*alpha0)) / alpha0;
+                        float gamma_surf = (1.0 - M * z_surface / (R*R*alpha0*alpha0)) / alpha0;
 
                         for (int n = 0; n < 6; n++) {
                             q_comp[((z * nys[level] + rr*y+j) * nxs[level] + rr*x+i) * 6 + n] =
@@ -747,12 +747,12 @@ __device__ void cons_to_prim_comp_d(float * q_cons, float * q_prim,
             sq = tau + p + D;
         //float eps = (sq - p * (tau + p + D)/sq - D) / D;
         float h = 1.0 + gamma * (sq - p * (tau + p + D)/sq - D) / D;
-        float W = sqrt(1.0 + Ssq / (D*D*h*h));
+        float W2 = 1.0 + Ssq / (D*D*h*h);
 
         q_prim[0] = D * sq / (tau + p + D);//D / W;
-        q_prim[1] = Sx / (W*W * h * q_prim[0]);
-        q_prim[2] = Sy / (W*W * h * q_prim[0]);
-        q_prim[3] = Sz / (W*W * h * q_prim[0]);
+        q_prim[1] = Sx / (W2 * h * q_prim[0]);
+        q_prim[2] = Sy / (W2 * h * q_prim[0]);
+        q_prim[3] = Sz / (W2 * h * q_prim[0]);
         q_prim[4] = (sq - p * (tau + p + D)/sq - D) / D;
         q_prim[5] = q_cons[5] / D;
     }
@@ -860,9 +860,9 @@ __device__ void shallow_water_fluxes(float * q, float * f, int dir,
     for (int i = 0; i < 9; i++) {
         gamma_up[i] = 0.0;
     }
-    gamma_up[0] = exp(2.0 * q[0]);
-    gamma_up[4] = gamma_up[0];
-    gamma_up[8] = 1.0;
+    gamma_up[0] = 1.0;
+    gamma_up[4] = 1.0;
+    gamma_up[8] = exp(2.0 * q[0]);
 
     float W = W_swe(q, gamma_up);
     if (nan_check(W)) {
@@ -927,9 +927,9 @@ __device__ void compressible_fluxes(float * q, float * f, int dir,
     for (int i = 0; i < 9; i++) {
         gamma_up[i] = 0.0;
     }
-    gamma_up[0] = alpha*alpha;
-    gamma_up[4] = gamma_up[0];
-    gamma_up[8] = 1.0;
+    gamma_up[0] = 1.0;
+    gamma_up[4] = 1.0;
+    gamma_up[8] = alpha*alpha;
 
     cons_to_prim_comp_d(q, q_prim, gamma, gamma_up);
 
@@ -1081,9 +1081,9 @@ __global__ void compressible_from_swe(float * q, float * q_comp,
         for (int i = 0; i < 9; i++) {
             gamma_up[i] = 0.0;
         }
-        gamma_up[0] = exp(2.0 * q_swe[0]);
-        gamma_up[4] = gamma_up[0];
-        gamma_up[8] = 1.0;
+        gamma_up[0] = 1.0;
+        gamma_up[4] = 1.0;
+        gamma_up[8] = exp(2.0 * q_swe[0]);
 
         // calculate hdot = w (?)
         float hdot = h_dot(q[offset*4], old_phi[offset], dt, R);
@@ -1206,9 +1206,9 @@ __global__ void calc_comp_prim(float * q, int * nxs, int * nys, int * nzs,
         for (int i = 0; i < 9; i++) {
             gamma_up[i] = 0.0;
         }
-        gamma_up[0] = alpha*alpha;
-        gamma_up[4] = gamma_up[0];
-        gamma_up[8] = 1.0;
+        gamma_up[0] = 1.0;
+        gamma_up[4] = 1.0;
+        gamma_up[8] = alpha*alpha;
 
         //printf("alpha = %f\n", alpha);
         // NOTE: alpha ok here
@@ -1261,9 +1261,9 @@ __global__ void swe_from_compressible(float * q_prim, float * q_swe,
         for (int i = 0; i < 9; i++) {
             gamma_up[i] = 0.0;
         }
-        gamma_up[0] = alpha*alpha;
-        gamma_up[4] = gamma_up[0];
-        gamma_up[8] = 1.0;
+        gamma_up[0] = 1.0;
+        gamma_up[4] = 1.0;
+        gamma_up[8] = alpha*alpha;
 
         W = 1.0 / sqrt(1.0 -
                 u*u*gamma_up[0] - 2.0 * u*v * gamma_up[1] -

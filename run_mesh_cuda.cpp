@@ -200,11 +200,11 @@ void acoustic_wave(Sea *sea) {
     float z_surface = sea->zmax+4*sea->dz/pow(2, c_in);
 
     float M = 1;
-    float gamma_surf = (1.0 - M * z_surface / (sea->R*sea->R*sea->alpha0)) / sea->alpha0;
+    float gamma_surf = (1.0 - M * z_surface / (sea->R*sea->R*sea->alpha0*sea->alpha0)) / sea->alpha0;
 
     // set acoustic wave test initial data
     for (int z = 0; z < sea->nzs[c_in]; z++) {
-        float gamma_z = (1.0 - M * (sea->zmin + sea->dz/pow(2, c_in) * (sea->nzs[c_in] - z - 1)) / (sea->R*sea->R*sea->alpha0)) / sea->alpha0;
+        float gamma_z = (1.0 - M * (sea->zmin + sea->dz/pow(2, c_in) * (sea->nzs[c_in] - z - 1)) / (sea->R*sea->R*sea->alpha0*sea->alpha0)) / sea->alpha0;
 
         float rho_z = rho_ref * (1.0 + alpha) *
             pow(gamma_z - gamma_surf, 1.0/sea->gamma);
@@ -273,9 +273,9 @@ void acoustic_wave(Sea *sea) {
     float * Sy0s = new float[sea->nxs[m_in]*sea->nys[m_in]*sea->nzs[m_in]];
 
     sea->p_const[0] = 0.0;
-    float gamma_z = (1.0 - M * (sea->zmin*0.6+sea->zmax*0.4) / (sea->R*sea->R*sea->alpha0)) / sea->alpha0;
+    float gamma_z = (1.0 - M * (sea->zmin*0.6+sea->zmax*0.4) / (sea->R*sea->R*sea->alpha0*sea->alpha0)) / sea->alpha0;
     sea->p_const[1] = K * pow(rho_ref, sea->gamma) * (gamma_z - gamma_surf);
-    gamma_z = (1.0 - M * sea->zmin/ (sea->R*sea->R*sea->alpha0)) / sea->alpha0;
+    gamma_z = (1.0 - M * sea->zmin/ (sea->R*sea->R*sea->alpha0*sea->alpha0)) / sea->alpha0;
     sea->p_const[2] = K * pow(rho_ref, sea->gamma) * (gamma_z - gamma_surf);
 
     cout << "p1 = " << sea->p_const[1] << " p2 = " << sea->p_const[2] << '\n';
@@ -292,7 +292,7 @@ void acoustic_wave(Sea *sea) {
             D0s[y * sea->nxs[m_in] + x] = -0.5 *
                 log(1.0 - 2.0 / z_surface);
 
-            float height = sea->R*sea->R*sea->alpha0 / M * (1 - sea->alpha0 * (sea->p_const[1] / (K * pow(rho_ref * (1.0 + alpha * f), sea->gamma)) + gamma_surf));
+            float height = sea->R*sea->R*sea->alpha0*sea->alpha0 / M * (1 - sea->alpha0 * (sea->p_const[1] / (K * pow(rho_ref * (1.0 + alpha * f), sea->gamma)) + gamma_surf));
 
             //sqrt(z_surface*z_surface/sqrt(1-2/z_surface) - sea->p_const[1] /
                     //(K * pow(rho_ref * (1.0 + alpha * f), sea->gamma)));
@@ -309,9 +309,9 @@ void acoustic_wave(Sea *sea) {
                 float rhoh = rho + sea->gamma * sea->p_const[z] / (sea->gamma - 1.0);
                 float cs = sqrt(sea->gamma * sea->p_const[z] / rhoh);
 
-                height = sea->R*sea->R*sea->alpha0 / M * (1 - sea->alpha0 * (sea->p_const[z] / (K * pow(rho_ref * (1.0 + alpha * f), sea->gamma)) + gamma_surf));
+                height = sea->R*sea->R*sea->alpha0*sea->alpha0 / M * (1 - sea->alpha0 * (sea->p_const[z] / (K * pow(rho_ref * (1.0 + alpha * f), sea->gamma)) + gamma_surf));
 
-                gamma_z = (1.0 - M * height / (sea->R*sea->R*sea->alpha0)) / sea->alpha0;
+                gamma_z = (1.0 - M * height / (sea->R*sea->R*sea->alpha0*sea->alpha0)) / sea->alpha0;
                 float rho_z = rho_ref * (1.0 + alpha) *
                     pow(gamma_z - gamma_surf, 1.0/sea->gamma);
                 float rhoh_temp = rho_z + sea->gamma * K*pow(rho_z,sea->gamma) / (sea->gamma - 1.0);

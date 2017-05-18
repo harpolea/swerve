@@ -673,7 +673,8 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         for (int i = 0; i < 9; i++) {
             gamma_up[i] = 0.0;
         }
-        gamma_up[8] = 1.0;
+        gamma_up[0] = 1.0;
+        gamma_up[4] = 1.0;
 
         // height of this layer
         float height = zmin + dz * (nzs[clevel+1] - z - 1.0);
@@ -682,8 +683,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
         for (int i = 0; i < 4; i++) {
             q_swe[i] = q_c[(c_y*nxs[clevel]+c_x)*4+i];
         }
-        gamma_up[0] = exp(2.0 * q_swe[0]);
-        gamma_up[4] = gamma_up[0];
+        gamma_up[8] = exp(2.0 * q_swe[0]);
         float W = W_swe(q_swe, gamma_up);
         float r = find_height(q_c[(c_y * nxs[clevel] + c_x) * 4]/W, R);
         // Heights are sane here?
@@ -698,8 +698,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
             for (int i = 0; i < 4; i++) {
                 q_swe[i] = q_c[((nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
             }
-            gamma_up[0] = exp(2.0 * q_swe[0]);
-            gamma_up[4] = gamma_up[0];
+            gamma_up[8] = exp(2.0 * q_swe[0]);
             W = W_swe(q_swe, gamma_up);
             r = find_height(q_c[((nys[clevel]+c_y)*nxs[clevel]+c_x)*4] / W, R);
             layer_frac = (height - prev_r) / (r - prev_r);
@@ -711,8 +710,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                 for (int i = 0; i < 4; i++) {
                     q_swe[i] = q_c[((l*nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
                 }
-                gamma_up[0] = exp(2.0 * q_swe[0]);
-                gamma_up[4] = gamma_up[0];
+                gamma_up[8] = exp(2.0 * q_swe[0]);
                 W = W_swe(q_swe, gamma_up);
                 r = find_height(q_c[((l * nys[clevel] + c_y) * nxs[clevel] + c_x) * 4] / W, R);
                 if (height > r) {
@@ -734,8 +732,7 @@ __global__ void prolong_reconstruct_comp_from_swe(float * q_comp,
                         q_swe[i] =
                             q_c[((l*nys[clevel]+c_y)*nxs[clevel]+c_x)*4+i];
                     }
-                    gamma_up[0] = exp(2.0 * q_swe[0]);
-                    gamma_up[4] = gamma_up[0];
+                    gamma_up[8] = exp(2.0 * q_swe[0]);
                     W = W_swe(q_swe, gamma_up);
                     r = find_height(q_c[((l * nys[clevel] + c_y) * nxs[clevel] + c_x) * 4] / W, R);
                     layer_frac = (height - prev_r) / (r - prev_r);
@@ -1599,7 +1596,8 @@ __global__ void restrict_interpolate_swe(float * p_const, float gamma,
         for (int i = 0; i < 9; i++) {
             gamma_up[i] = 0.0;
         }
-        gamma_up[8] = 1.0;
+        gamma_up[0] = 1.0;
+        gamma_up[4] = 1.0;
 
         int l = neighbour_layer;
         float Ww[8];
@@ -1610,8 +1608,7 @@ __global__ void restrict_interpolate_swe(float * p_const, float gamma,
             for (int i = 0; i < 2; i++) {
                 h = zmin + dz * (nzs[clevel+1] - 1 - l);
                 alpha = alpha0 + M * h / (R*R * alpha0);
-                gamma_up[0] = alpha*alpha;
-                gamma_up[4] = gamma_up[0];
+                gamma_up[8] = alpha*alpha;
                 float u, v, w;
                 u=q_comp[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
                 v=q_comp[((l*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
@@ -1627,8 +1624,7 @@ __global__ void restrict_interpolate_swe(float * p_const, float gamma,
 
                 h = zmin + dz * (nzs[clevel+1] - 1 - (l-1));
                 alpha = alpha0 + M * h / (R*R * alpha0);
-                gamma_up[0] = alpha*alpha;
-                gamma_up[4] = gamma_up[0];
+                gamma_up[8] = alpha*alpha;
                 u=q_comp[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+1];
                 v=q_comp[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+2];
                 w=q_comp[(((l-1)*nys[clevel+1]+y*2+j)*nxs[clevel+1]+x*2+i)*6+3];

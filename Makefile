@@ -301,10 +301,11 @@ run_mesh_cuda.o: run_mesh_cuda.cpp
 mesh_output.o: mesh_output.cpp
 	$(EXEC) $(NVCC) $(INCLUDES) $(ALL_CCFLAGS) $(GENCODE_FLAGS) -I$(MPI_PATH)/include -lmpi -g -o $@ -c $< -Xcompiler -fPIC
 
-mesh_cuda_kernel.cu: mesh_cuda_grid.cu mesh_cuda_thermo.cu mesh_cuda_evolve.cu mesh_cuda_test.cu
+mesh_cuda_kernel.cu: mesh_cuda_grid.cu mesh_cuda_thermo.cu mesh_cuda_evolve.cu mesh_cuda_test.cu mesh_cuda_run.cu
 	cat mesh_cuda_grid.cu > mesh_cuda_kernel.cu
 	cat mesh_cuda_thermo.cu >> mesh_cuda_kernel.cu
 	cat mesh_cuda_evolve.cu >> mesh_cuda_kernel.cu
+	cat mesh_cuda_run.cu >> mesh_cuda_kernel.cu
 	cat mesh_cuda_test.cu >> mesh_cuda_kernel.cu
 
 mesh_cuda_kernel.o: mesh_cuda_kernel.cu mesh_output.o

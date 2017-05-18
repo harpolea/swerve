@@ -1,5 +1,5 @@
-nx      40
-ny      40
+nx      20
+ny      20
 nt      1
 ng      2
 r       2
