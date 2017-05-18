@@ -473,10 +473,10 @@ __global__ void grav_sources(float * q, float gamma,
             W2 = 1.0 + Ssq / (D*D*hh*hh);
         }
 
-        printf("source term/dt: %f, p: %f, Sx, Sy, Sz: (%f, %f, %f), D: %f\n", (-M / (R*R) * (Sz*Sz / W2 + (tau + p + D) / (alpha*alpha))), p, Sx, Sy, Sz, D);
+        printf("source term/dt: %f, p: %f, Sx, Sy, Sz: (%f, %f, %f), D: %f\n", (-M / (R*R) * (Sz*Sz / W2 + (tau + p + D) / alpha)), p, Sx, Sy, Sz, D);
 
         q[offset+3] += dt *
-            (-M / (R*R) * (Sz*Sz / W2 + (tau + p + D) / (alpha*alpha)));
+            (-M / (R*R) * (Sz*Sz / W2 + (tau + p + D) / alpha));
     }
 }
 

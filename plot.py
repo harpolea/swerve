@@ -247,7 +247,7 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
         #ax.set_ylim(0,10)
         #ax.set_zlim(2.22,2.24)
 
-        #print(plot_var[i,1,:,:])
+        print(plot_var[i,1,:,:])
 
         for l in plot_range:
             #print(plot_var[i,l,:,15])
@@ -257,7 +257,7 @@ def mesh_plot(input_filename=None, filename=None, print_level=0, start=0):
                 face_colours /= abs(np.amax(face_colours))
             face_colours = (face_colours - np.amin(face_colours)) / (np.amax(face_colours) - np.amin(face_colours))
             if swe:
-                ax.plot_surface(X[8:-8,8:-8],Y[8:-8,8:-8],plot_var[i,l,8:-8,8:-8].T, rstride=1,
+                ax.plot_surface(X[18:-18,18:-18],Y[18:-18,18:-18],plot_var[i,l,18:-18,18:-18].T, rstride=1,
                 cstride=2, lw=0, cmap=cm.viridis_r, antialiased=True)#,
                 #facecolors=cm.viridis_r(face_colours))
             else:
